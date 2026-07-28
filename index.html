@@ -1,0 +1,1878 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <meta name="color-scheme" content="light dark">
+    <meta name="theme-color" content="#f0ebe3" media="(prefers-color-scheme: light)">
+    <meta name="theme-color" content="#181a20" media="(prefers-color-scheme: dark)">
+    <title>智能刷题系统</title>
+    <style>
+        /* ============================================================
+           1. DESIGN TOKENS — oklch() perceptual colorspace (CSS Color L5)
+           ============================================================ */
+        :root {
+            --primary:       oklch(0.48 0.12 160);
+            --primary-light: oklch(0.58 0.10 160);
+            --primary-dark:  oklch(0.35 0.09 160);
+            --primary-glow:  oklch(0.48 0.12 160 / 0.22);
+            --accent:        oklch(0.70 0.14 85);
+            --accent-light:  oklch(0.78 0.12 85);
+            --accent-dark:   oklch(0.58 0.13 80);
+            --error:         oklch(0.52 0.20 25);
+            --error-bg:      oklch(0.52 0.20 25 / 0.10);
+            --success:       oklch(0.55 0.14 150);
+            --success-bg:    oklch(0.55 0.14 150 / 0.10);
+            --surface:       oklch(0.985 0.005 85);
+            --surface-alt:   oklch(0.96 0.008 85);
+            --bg:            oklch(0.94 0.008 85);
+            --text:          oklch(0.22 0.02 80);
+            --text-soft:     oklch(0.38 0.01 80);
+            --text-muted:    oklch(0.52 0.01 80);
+            --divider:       oklch(0.22 0.02 80 / 0.10);
+            --shadow-sm:     0 1px 3px  oklch(0 0 0 / 0.06);
+            --shadow-md:     0 4px 12px oklch(0 0 0 / 0.08);
+            --shadow-lg:     0 8px 28px oklch(0 0 0 / 0.10);
+
+            /* Foreground on colored buttons/badges (WCAG contrast).
+               Light theme: white text on saturated primary/success/error. */
+            --on-primary: #fff;
+            --on-success: #fff;
+            --on-error:   #fff;
+            --on-accent:  oklch(0.22 0.02 80);
+
+            /* Stroke + hairline tokens (kept off the rhythm grid on purpose). */
+            --bw-1: 1px;
+            --bw-2: 2px;
+            --bw-3: 3px;
+
+            /* Destructive-action gap (Fitts: ≥16px between adjacent destructive ops). */
+            --gap-destructive: var(--sp-5);
+
+            --text-base:  clamp(1rem,    0.9rem + 0.25vw,  1.125rem);
+            --text-sm:    clamp(0.8125rem, 0.75rem + 0.15vw, 0.875rem);
+            --text-xs:    clamp(0.6875rem, 0.65rem + 0.1vw,  0.75rem);
+            --text-lg:    clamp(1.25rem,  1.1rem + 0.5vw,   1.5rem);
+            --text-xl:    clamp(1.5rem,   1.3rem + 0.75vw,  2rem);
+            --text-2xl:   clamp(2rem,     1.7rem + 1vw,     2.5rem);
+
+            --font-serif: "Songti SC", "STKaiti", "Noto Serif CJK SC", "Source Han Serif SC", Georgia, serif;
+            --font-sans:  "PingFang SC", "SF Pro Text", system-ui, -apple-system, sans-serif;
+            --font-mono:  "SF Mono", "Menlo", "Consolas", monospace;
+
+            --sp-1:  0.125rem;
+            --sp-2:  0.25rem;
+            --sp-3:  0.5rem;
+            --sp-4:  0.75rem;
+            --sp-5:  1rem;
+            --sp-6:  1.25rem;
+            --sp-8:  1.5rem;
+            --sp-10: 2rem;
+            --sp-12: 2.5rem;
+
+            --space-related:   var(--sp-3);
+            --space-unrelated: var(--sp-5);
+            --space-section:   var(--sp-8);
+
+            --rhythm: 1.5rem;
+            --lh-unit: 1lh;
+
+            --radius:    6px;
+            --radius-sm: 3px;
+            --radius-lg: 10px;
+            --radius-xl: 14px;
+
+            --touch-min: 44px;
+            --touch-min-lg: 48px;
+            --ease:       cubic-bezier(0.4, 0, 0.2, 1);
+            --ease-out:   cubic-bezier(0, 0, 0.2, 1);
+            --ease-bounce: cubic-bezier(0.34, 1.56, 0.64, 1);
+
+            --safe-bottom: env(safe-area-inset-bottom, 0px);
+            --safe-top:    env(safe-area-inset-top, 0px);
+            --measure: 66ch;
+        }
+
+        [data-theme="dark"] {
+            --primary:       oklch(0.62 0.14 155);
+            --primary-light: oklch(0.70 0.12 155);
+            --primary-dark:  oklch(0.52 0.12 155);
+            --primary-glow:  oklch(0.62 0.14 155 / 0.22);
+            --accent:        oklch(0.74 0.14 85);
+            --accent-light:  oklch(0.80 0.12 85);
+            --accent-dark:   oklch(0.64 0.13 80);
+            --error:         oklch(0.60 0.20 25);
+            --error-bg:      oklch(0.60 0.20 25 / 0.12);
+            --success:       oklch(0.62 0.14 150);
+            --success-bg:    oklch(0.62 0.14 150 / 0.12);
+            --surface:       oklch(0.22 0.015 250);
+            --surface-alt:   oklch(0.18 0.012 250);
+            --bg:            oklch(0.15 0.012 250);
+            --text:          oklch(0.92 0.01 95);
+            --text-soft:     oklch(0.72 0.01 95);
+            --text-muted:    oklch(0.52 0.01 95);
+            --divider:       oklch(0.92 0.01 95 / 0.10);
+            --shadow-sm:     0 1px 3px  oklch(0 0 0 / 0.40);
+            --shadow-md:     0 4px 12px oklch(0 0 0 / 0.50);
+            --shadow-lg:     0 8px 28px oklch(0 0 0 / 0.60);
+            /* Dark-on-light for AA contrast: primary/success/error are pale in dark mode. */
+            --on-primary: oklch(0.16 0.02 155);
+            --on-success: oklch(0.16 0.02 150);
+            --on-error:   oklch(0.16 0.02 25);
+            --on-accent:  oklch(0.16 0.02 80);
+        }
+
+        [data-theme="oled"] {
+            --primary:       oklch(0.62 0.14 155);
+            --primary-light: oklch(0.70 0.12 155);
+            --primary-glow:  oklch(0.62 0.14 155 / 0.18);
+            --accent:        oklch(0.74 0.14 85);
+            --accent-light:  oklch(0.80 0.12 85);
+            --error:         oklch(0.60 0.20 25);
+            --error-bg:      oklch(0.60 0.20 25 / 0.10);
+            --success:       oklch(0.62 0.14 150);
+            --success-bg:    oklch(0.62 0.14 150 / 0.10);
+            --surface:       oklch(0 0 0);
+            --surface-alt:   oklch(0.05 0 0);
+            --bg:            oklch(0 0 0);
+            --text:          oklch(0.90 0.01 95); /* softened from 0.96 to reduce glare vs pure black */
+            --text-soft:     oklch(0.72 0.01 95);
+            --text-muted:    oklch(0.52 0.01 95);
+            --divider:       oklch(1 0 0 / 0.08);
+            --shadow-sm:     0 1px 2px  oklch(0 0 0 / 0.30);
+            --shadow-md:     0 2px 6px  oklch(0 0 0 / 0.40);
+            --shadow-lg:     0 4px 12px oklch(0 0 0 / 0.50);
+            --on-primary: oklch(0.16 0.02 155);
+            --on-success: oklch(0.16 0.02 150);
+            --on-error:   oklch(0.16 0.02 25);
+            --on-accent:  oklch(0.16 0.02 80);
+        }
+
+        @keyframes fadeSlideUp { from { opacity:0; transform:translateY(12px); } to { opacity:1; transform:translateY(0); } }
+        @keyframes fadeIn       { from { opacity:0; } to { opacity:1; } }
+        @keyframes scaleIn      { from { opacity:0; transform:scale(0.96); } to { opacity:1; transform:scale(1); } }
+        @keyframes pulse        { 0%,100% { opacity:1; } 50% { opacity:0.6; } }
+        @keyframes badgePop     { 0% { transform:scale(0); } 70% { transform:scale(1.15); } 100% { transform:scale(1); } }
+        @keyframes fabEnter     { from { opacity:0; transform:scale(0) translateY(60px); } to { opacity:1; transform:scale(1) translateY(0); } }
+
+        :where(*, *::before, *::after) { box-sizing: border-box; margin: 0; padding: 0; }
+
+        html {
+            -webkit-tap-highlight-color: transparent;
+            text-size-adjust: none;
+            scrollbar-color: var(--text-muted) transparent;
+            scrollbar-width: thin;
+        }
+
+        body {
+            font-family: var(--font-sans);
+            font-size: var(--text-base);
+            background: var(--bg);
+            color: var(--text);
+            line-height: var(--rhythm);
+            letter-spacing: 0.01em;
+            min-height: 100dvh;
+            -webkit-font-smoothing: antialiased;
+            transition: background-color .4s var(--ease);
+            overscroll-behavior: contain;
+            touch-action: pan-y pinch-zoom;
+        }
+
+        /* Vertical rhythm (Bringhurst): block spacing aligned to --rhythm grid.
+           The line-height == --rhythm; all major vertical margins are integer multiples. */
+        h1, h2, h3, h4 { text-wrap: balance; font-family: var(--font-serif); overflow-wrap: break-word; }
+        h1 { margin-block: calc(var(--rhythm) * 2) var(--rhythm); }
+        h2 { margin-block: calc(var(--rhythm) * 2) var(--rhythm); }
+        h3 { margin-block: var(--rhythm) calc(var(--rhythm) * 0.5); }
+        p, li, .question-title, .explanation-content, .wrong-card-explanation { text-wrap: pretty; max-width: var(--measure); }
+        /* Ident consecutive paragraphs (1lh — defined but kept off by default for UI text). */
+        article p + p { text-indent: var(--lh-unit); }
+
+        /* Visually-hidden (a11y) */
+        .visually-hidden {
+            position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+            overflow: hidden; clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap; border: 0;
+        }
+
+        /* Skip-link — keyboard a11y */
+        .skip-link {
+            position: fixed; top: var(--sp-2); left: var(--sp-2); z-index: 999;
+            background: var(--primary); color: var(--on-primary); padding: var(--sp-3) var(--sp-5);
+            border-radius: var(--radius-lg); font-weight: 600; font-size: var(--text-sm);
+            text-decoration: none; transform: translateY(-200%); transition: transform .2s var(--ease);
+        }
+        .skip-link:focus-visible { transform: translateY(0); outline: 2px solid var(--primary); outline-offset: 2px; }
+
+        /* SVG icon system — SVG 2.0. .icon scales with font-size; .icon-sm for inline badges. */
+        .icon-sprite { position: absolute; width: 0; height: 0; overflow: hidden; }
+        .icon, .icon-sm {
+            display: inline-block; vertical-align: -0.15em; fill: none;
+            stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round;
+        }
+        .icon    { width: 1.1em; height: 1.1em; }
+        .icon-sm { width: 1em; height: 1em; }
+
+        /* Skeleton screen — async parse feedback (Nielsen “system state visible”) */
+        .skeleton {
+            background: linear-gradient(90deg, var(--surface-alt) 25%, var(--divider) 37%, var(--surface-alt) 63%);
+            background-size: 400% 100%; animation: skeletonShimmer 1.4s var(--ease) infinite;
+            border-radius: var(--radius); color: transparent !important;
+        }
+        @keyframes skeletonShimmer { 0% { background-position: 100% 0; } 100% { background-position: -100% 0; } }
+        .skeleton-option { height: 48px; margin-block-end: var(--space-related); border-radius: var(--radius-lg); }
+        .skeleton-title  { height: 1.5rem; width: 70%; margin-block-end: var(--sp-4); border-radius: var(--radius); }
+
+        /* Figure / figcaption — code & formula context anchors (Cognitive Load Theory) */
+        figure.code-figure { margin: var(--sp-4) 0; border: 1px solid var(--divider); border-radius: var(--radius); overflow: hidden; }
+        figure.code-figure pre { margin: 0; padding: var(--sp-4); background: var(--surface-alt); overflow-x: auto; }
+        figure.code-figure figcaption {
+            padding: var(--sp-2) var(--sp-4); font-size: var(--text-xs);
+            color: var(--text-muted); background: var(--surface); border-block-end: 1px solid var(--divider);
+        }
+
+        .container {
+            max-width: 860px;
+            margin-inline: auto;
+            padding: var(--sp-6);
+            padding-bottom: calc(var(--sp-6) + var(--safe-bottom));
+            animation: fadeSlideUp .5s var(--ease-out);
+        }
+
+        /* ============================================================
+           HEADER
+           ============================================================ */
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            margin-block-end: var(--space-section);
+            padding-block-end: var(--sp-5);
+            border-block-end: 2px solid var(--divider);
+
+            & .header-left {
+                display: flex;
+                flex-direction: column;
+                gap: var(--sp-1);
+
+                & h1 { color: var(--primary); letter-spacing: .02em; }
+                & .subtitle { font-size: var(--text-sm); color: var(--text-soft); }
+            }
+        }
+
+        /* ============================================================
+           CARD
+           ============================================================ */
+        .card {
+            background: var(--surface);
+            border-radius: var(--radius-xl);
+            margin-block-end: var(--sp-6);
+            overflow: clip;
+            border: var(--bw-1) solid var(--divider);
+            transition: border-color .3s var(--ease);
+
+            &:focus-within { border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-glow); }
+        }
+
+        .card-title {
+            font-family: var(--font-serif);
+            font-size: var(--text-lg);
+            font-weight: 700;
+            color: var(--text);
+            padding: var(--sp-5) var(--sp-6) var(--sp-4);
+            border-bottom: var(--bw-1) solid var(--divider);
+            letter-spacing: .02em;
+            display: flex;
+            align-items: center;
+            gap: var(--space-related);
+
+            & .card-icon {
+                display: inline-flex;
+                align-items: center;
+                justify-content: center;
+                width: 28px;
+                height: 28px;
+                border-radius: var(--radius);
+                background: var(--surface-alt);
+                font-size: var(--text-base);
+                flex-shrink: 0;
+                color: var(--primary);
+            }
+        }
+
+        .card-content { padding: var(--sp-6); }
+
+        .hidden { display: none !important; }
+
+        /* ============================================================
+           COLLAPSIBLE — native <details>/<summary> (Progressive Disclosure).
+           No JS required for toggle; ESC/Enter/Space handled natively.
+           ============================================================ */
+        details.card.collapsible > summary.card-title {
+            cursor: pointer; user-select: none; list-style: none;
+            &::-webkit-details-marker { display: none; }
+            &::after {
+                content: "▾"; margin-left: auto;
+                font-size: var(--text-xs); color: var(--text-muted);
+                transition: transform .25s var(--ease);
+            }
+        }
+        details.card.collapsible:not([open]) > summary.card-title::after { transform: rotate(-90deg); }
+        details.card.collapsible > summary.card-title:focus-visible { outline: 2px solid var(--primary); outline-offset: -2px; }
+
+        /* ============================================================
+           UNIFIED MENU PANEL
+           ============================================================ */
+        /* details disclosure toggles display natively; no max-height animation needed. */
+        .menu-panel.collapsible > .card-content { background: transparent; }
+
+        /* Multi-column layout (Gestalt proximity + Grid L2):
+           File spans full width; theme & settings share a row ≥720px.
+           Separation via flex/grid gap keeps entropy low (no per-item borders). */
+        .menu-panel .card-content {
+            display: flex;
+            flex-direction: column;
+            gap: var(--space-unrelated);
+        }
+        .menu-panel .menu-group { display: flex; flex-direction: column; gap: var(--space-related); }
+        @media (min-width: 720px) {
+            .menu-panel .card-content {
+                display: grid;
+                grid-template-columns: 1fr 1fr;
+                grid-template-areas: "file file" "theme settings";
+                gap: var(--sp-6) var(--sp-8);
+            }
+            .menu-panel .menu-group--file     { grid-area: file; }
+            .menu-panel .menu-group--theme    { grid-area: theme; }
+            .menu-panel .menu-group--settings { grid-area: settings; }
+        }
+        .menu-panel .menu-group-title {
+            font-family: var(--font-sans);
+            font-size: var(--text-xs);
+            font-weight: 600;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+        }
+        .menu-panel .menu-group-content { display: flex; flex-direction: column; gap: var(--space-related); }
+        .menu-panel .menu-row {
+            display: flex;
+            align-items: center;
+            gap: var(--space-related);
+            flex-wrap: wrap;
+            &:has(input:checked) label { color: var(--primary); }
+            & label { cursor: pointer; user-select: none; font-size: var(--text-sm); color: var(--text); }
+            & input[type="number"] {
+                width: 72px; padding: var(--sp-1) var(--sp-2);
+                border: var(--bw-1) solid var(--divider); border-radius: var(--radius);
+                background: var(--surface); color: var(--text);
+                font-size: var(--text-sm); font-family: var(--font-sans);
+                &:focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; }
+            }
+            & input[type="checkbox"] { width: 18px; height: 18px; accent-color: var(--primary); cursor: pointer; }
+        }
+        .menu-row-hint { font-size: var(--text-xs); color: var(--text-muted); flex-basis: 100%; }
+        /* File dropzone — semantic <label> wraps <input>; auto-loads on change.
+           Fitts: large hit target; dashed border signals affordance (Closure). */
+        .file-drop {
+            display: flex;
+            align-items: center;
+            gap: var(--sp-4);
+            padding: var(--sp-4) var(--sp-5);
+            background: var(--surface-alt);
+            border: var(--bw-2) dashed color-mix(in oklch, var(--text-muted) 38%, transparent);
+            border-radius: var(--radius-lg);
+            cursor: pointer;
+            min-height: var(--touch-min-lg);
+            user-select: none;
+            transition: border-color .15s var(--ease), background .15s var(--ease), box-shadow .15s var(--ease), transform .15s var(--ease);
+            &:hover { border-color: var(--primary-light); background: var(--primary-glow); }
+            &:focus-within { border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-glow); }
+            &.dragover { border-color: var(--primary); background: var(--primary-glow); transform: scale(1.01); }
+            &[aria-busy="true"] { pointer-events: none; opacity: 0.65; }
+        }
+        .file-drop-icon {
+            display: inline-flex; align-items: center; justify-content: center;
+            width: 40px; height: 40px; border-radius: 50%;
+            background: var(--primary-glow); color: var(--primary);
+            font-size: 1.25rem; flex-shrink: 0;
+        }
+        .file-drop-text { display: flex; flex-direction: column; gap: var(--sp-1); min-width: 0; }
+        .file-drop-title { font-weight: 600; font-size: var(--text-sm); color: var(--text); }
+        .file-drop-hint  { font-size: var(--text-xs); color: var(--text-muted); }
+
+        /* Theme selector — ARIA radiogroup; arrow-key navigation handled in JS. */
+        .theme-selector {
+            display: flex;
+            gap: var(--space-related);
+            & .theme-option {
+                background: var(--surface);
+                border: var(--bw-2) solid var(--divider);
+                border-radius: var(--radius-lg);
+                padding: var(--sp-2) var(--sp-4);
+                cursor: pointer;
+                font: 500 var(--text-sm) var(--font-sans);
+                color: var(--text-soft);
+                min-height: var(--touch-min);
+                display: inline-flex;
+                align-items: center;
+                justify-content: center;
+                gap: var(--sp-1);
+                user-select: none;
+                transition: border-color .15s var(--ease), background .15s var(--ease), color .15s var(--ease), box-shadow .15s var(--ease);
+                flex: 1;
+                &:hover { border-color: var(--primary-light); color: var(--text); }
+                &:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+                &.selected {
+                    border-color: var(--primary);
+                    background: var(--primary-glow);
+                    color: var(--primary);
+                    font-weight: 600;
+                    box-shadow: 0 0 0 1px var(--primary);
+                }
+            }
+        }
+
+        /* ============================================================
+           BUTTON SYSTEM
+           ============================================================ */
+        .btn {
+            background: var(--primary); border: none; border-radius: var(--radius-lg); color: var(--on-primary);
+            padding: var(--sp-4) var(--sp-6); font: 600 var(--text-sm) var(--font-sans); cursor: pointer;
+            min-height: var(--touch-min); display: inline-flex; align-items: center; justify-content: center;
+            gap: var(--space-related); user-select: none; position: relative; overflow: hidden;
+            transition: transform .12s var(--ease-out), background .2s var(--ease), box-shadow .2s var(--ease), color .2s var(--ease);
+            letter-spacing: .02em;
+
+            &::after { content: ""; position: absolute; inset: 0; background: oklch(1 0 0 / 0); transition: background .2s var(--ease); }
+            &:active { transform: scale(.97); &::after { background: oklch(0 0 0 / 0.12); } }
+            &:hover { box-shadow: 0 2px 8px var(--primary-glow); }
+            &:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+            &:disabled { background: var(--text-muted); color: var(--on-primary); cursor: not-allowed; box-shadow: none; &:active { transform: none; } }
+
+            &.btn-outline { background: transparent; border: var(--bw-1) solid var(--divider); color: var(--text); &:hover { border-color: var(--primary); color: var(--primary); } }
+            &.btn-ghost { background: transparent; color: var(--text-soft); &:hover { background: var(--surface-alt); color: var(--text); } }
+            &.btn-accent { background: var(--accent); color: var(--on-accent); &:hover { box-shadow: 0 2px 8px oklch(0.70 0.14 85 / 0.35); } }
+            &.btn-active { background: var(--primary-glow); border: var(--bw-1) solid var(--primary); color: var(--primary); font-weight: 600; }
+            &.btn-sm { padding: var(--sp-2) var(--sp-4); font-size: var(--text-xs); min-height: 36px; }
+        }
+        .btn-text { white-space: nowrap; }
+
+        /* ============================================================
+           MODE SELECTION
+           ============================================================ */
+        .mode-selection { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-related); margin: var(--sp-1) 0 var(--sp-5); }
+
+        .mode-card {
+            background: var(--surface); border-radius: var(--radius-lg); padding: var(--sp-8) var(--sp-5);
+            text-align: center; cursor: pointer; border: var(--bw-2) solid var(--divider); box-shadow: var(--shadow-sm);
+            transition: border-color .2s var(--ease), background .2s var(--ease), box-shadow .2s var(--ease);
+            user-select: none; position: relative; overflow: hidden;
+            display: flex; flex-direction: column; align-items: center; gap: var(--sp-1);
+
+            &:hover { border-color: var(--primary-light); box-shadow: 0 2px 8px var(--primary-glow); }
+            &:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+            &.selected { border-color: var(--primary); background: var(--primary-glow); box-shadow: 0 0 0 3px var(--primary-glow); }
+            & .mode-label { font-weight: 600; font-size: var(--text-base); color: var(--text); }
+            & .mode-desc { font-size: var(--text-xs); color: var(--text-muted); line-height: 1.4; max-width: 180px; }
+        }
+
+        /* ============================================================
+           QUIZ SECTION — compact info bar + centered content
+           ============================================================ */
+        .quiz-area {
+            /* center the quiz section horizontally */
+            display: flex;
+            justify-content: center;
+        }
+
+        #quizSection {
+            width: 100%;
+            max-width: var(--measure);
+        }
+
+        /* Compact info bar: timer + stats + progress in one row */
+        .quiz-info-bar {
+            display: flex;
+            align-items: center;
+            gap: var(--sp-5);
+            margin-block-end: var(--sp-4);
+            font-size: var(--text-xs);
+            color: var(--text-soft);
+            flex-wrap: wrap;
+            font-variant-numeric: tabular-nums;
+
+            & .quiz-info-group {
+                display: flex;
+                align-items: center;
+                gap: var(--sp-3);
+            }
+
+            & .quiz-info-item {
+                display: flex;
+                align-items: center;
+                gap: var(--sp-1);
+                white-space: nowrap;
+
+                & .stat-correct    { color: var(--success); font-weight: 600; }
+                & .stat-incorrect  { color: var(--error);   font-weight: 600; }
+                & .stat-unanswered { color: var(--text-muted); font-weight: 600; }
+            }
+
+            & .quiz-info-sep { color: var(--divider); user-select: none; }
+        }
+
+        /* Progress bar: thin, under info bar */
+        .quiz-progress-wrap {
+            margin-block-end: var(--sp-4);
+            display: flex;
+            align-items: center;
+            gap: var(--space-related);
+
+            & .progress {
+                flex: 1;
+                height: 4px;
+                background: var(--divider);
+                border-radius: 2px;
+                overflow: hidden;
+
+                & .progress-bar {
+                    height: 100%;
+                    background: var(--primary);
+                    border-radius: 2px;
+                    transition: width .4s var(--ease-out);
+                }
+            }
+
+            & .q-counter {
+                font-size: var(--text-xs);
+                color: var(--text-muted);
+                white-space: nowrap;
+                font-variant-numeric: tabular-nums;
+            }
+
+            & .q-mark-badge {
+                font-size: 0.625rem;
+                padding: 1px 8px;
+                border-radius: 999px;
+                background: var(--accent);
+                color: var(--text);
+                font-weight: 600;
+                animation: badgePop .3s var(--ease-bounce);
+                white-space: nowrap;
+            }
+        }
+
+        /* Question content — centered via max-width */
+        .question-title {
+            font-size: var(--text-base);
+            font-weight: 500;
+            margin-block-end: var(--sp-5);
+            color: var(--text);
+            line-height: 1.7;
+
+            & small {
+                font-size: var(--text-xs);
+                color: var(--text-muted);
+                font-weight: 400;
+                background: var(--surface-alt);
+                padding: 1px 8px;
+                border-radius: var(--radius-sm);
+                margin-left: var(--space-related);
+            }
+        }
+
+        .options { display: flex; flex-direction: column; gap: var(--space-related); margin-block-end: var(--sp-5); }
+
+        .option {
+            background: var(--surface); border: var(--bw-2) solid var(--divider); border-radius: var(--radius-lg);
+            padding: 14px var(--sp-5); cursor: pointer; display: flex; align-items: center; gap: var(--sp-4);
+            transition: border-color .15s var(--ease), background .15s var(--ease), transform .12s var(--ease-out), box-shadow .15s var(--ease);
+            user-select: none; min-height: 48px; position: relative;
+
+            &:active { transform: scale(.985); border-color: var(--primary); }
+            &::before {
+                content: ""; display: inline-flex; align-items: center; justify-content: center;
+                width: 22px; height: 22px; border-radius: 50%; border: var(--bw-2) solid var(--divider);
+                flex-shrink: 0; font-size: var(--text-xs); font-weight: 700; color: var(--text-muted);
+                transition: border-color .15s var(--ease), background .15s var(--ease);
+            }
+            &:hover { border-color: var(--primary-light); background: var(--surface-alt); &::before { border-color: var(--primary-light); } }
+            &:focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; }
+            &.selected { border-color: var(--primary); background: var(--primary-glow); &::before { background: var(--primary); border-color: var(--primary); } }
+            &.correct { border-color: var(--success); background: var(--success-bg); &::before { background: var(--success); border-color: var(--success); } }
+            &.incorrect { border-color: var(--error); background: var(--error-bg); &::before { background: var(--error); border-color: var(--error); } }
+            &.disabled { pointer-events: none; opacity: .65; }
+        }
+
+        /* Multi-submit: sticky so it's never hidden on mobile */
+        .multi-submit-bar {
+            position: sticky;
+            bottom: 0;
+            display: flex;
+            justify-content: flex-end;
+            padding: var(--sp-2) 0;
+            margin-block-start: var(--space-related);
+            background: var(--surface);
+            z-index: 2;
+            border-top: 1px solid var(--divider);
+        }
+
+        /* ============================================================
+           FEEDBACK
+           ============================================================ */
+        .answer-feedback {
+            margin-block-start: var(--sp-5);
+            border-radius: var(--radius-lg);
+            overflow: hidden;
+            border: var(--bw-1) solid var(--divider);
+            animation: scaleIn .2s var(--ease);
+            @starting-style { opacity: 0; transform: translateY(8px); }
+            transition: opacity .2s var(--ease), transform .2s var(--ease);
+
+            &.correct .answer-feedback-header { background: var(--success); color: var(--on-success); padding: var(--sp-4) var(--sp-5); font-weight: 600; font-size: var(--text-sm); display: flex; align-items: center; gap: var(--sp-2); }
+            &.incorrect .answer-feedback-header { background: var(--error); color: var(--on-error); padding: var(--sp-4) var(--sp-5); font-weight: 600; font-size: var(--text-sm); display: flex; align-items: center; gap: var(--sp-2); }
+            & .answer-feedback-content { padding: var(--sp-5); background: var(--surface); color: var(--text); font-size: var(--text-sm); }
+        }
+
+        .explanation-content {
+            margin-block-start: var(--sp-4);
+            padding: var(--sp-4) var(--sp-5);
+            background: var(--surface-alt);
+            border-left: var(--bw-3) solid var(--primary);
+            border-radius: var(--radius);
+            font-size: var(--text-sm);
+            line-height: 1.7;
+            color: var(--text-soft);
+        }
+
+        /* ============================================================
+           CONTROLS — toolbar with two semantic regions
+           Fitts: bottom-anchored; primary nav on the traversing edge.
+           Gestalt: related grouped tight (Similarity), regions separated
+           by a divider (Continuity). Submit lives in the nav overlay
+           (Progressive Disclosure) — navSubmitBtn is the sole entry.
+           ============================================================ */
+        .controls {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: var(--space-related);
+            flex-wrap: wrap;
+            margin-block-start: var(--sp-6);
+            padding-block-start: var(--sp-5);
+            border-block-start: 1px solid var(--divider);
+        }
+
+        .controls-group {
+            display: flex;
+            align-items: center;
+            gap: var(--space-related);
+            flex-wrap: wrap;
+            min-width: 0;
+        }
+        .controls-group--nav  { flex: 1 1 auto; justify-content: flex-start; }
+        .controls-group--ctx  { justify-content: flex-end; }
+        /* Destructive adjacent ops (Fitts ≥16px). Currently the mark/master buttons
+           and restart/review/export — both pairs benefit from a wider safety gap. */
+        .controls-group--destructive { gap: var(--gap-destructive); }
+
+        /* ============================================================
+           FLOATING NAVIGATION
+           ============================================================ */
+        .nav-fab {
+            position: fixed;
+            right: max(16px, env(safe-area-inset-right));
+            bottom: max(80px, calc(var(--safe-bottom) + 80px));
+            width: 56px;
+            height: 56px;
+            border-radius: 50%;
+            border: none;
+            background: var(--primary);
+            color: var(--on-primary);
+            font-size: 1.5rem;
+            font-weight: 700;
+            cursor: pointer;
+            box-shadow: var(--shadow-lg);
+            z-index: 100;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            user-select: none;
+            transition: transform .15s var(--ease-out), box-shadow .2s var(--ease);
+            animation: fabEnter .4s var(--ease-out) both;
+            -webkit-tap-highlight-color: transparent;
+            @starting-style { opacity: 0; transform: scale(0.5); }
+
+            &:active { transform: scale(.92); }
+            &:hover { box-shadow: 0 6px 20px var(--primary-glow); }
+            &:focus-visible { outline: 2px solid var(--primary); outline-offset: 4px; }
+        }
+
+        /* Native <dialog> — top layer + native focus trap + ESC.
+           Tell UA to use the full viewport so we can center .nav-overlay-panel via flex. */
+        dialog.nav-overlay {
+            border: none; background: none; padding: 0;
+            position: fixed; inset: 0;
+            width: 100%; height: 100%; max-width: 100%; max-height: 100%;
+            display: flex; align-items: center; justify-content: center;
+            -webkit-tap-highlight-color: transparent;
+            &::backdrop { background: oklch(0 0 0 / 0.45); animation: fadeIn .15s var(--ease-out); }
+        }
+        /* Fallback for browsers that don't fully support showModal() — hide by default. */
+        dialog.nav-overlay:not([open]) { display: none !important; }
+        dialog.nav-overlay[open] { display: flex; }
+        dialog.nav-overlay[open] .nav-overlay-panel { animation: scaleIn .15s var(--ease-out); }
+        /* When closed, dialog is display:none via UA; no .hidden class needed. */
+
+        .nav-overlay-panel {
+            background: var(--surface);
+            border-radius: var(--radius-xl);
+            box-shadow: var(--shadow-lg);
+            padding: var(--sp-5);
+            max-width: min(400px, calc(100vw - 32px));
+            max-height: min(70vh, 500px);
+            width: 100%;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .nav-overlay-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-block-end: var(--sp-4);
+            padding-block-end: var(--sp-3);
+            border-block-end: 1px solid var(--divider);
+
+            & .nav-overlay-title {
+                font-family: var(--font-sans);
+                font-size: var(--text-sm);
+                font-weight: 600;
+                color: var(--text);
+            }
+
+            & .nav-overlay-close {
+                background: none;
+                border: none;
+                width: 36px;
+                height: 36px;
+                border-radius: 50%;
+                cursor: pointer;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                font-size: 1.1rem;
+                color: var(--text-soft);
+                transition: background .15s var(--ease), color .15s var(--ease);
+
+                &:hover { background: var(--surface-alt); color: var(--text); }
+                &:focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; }
+            }
+        }
+
+        .nav-overlay-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(42px, 1fr));
+            gap: 6px;
+            padding: var(--sp-1);
+            overflow-y: auto;
+            flex: 1;
+        }
+
+        /* Submit region — the sole submit entry (progressive disclosure).
+           Accent treatment signals the primary terminal action. */
+        .nav-overlay-submit {
+            margin-block-start: var(--sp-4);
+            padding-block-start: var(--sp-3);
+            border-block-start: 1px solid var(--divider);
+            display: flex;
+            justify-content: center;
+        }
+        .nav-overlay-submit .btn { flex: 1; }
+
+        .nav-fab-badge {
+            position: absolute;
+            top: -4px;
+            right: -4px;
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            background: var(--accent);
+            color: var(--text);
+            font-size: 0.625rem;
+            font-weight: 700;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 1px 3px oklch(0 0 0 / 0.3);
+        }
+
+        /* Question nav buttons inside overlay — plain <button>, no tab semantic */
+        .question-nav-btn {
+            width: 42px;
+            height: 42px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border: var(--bw-1) solid var(--divider);
+            border-radius: var(--radius);
+            background: var(--surface);
+            color: var(--text-soft);
+            cursor: pointer;
+            font-size: var(--text-sm);
+            font-weight: 500;
+            transition: border-color .15s var(--ease), background .15s var(--ease), color .15s var(--ease), box-shadow .15s var(--ease), opacity .15s var(--ease);
+            user-select: none;
+            position: relative;
+
+            &:hover { border-color: var(--primary-light); color: var(--primary); }
+            &:focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; }
+            &.current { background: var(--primary); color: var(--on-primary); border-color: var(--primary); box-shadow: 0 1px 4px var(--primary-glow); }
+            &.answered   { background: var(--success); color: var(--on-success); border-color: var(--success); }
+            &.error-answered { background: var(--error); color: var(--on-error); border-color: var(--error); }
+            &.marked     { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
+            &.marked.current { box-shadow: 0 0 0 3px var(--accent); }
+            &.mastered { opacity: 0.5; text-decoration: line-through; background: var(--surface-alt); color: var(--text-muted); border-color: var(--divider); }
+            &.mastered.current { opacity: 1; text-decoration: none; }
+            &.mastered.marked { opacity: 1; text-decoration: line-through; }
+        }
+
+        /* ============================================================
+           TOUCH SWIPE
+           ============================================================ */
+        .touch-swipe-zone { touch-action: pan-y; user-select: none; position: relative; overflow: hidden; }
+        .touch-swipe-zone.swiping { touch-action: none; cursor: grabbing; }
+
+        .swipe-indicator {
+            position: absolute; top: 0; bottom: 0; width: 48px;
+            display: flex; align-items: center; justify-content: center;
+            opacity: 0; transition: opacity .15s var(--ease); pointer-events: none;
+            z-index: 2; font-size: 1.5rem; color: var(--text-muted);
+        }
+        .swipe-indicator.left  { left: 0;  background: linear-gradient(to right,  var(--surface-alt), transparent); }
+        .swipe-indicator.right { right: 0; background: linear-gradient(to left, var(--surface-alt), transparent); }
+        .swipe-indicator.active { opacity: 1; }
+        .swipe-indicator.active.reach { color: var(--primary); font-weight: bold; transform: scale(1.3); }
+
+        .question-slide-wrap { transition: transform .12s var(--ease-out); }
+        .question-slide-wrap.sliding-left  { transform: translateX(-16%); }
+        .question-slide-wrap.sliding-right { transform: translateX(16%); }
+
+        /* ============================================================
+           RESULT
+           ============================================================ */
+        .score-display { text-align: center; padding: var(--sp-8) 0; }
+        .score { font-family: var(--font-serif); font-size: var(--text-2xl); font-weight: 700; color: var(--primary); line-height: 1.2; }
+        .score-label { font-size: var(--text-sm); color: var(--text-muted); margin-top: var(--sp-1); }
+
+        .result-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--space-related); margin: var(--sp-6) 0; }
+        .result-stat { text-align: center; padding: var(--sp-4); border-radius: var(--radius-lg); background: var(--surface-alt); }
+        .result-stat .stat-value { font-size: var(--text-lg); font-weight: 700; line-height: 1.2; }
+        .result-stat .stat-label { font-size: var(--text-xs); color: var(--text-muted); margin-top: var(--sp-1); }
+        .result-stat.correct    .stat-value { color: var(--success); }
+        .result-stat.incorrect  .stat-value { color: var(--error); }
+        .result-stat.unanswered .stat-value { color: var(--text-muted); }
+
+        .result-msg { font-size: var(--text-sm); color: var(--text-soft); margin: var(--sp-5) 0; font-style: italic; }
+        .result-time { font-size: var(--text-sm); color: var(--text-muted); margin-bottom: var(--sp-5); text-align: center; }
+        .result-actions { display: flex; gap: var(--gap-destructive); flex-wrap: wrap; justify-content: center; margin-top: var(--sp-5); }
+
+        .history-item { padding: var(--sp-2) 0; border-bottom: 1px solid var(--divider); color: var(--text-soft); font-size: var(--text-sm); display: flex; justify-content: space-between; gap: var(--sp-4); }
+        .history-heading { font-family: var(--font-serif); font-size: var(--text-sm); color: var(--text-soft); margin-bottom: var(--space-related); }
+
+        .file-status { color: var(--text-soft); margin: var(--sp-2) 0; font-size: var(--text-sm); }
+
+        #fileList ul { list-style: none; padding: 0; margin: var(--sp-2) 0; }
+        #fileList li { padding: var(--sp-1) var(--sp-2); color: var(--text-soft); font-size: var(--text-xs); background: var(--surface-alt); border-radius: var(--radius-sm); display: inline-block; margin: 2px var(--sp-1) 2px 0; }
+
+        /* --- Snackbar --- */
+        .snackbar {
+            position: fixed; bottom: calc(24px + var(--safe-bottom)); left: 50%;
+            transform: translateX(-50%) translateY(8px); background: var(--text); color: var(--bg);
+            padding: var(--sp-2) var(--sp-5); border-radius: var(--radius-lg); z-index: 300;
+            opacity: 0; transition: opacity .25s var(--ease), transform .25s var(--ease);
+            pointer-events: none; font-size: var(--text-sm); font-weight: 500;
+            box-shadow: var(--shadow-lg); max-width: 90vw; text-align: center;
+            @starting-style { opacity: 0; transform: translateX(-50%) translateY(20px); }
+        }
+        .snackbar.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+        .snackbar.error { background: var(--error); color: var(--on-error); }
+
+        /* --- Export --- */
+        #exportPanel textarea {
+            width: 100%; padding: var(--sp-4); border: 1px solid var(--divider); border-radius: var(--radius);
+            background: var(--surface); color: var(--text); font-family: var(--font-mono);
+            font-size: var(--text-xs); resize: vertical; margin-bottom: var(--sp-2); line-height: 1.6;
+            &:focus-visible { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-glow); }
+        }
+        .export-actions { display: flex; gap: var(--gap-destructive); }
+        .export-panel { margin-top: var(--sp-5); }
+        .history-panel { margin-top: var(--sp-8); }
+
+        /* --- Wrong cards --- */
+        .wrong-card {
+            background: var(--surface); border: var(--bw-1) solid var(--divider); border-radius: var(--radius-lg);
+            padding: var(--sp-5); margin-bottom: var(--sp-4);
+            transition: border-color .2s var(--ease);
+            &:hover { border-color: var(--primary-light); }
+        }
+        .wrong-card-header { font-weight: 600; font-size: var(--text-sm); color: var(--primary); margin-bottom: var(--space-related); display: flex; align-items: center; gap: var(--space-related); }
+        .wrong-card-header .badge { background: var(--error); color: var(--on-error); font-size: var(--text-xs); padding: var(--bw-1) var(--sp-2); border-radius: 999px; font-weight: 600; }
+        .wrong-card-title { font-weight: 500; margin-bottom: .5rem; line-height: 1.6; }
+        .wrong-card-options { margin-bottom: .5rem; padding-left: .5rem; border-left: 2px solid var(--divider); }
+        .wrong-card-option { display: block; padding: 2px 0; font-size: var(--text-sm); color: var(--text-soft); }
+        .wrong-card-option.correct-answer { color: var(--success); font-weight: 500; }
+        .wrong-card-answer-row { display: flex; gap: var(--sp-6); flex-wrap: wrap; margin: var(--sp-2) 0; font-size: var(--text-sm); }
+        .wrong-card-user-ans    { color: var(--error);   font-weight: 500; }
+        .wrong-card-correct-ans { color: var(--success); font-weight: 500; }
+        .wrong-card-explanation { margin-top: var(--sp-2); padding: var(--sp-2) var(--sp-4); background: var(--surface-alt); border-left: 3px solid var(--primary); border-radius: var(--radius); font-size: var(--text-sm); color: var(--text-soft); line-height: 1.6; }
+        .wrong-summary       { color: var(--text-soft); margin-bottom: 1rem; }
+        .wrong-all-correct   { padding: 2rem; text-align: center; color: var(--success); font-weight: 600; }
+        .wrong-section-title { font-weight: 600; margin-bottom: 1rem; }
+
+        /* ============================================================
+           RESPONSIVE
+           ============================================================ */
+        @media (max-width: 600px) {
+            .container { padding: var(--sp-4); }
+            .mode-selection { grid-template-columns: 1fr; gap: var(--sp-2); }
+            .mode-card { padding: var(--sp-5); min-height: 56px; flex-direction: row; justify-content: flex-start; gap: var(--sp-4); }
+            .mode-card .mode-desc { max-width: none; text-align: left; }
+            /* On phones, traversal is via swipe; hiding prev/next frees the bar.
+               Fixed the previous selector typo (#prevtBtn → #prevBtn) which had
+               left #prevBtn visible and broken the intended mobile layout. */
+            #prevBtn, #nextBtn { display: none; }
+            .controls {
+                position: sticky; bottom: 0;
+                background: var(--surface);
+                padding: var(--sp-3); z-index: 10;
+                border-block-start: 1px solid var(--divider);
+                box-shadow: 0 -2px 8px oklch(0 0 0 / 0.06);
+                justify-content: center;
+            }
+            .controls-group--nav { display: none; }
+            .controls-group--ctx { flex: 1 1 auto; justify-content: stretch; gap: var(--sp-2); }
+            .controls-group--ctx .btn { flex: 1; justify-content: center; min-height: var(--touch-min-lg); padding: var(--sp-2) var(--sp-3); }
+            .option { padding: 14px var(--sp-4); min-height: 50px; }
+            .btn { min-height: 42px; }
+            .card-title { font-size: var(--text-base); padding: var(--sp-4) var(--sp-5); }
+            .header h1 { font-size: var(--text-lg); }
+            .result-grid { gap: var(--sp-2); }
+            .result-stat { padding: var(--sp-2); }
+            .result-stat .stat-value { font-size: var(--text-base); }
+            .card-content { padding: var(--sp-5); }
+            .nav-fab { width: 48px; height: 48px; font-size: 1.2rem; bottom: max(64px, calc(var(--safe-bottom) + 64px)); }
+            .question-nav-btn { width: 40px; height: 40px; font-size: var(--text-sm); }
+        }
+
+        @media (max-width: 400px) {
+            .option { padding: 12px var(--sp-2); min-height: 46px; font-size: var(--text-sm); }
+            .controls-group--ctx .btn { font-size: var(--text-sm); }
+            .score { font-size: var(--text-xl); }
+            .nav-fab { width: 44px; height: 44px; font-size: 1.1rem; }
+            .question-nav-btn { width: 38px; height: 38px; font-size: var(--text-xs); }
+        }
+
+        @media (min-width: 601px) and (max-width: 1024px) {
+            .container { max-width: 860px; padding: var(--sp-8); }
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            :where(*, *::before, *::after) {
+                animation-duration: 0.01ms !important;
+                animation-iteration-count: 1 !important;
+                transition-duration: 0.01ms !important;
+            }
+        }
+    </style>
+</head>
+<body>
+<!-- SVG icon sprite — SVG 2.0 <use> + <symbol> with inline <title> (a11y).
+     Icons referenced via <use href="#icon-*"/>. Decorative use sets aria-hidden. -->
+<svg class="icon-sprite" aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg">
+<symbol id="icon-menu" viewBox="0 0 24 24"><title>菜单</title><path d="M3 6h18M3 12h18M3 18h18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></symbol>
+<symbol id="icon-upload" viewBox="0 0 24 24"><title>上传</title><path d="M12 16V4M7 9l5-5 5 5M4 20h16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+<symbol id="icon-target" viewBox="0 0 24 24"><title>选择模式</title><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="12" cy="12" r="5" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="12" cy="12" r="1.5" fill="currentColor"/></symbol>
+<symbol id="icon-edit" viewBox="0 0 24 24"><title>答题</title><path d="M5 19l1-4 9-9 3 3-9 9-4 1z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></symbol>
+<symbol id="icon-chart" viewBox="0 0 24 24"><title>结果</title><path d="M4 20V11M10 20V4M16 20v-7M22 20H2" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></symbol>
+<symbol id="icon-close" viewBox="0 0 24 24"><title>关闭</title><path d="M6 6l12 12M18 6L6 18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></symbol>
+<symbol id="icon-sun" viewBox="0 0 24 24"><title>浅色</title><circle cx="12" cy="12" r="4" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></symbol>
+<symbol id="icon-moon" viewBox="0 0 24 24"><title>深色</title><path d="M21 13A9 9 0 0 1 11 3a7 7 0 1 0 10 10z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></symbol>
+<symbol id="icon-oled" viewBox="0 0 24 24"><title>OLED</title><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="12" cy="12" r="3.5" fill="currentColor"/></symbol>
+<symbol id="icon-check" viewBox="0 0 24 24"><title>正确</title><path d="M5 12l5 5L20 7" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+<symbol id="icon-cross" viewBox="0 0 24 24"><title>错误</title><path d="M6 6l12 12M18 6L6 18" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/></symbol>
+<symbol id="icon-star" viewBox="0 0 24 24"><title>标记</title><path d="M12 2l3 6 7 1-5 5 1 7-6-3-6 3 1-7-5-5 7-1z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></symbol>
+<symbol id="icon-clock" viewBox="0 0 24 24"><title>计时</title><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 7v5l3 3" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></symbol>
+<symbol id="icon-prev" viewBox="0 0 24 24"><title>上一题</title><path d="M15 6l-6 6 6 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+<symbol id="icon-next" viewBox="0 0 24 24"><title>下一题</title><path d="M9 6l6 6-6 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+</svg>
+<a href="#main-content" class="skip-link">跳到主要内容</a>
+
+<div class="container">
+    <header class="header">
+        <div class="header-left">
+            <h1>智能刷题系统</h1>
+            <p class="subtitle">离线 · 安全 · 高效</p>
+        </div>
+    </header>
+
+    <main id="main-content">
+        <!-- 统一菜单：导入（自动加载）+ 主题 + 设置。原生 <details>/<summary> 提供渐进式披露语义、键盘支持与 AT 兼容。 -->
+        <details class="card menu-panel collapsible" id="menuPanel" open aria-labelledby="menuPanelTitle">
+            <summary class="card-title" id="menuPanelTitle"><span class="card-icon" aria-hidden="true"><svg class="icon"><use href="#icon-menu"/></svg></span> 菜单</summary>
+            <div class="card-content">
+                <div class="menu-group menu-group--file">
+                    <h3 class="menu-group-title">导入题库</h3>
+                    <div class="menu-group-content">
+                        <label class="file-drop" for="fileInput" id="fileDropZone">
+                            <input type="file" id="fileInput" accept=".md" multiple hidden aria-describedby="fileStatus fileHint">
+                            <span class="file-drop-icon" aria-hidden="true"><svg class="icon"><use href="#icon-upload"/></svg></span>
+                            <span class="file-drop-text">
+                                <span class="file-drop-title">选择或拖入 Markdown 题库</span>
+                                <span class="file-drop-hint" id="fileHint">选择后自动加载 · 支持多选 .md 文件</span>
+                            </span>
+                        </label>
+                        <div id="fileList" aria-label="已选文件列表"></div>
+                        <div id="fileStatus" class="file-status" role="status" aria-live="polite" aria-busy="false"></div>
+                    </div>
+                </div>
+                <div class="menu-group menu-group--theme">
+                    <h3 class="menu-group-title">主题</h3>
+                    <div class="menu-group-content">
+                        <div class="theme-selector" role="radiogroup" aria-label="主题选择" id="themeSelector">
+                            <button class="theme-option" data-theme-value="light" role="radio" tabindex="0" aria-checked="true" aria-label="浅色主题"><svg class="icon-sm" aria-hidden="true"><use href="#icon-sun"/></svg> 浅色</button>
+                            <button class="theme-option" data-theme-value="dark" role="radio" tabindex="-1" aria-checked="false" aria-label="深色主题"><svg class="icon-sm" aria-hidden="true"><use href="#icon-moon"/></svg> 深色</button>
+                            <button class="theme-option" data-theme-value="oled" role="radio" tabindex="-1" aria-checked="false" aria-label="OLED 主题"><svg class="icon-sm" aria-hidden="true"><use href="#icon-oled"/></svg> OLED</button>
+                        </div>
+                    </div>
+                </div>
+                <div class="menu-group menu-group--settings">
+                    <h3 class="menu-group-title">设置</h3>
+                    <div class="menu-group-content">
+                        <div class="menu-row">
+                            <label for="autoNextToggle">自动下一题</label>
+                            <input type="checkbox" id="autoNextToggle" checked>
+                        </div>
+                        <div class="menu-row">
+                            <label for="autoNextDelay">延迟（秒）</label>
+                            <input type="number" id="autoNextDelay" value="0.5" step="0.1" min="0" max="5" inputmode="decimal" aria-describedby="autoNextDelayHint">
+                            <span class="menu-row-hint" id="autoNextDelayHint">0–5 秒，0.1 秒步进</span>
+                        </div>
+                        <div class="menu-row">
+                            <label for="showHistoryToggle">显示历史</label>
+                            <input type="checkbox" id="showHistoryToggle" checked>
+                        </div>
+                        <div class="menu-row">
+                            <label for="hideMasteredToggle">隐藏已掌握</label>
+                            <input type="checkbox" id="hideMasteredToggle" aria-describedby="hideMasteredHint">
+                            <span class="menu-row-hint" id="hideMasteredHint">已掌握题目下次加载时自动跳过</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </details>
+
+        <!-- 模式选择 -->
+        <section class="card hidden" id="modeSection" aria-labelledby="modeSectionTitle">
+            <h2 class="card-title" id="modeSectionTitle"><span class="card-icon" aria-hidden="true"><svg class="icon"><use href="#icon-target"/></svg></span> 选择模式</h2>
+            <div class="card-content">
+                <div class="mode-selection" id="modeSelection" role="radiogroup" aria-label="答题模式选择">
+                    <div class="mode-card selected" data-mode="practice" tabindex="0" role="radio" aria-checked="true">
+                        <span class="mode-label">📖 刷题模式</span>
+                        <span class="mode-desc">即时反馈，每道题做完即出答案</span>
+                    </div>
+                    <div class="mode-card" data-mode="exam" tabindex="-1" role="radio" aria-checked="false">
+                        <span class="mode-label">📋 考试模式</span>
+                        <span class="mode-desc">全部答完统一显示成绩与解析</span>
+                    </div>
+                </div>
+                <button id="startQuizBtn" class="btn">开始练习</button>
+            </div>
+        </section>
+
+        <!-- 答题区（居中） -->
+        <div class="quiz-area" id="quizArea">
+            <section class="card hidden" id="quizSection" aria-labelledby="quizSectionTitle">
+                <h2 class="card-title" id="quizSectionTitle"><span class="card-icon" aria-hidden="true"><svg class="icon"><use href="#icon-edit"/></svg></span> 答题区</h2>
+                <div class="card-content">
+                    <!-- 紧凑信息栏：计时 + 统计 -->
+                    <div class="quiz-info-bar" id="quizInfoBar">
+                        <span class="quiz-info-item"><svg class="icon-sm" aria-hidden="true"><use href="#icon-clock"/></svg> <span id="curTime">00:00</span></span>
+                        <span class="quiz-info-item">总 <span id="totalTime">00:00</span></span>
+                        <span class="quiz-info-sep" aria-hidden="true">|</span>
+                        <span class="quiz-info-item stat-correct"><svg class="icon-sm" aria-hidden="true"><use href="#icon-check"/></svg> <span id="correctCount">0</span></span>
+                        <span class="quiz-info-item stat-incorrect"><svg class="icon-sm" aria-hidden="true"><use href="#icon-cross"/></svg> <span id="incorrectCount">0</span></span>
+                        <span class="quiz-info-item stat-unanswered">— <span id="unansweredCount">0</span></span>
+                    </div>
+                    <!-- 进度条 + 题号计数 -->
+                    <div class="quiz-progress-wrap">
+                        <div class="progress" role="progressbar" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100" aria-label="答题进度">
+                            <div class="progress-bar" id="progressBar" style="width:0%"></div>
+                        </div>
+                        <span class="q-counter" aria-label="当前题目编号"><span id="currentQ">1</span>/<span id="totalQ">0</span></span>
+                        <span class="q-mark-badge hidden" id="markBadge">★ 已标记</span>
+                    </div>
+                    <!-- 题目与选项 -->
+                    <div class="touch-swipe-zone" id="touchSwipeZone">
+                        <span class="swipe-indicator left" aria-hidden="true">‹</span>
+                        <span class="swipe-indicator right" aria-hidden="true">›</span>
+                        <div class="question-slide-wrap" id="questionSlideWrap">
+                            <div id="questionContainer"></div>
+                            <div id="answerFeedback" class="hidden"></div>
+                        </div>
+                    </div>
+                    <!-- 控件区：导航（左）+ 题目级操作（右）。交卷由右下悬浮导航中的 navSubmitBtn 统一承担（渐进式披露 + Fitts 边缘优势）。 -->
+                    <div class="controls" role="toolbar" aria-label="题目操作">
+                        <div class="controls-group controls-group--nav">
+                            <button id="prevBtn" class="btn btn-outline" aria-label="上一题" aria-keyshortcuts="ArrowLeft"><svg class="icon-sm" aria-hidden="true"><use href="#icon-prev"/></svg> 上一题</button>
+                            <button id="nextBtn" class="btn" aria-label="下一题" aria-keyshortcuts="ArrowRight">下一题 <svg class="icon-sm" aria-hidden="true"><use href="#icon-next"/></svg></button>
+                        </div>
+                        <div class="controls-group controls-group--ctx controls-group--destructive">
+                            <button id="markBtn" class="btn btn-ghost btn-sm" aria-label="标记当前题目" aria-keyshortcuts="m"><svg class="icon-sm" aria-hidden="true"><use href="#icon-star"/></svg> <span class="btn-text">标记</span></button>
+                            <button id="masterBtn" class="btn btn-ghost btn-sm" aria-label="标记为已掌握" aria-keyshortcuts="Shift+M"><svg class="icon-sm" aria-hidden="true"><use href="#icon-check"/></svg> <span class="btn-text">已掌握</span></button>
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </div>
+
+        <!-- 结果区 -->
+        <section class="card hidden" id="resultSection" aria-labelledby="resultSectionTitle">
+            <h2 class="card-title" id="resultSectionTitle"><span class="card-icon" aria-hidden="true"><svg class="icon"><use href="#icon-chart"/></svg></span> 结果</h2>
+            <div class="card-content">
+                <div class="score-display">
+                    <div class="score"><span id="scoreValue">0</span>/<span id="totalScore">0</span></div>
+                    <div class="score-label">最终得分</div>
+                </div>
+                <div class="result-grid">
+                    <div class="result-stat correct"><div class="stat-value" id="resCorrect">0</div><div class="stat-label">正确</div></div>
+                    <div class="result-stat incorrect"><div class="stat-value" id="resIncorrect">0</div><div class="stat-label">错误</div></div>
+                    <div class="result-stat unanswered"><div class="stat-value" id="resUnanswered">0</div><div class="stat-label">未答</div></div>
+                </div>
+                <div class="result-time">总用时 <span id="resultTotalTime">00:00</span> · 平均 <span id="avgTime">00:00</span></div>
+                <p class="result-msg" id="resultMsg"></p>
+                <div class="result-actions controls-group--destructive">
+                    <button id="restartBtn" class="btn">重新开始</button>
+                    <button id="reviewBtn" class="btn btn-outline">错题回顾</button>
+                    <button id="exportBtn" class="btn btn-outline">导出错题</button>
+                </div>
+                <div id="exportPanel" class="hidden export-panel">
+                    <textarea id="exportLinks" rows="6" aria-label="错题导出内容" readonly></textarea>
+                    <div class="export-actions">
+                        <button id="copyExportBtn" class="btn btn-sm">复制</button>
+                        <button id="closeExportBtn" class="btn btn-outline btn-sm">关闭</button>
+                    </div>
+                </div>
+                <div id="wrongContainer" role="region" aria-label="错题回顾"></div>
+                <div id="historyPanel" class="history-panel">
+                    <h3 class="history-heading">历史记录</h3>
+                    <div id="historyList" role="list" aria-label="练习历史"></div>
+                </div>
+            </div>
+        </section>
+    </main>
+</div>
+
+<!-- 悬浮导航按钮 + 原生 <dialog> 覆盖层（原生 ESC + 焦点陷阱 + top layer） -->
+<button class="nav-fab hidden" id="navFab" aria-label="打开题目导航" aria-haspopup="dialog"><svg class="icon" aria-hidden="true"><use href="#icon-menu"/></svg></button>
+<dialog class="nav-overlay" id="navOverlay" aria-label="题目导航">
+    <div class="nav-overlay-panel">
+        <div class="nav-overlay-header">
+            <span class="nav-overlay-title">题目导航</span>
+            <button class="nav-overlay-close" id="navOverlayClose" aria-label="关闭导航"><svg class="icon-sm" aria-hidden="true"><use href="#icon-close"/></svg></button>
+        </div>
+        <div class="nav-overlay-grid" id="questionNav" aria-label="题目列表"></div>
+        <div class="nav-overlay-submit">
+            <button id="navSubmitBtn" class="btn btn-accent" aria-label="提交答卷">提交答卷</button>
+        </div>
+    </div>
+</dialog>
+
+<div class="snackbar" id="snackbar" role="status" aria-live="polite"></div>
+
+<script type="module">
+'use strict';
+
+/* ===== EventBus ===== */
+class EventBus {
+    #listeners = new Map();
+    on(event, cb) { if (!this.#listeners.has(event)) this.#listeners.set(event, new Set()); this.#listeners.get(event).add(cb); return () => this.off(event, cb); }
+    off(event, cb) { const s = this.#listeners.get(event); if (s) { s.delete(cb); if (!s.size) this.#listeners.delete(event); } }
+    emit(event, ...args) { const s = this.#listeners.get(event); if (s) [...s].forEach(cb => { try { cb(...args); } catch (e) { console.error(`[EventBus] "${event}":`, e); } }); }
+}
+
+/* ===== Utilities ===== */
+const esc = str => str == null ? "" : String(str).replace(/[&<>"']/g, m => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;", "'": "&#039;" })[m]);
+const fmtTime = ms => { const sec = Math.floor(ms / 1000); return `${String(Math.floor(sec / 60)).padStart(2, "0")}:${String(sec % 60).padStart(2, "0")}`; };
+const hashStr = s => { let h = 0; for (let i = 0; i < s.length; i++) { h = ((h << 5) - h) + s.charCodeAt(i); h |= 0; } return String(h); };
+
+/* ===== Markdown Parser — code blocks wrapped in <figure> + <figcaption> (CLT context anchor) ===== */
+class MarkdownParser {
+    static parse(text) {
+        if (!text) return "";
+        return text
+            .replace(/```([\s\S]*?)```/g, (_, c) => `<figure class="code-figure"><figcaption>代码</figcaption><pre><code>${esc(c)}</code></pre></figure>`)
+            .replace(/`([^`]+)`/g, (_, c) => `<code>${esc(c)}</code>`)
+            .replace(/\*\*(.+?)\*\*/g, (_, t) => `<strong>${esc(t)}</strong>`)
+            .replace(/\*(.+?)\*/g, (_, t) => `<em>${esc(t)}</em>`)
+            .replace(/^#{1,6}\s+(.+)/gm, (_, t) => `<h3>${esc(t)}</h3>`)
+            .replace(/\n/g, "<br>");
+    }
+}
+
+/* ===== Timer ===== */
+class Timer {
+    #bus; #startTime = 0; #questionStart = 0; #accumulated = []; #currentIdx = 0; #running = false; #rafId = null;
+    constructor(bus) { this.#bus = bus; }
+    start() { if (this.#running) return; const now = performance.now(); this.#startTime = now; this.#questionStart = now; this.#running = true; this.#tick(); }
+    stop() { if (!this.#running) return; this.#accrue(this.#currentIdx); this.#running = false; if (this.#rafId) { cancelAnimationFrame(this.#rafId); this.#rafId = null; } }
+    reset() { this.stop(); this.#accumulated = []; this.#startTime = 0; this.#questionStart = 0; this.#currentIdx = 0; }
+    switchQuestion(from, to) { if (!this.#running || from === to) return; this.#accrue(from); this.#currentIdx = to; this.#questionStart = performance.now(); }
+    #accrue(idx) { const elapsed = performance.now() - this.#questionStart; this.#accumulated[idx] = (this.#accumulated[idx] || 0) + elapsed; this.#questionStart = performance.now(); }
+    #tick() { if (!this.#running) return; const now = performance.now(); const qTime = (this.#accumulated[this.#currentIdx] || 0) + (now - this.#questionStart); this.#bus.emit("timer:tick", { questionTime: qTime, totalTime: now - this.#startTime }); this.#rafId = requestAnimationFrame(() => this.#tick()); }
+    getQuestionTime(idx) { if (idx === this.#currentIdx && this.#running) return (this.#accumulated[idx] || 0) + (performance.now() - this.#questionStart); return this.#accumulated[idx] || 0; }
+    getTotalTime() { return this.#running ? performance.now() - this.#startTime : 0; }
+}
+
+/* ===== Storage ===== */
+const DEFAULTS = Object.freeze({ autoNext: true, autoDelay: 0.5, showHistory: true, hideMastered: false });
+class StorageAdapter {
+    /* Storage write failures (private mode, quota) are surfaced via onPersistError
+       so the UI can notify the user — never silently swallow (Nielsen error prevention). */
+    static onPersistError = null;
+    static #g(k, fb) { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : fb; } catch { return fb; } }
+    static #s(k, v) {
+        try { localStorage.setItem(k, JSON.stringify(v)); }
+        catch (e) { if (typeof this.onPersistError === "function") this.onPersistError(k, e); }
+    }
+    static getHistory() { try { const raw = localStorage.getItem("quiz_history"); return raw ? JSON.parse(raw).filter(e => e?.date && typeof e.score === "number").slice(0, 10) : []; } catch { return []; } }
+    static saveHistory(h) { this.#s("quiz_history", h.slice(0, 10)); }
+    static getSettings() { return { ...DEFAULTS, ...this.#g("quiz_settings", DEFAULTS) }; }
+    static saveSettings(s) { this.#s("quiz_settings", s); }
+    static getTheme() { try { return localStorage.getItem("quiz_theme"); } catch { return null; } }
+    static saveTheme(t) { try { localStorage.setItem("quiz_theme", t); } catch (e) { if (typeof this.onPersistError === "function") this.onPersistError("quiz_theme", e); } }
+    static getMastered() { try { const raw = localStorage.getItem("quiz_mastered"); return raw ? JSON.parse(raw) : []; } catch { return []; } }
+    static saveMastered(m) { this.#s("quiz_mastered", m); }
+    static toggleMastered(text) { const list = this.getMastered(); const h = hashStr(text); const idx = list.indexOf(h); idx > -1 ? list.splice(idx, 1) : list.push(h); this.saveMastered(list); return idx === -1; }
+    static isMastered(text) { return this.getMastered().includes(hashStr(text)); }
+}
+
+/* ===== Question Parser ===== */
+class QuestionParser {
+    errors = [];
+    parseMarkdown(text, fileName = "") {
+        const questions = []; let section = null, cur = null;
+        const detectType = s => { s = s.toLowerCase(); if (s.includes("单选") || s.includes("a1") || s.includes("a2")) return "single"; if (s.includes("多选") || s.includes("x1") || s.includes("x2")) return "multiple"; if (s.includes("判断")) return "judgment"; return null; };
+        const commit = () => { if (!cur) return; if (cur.options.length && cur.answer) { cur.type ??= cur.answer.length > 1 ? "multiple" : section ?? "single"; questions.push(cur); } else if (!cur.answer) { this.errors.push({ file: fileName, line: cur.text.slice(0, 30), reason: "缺少答案" }); } cur = null; };
+        const RE = { heading: /^#+\s*(?:[一二三四五六七八九十]+、\s*)?(单选题|多选题|判断题|A[12]型题|X[12]型题)/i, secBreak: /^#+\s+[一二三四五六七八九十]+、/, qStart: /^(?:### \d+[.．]\s*|\[Q\]\s*)(.*)/, optBr: /^\[([A-E])\]\s*(.*)/, optDot: /^([A-E])[.．、]\s*(.*)/, answer: /^(?:\[T\]|\*\*答案[：:]\s*\*\*)\s*(.*)/, explain: /^\*\*解析[：:]\s*\*\*\s*(.*)/ };
+        for (const raw of text.split(/\r?\n/)) {
+            const line = raw.trim(); if (!line) continue; let m;
+            if      (m = line.match(RE.heading))  { commit(); section = detectType(m[1]) ?? section; }
+            else if (RE.secBreak.test(line))      { commit(); }
+            else if (m = line.match(RE.qStart))   { commit(); cur = { type: section, text: m[1].trim(), options: [], answer: "", explanation: "" }; }
+            else if (cur && (m = line.match(RE.optBr)))   { cur.options.push({ key: m[1], text: m[2].trim() }); }
+            else if (cur && (m = line.match(RE.optDot)))  { cur.options.push({ key: m[1], text: m[2].trim() }); }
+            else if (cur && (m = line.match(RE.answer)))  { cur.answer = m[1].trim(); cur.type ??= cur.answer.length > 1 ? "multiple" : "single"; }
+            else if (cur && (m = line.match(RE.explain))) { cur.explanation = m[1].trim(); }
+        }
+        commit(); return questions;
+    }
+    async loadFiles(files) { this.errors = []; const all = []; for (const file of files) { try { const text = await file.text(); const qs = this.parseMarkdown(text, file.name); if (!qs.length) this.errors.push({ file: file.name, error: "无有效题目" }); all.push(...qs); } catch (e) { this.errors.push({ file: file.name, error: e.message }); } } return { questions: all, errors: this.errors }; }
+}
+
+/* ===== Quiz State ===== */
+class QuizState {
+    #questions; #map = new Map();
+    constructor(qs) { this.#questions = qs; qs.forEach((_, i) => this.#map.set(i, { selections: [], submitted: false, marked: false })); }
+    get(i) { return this.#map.get(i); }
+    select(i, key, multi = false) { const s = this.get(i); if (!multi) s.selections = [key]; else { const p = s.selections.indexOf(key); p > -1 ? s.selections.splice(p, 1) : s.selections.push(key); } }
+    submitMulti(i) { this.get(i).submitted = true; }
+    toggleMark(i) { this.get(i).marked = !this.get(i).marked; }
+    isAnswered(i) { const s = this.get(i), q = this.#questions[i]; return q.type === "multiple" ? s.submitted && s.selections.length > 0 : s.selections.length > 0; }
+    isErrorAnswered(i) { return this.isAnswered(i) && !this.isCorrect(i); }
+    isCorrect(i) { const q = this.#questions[i], s = this.get(i); if (!this.isAnswered(i)) return false; if (q.type !== "multiple") return s.selections[0] === q.answer; return [...s.selections].sort().join("") === [...q.answer.replace(/\s/g, "")].sort().join(""); }
+    reset() { this.#questions.forEach((_, i) => this.#map.set(i, { selections: [], submitted: false, marked: false })); }
+}
+
+/* ===== Components ===== */
+
+class OptionRenderer {
+    #container; #bus;
+    constructor(container, bus) { this.#container = container; this.#bus = bus; bus.on("question:render", ({ question, state }) => this.#render(question, state)); bus.on("feedback:show", ({ question, state }) => this.#applyFeedback(question, state)); bus.on("feedback:hide", () => this.#clearFeedback()); }
+    #render(q, state) {
+        let html = `<div class="question-title">${esc(q.text)}${q.type === "multiple" ? ' <small>(多选)</small>' : q.type === "judgment" ? ' <small>(判断)</small>' : ""}</div><div class="options">`;
+        q.options.forEach(opt => { const sel = state.selections.includes(opt.key); const dis = q.type === "multiple" && state.submitted ? " disabled" : ""; html += `<div class="option${sel ? " selected" : ""}${dis}" data-key="${esc(opt.key)}" role="button" tabindex="0" aria-pressed="${sel}"><span>${esc(opt.key)}. ${esc(opt.text)}</span></div>`; });
+        html += "</div>";
+        if (q.type === "multiple" && !state.submitted) html += `<div class="multi-submit-bar"><button id="multiSubmitBtn" class="btn btn-sm" ${state.selections.length ? "" : "disabled"} aria-label="提交多选题答案">提交答案</button></div>`;
+        this.#container.innerHTML = html;
+        this.#container.querySelectorAll(".option:not(.disabled)").forEach(el => { el.addEventListener("click", () => this.#bus.emit("option:clicked", { key: el.dataset.key, isMulti: q.type === "multiple" })); el.addEventListener("keydown", e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); el.click(); } }); });
+        const mb = this.#container.querySelector("#multiSubmitBtn"); if (mb) mb.addEventListener("click", () => this.#bus.emit("multi:submit"));
+    }
+    #applyFeedback(q, state) { this.#container.querySelectorAll(".option").forEach(el => { el.classList.remove("correct", "incorrect"); if (q.answer.includes(el.dataset.key)) el.classList.add("correct"); else if (state.selections.includes(el.dataset.key)) el.classList.add("incorrect"); el.classList.add("disabled"); }); }
+    #clearFeedback() { this.#container.querySelectorAll(".option").forEach(el => el.classList.remove("correct", "incorrect", "disabled")); }
+}
+
+class FeedbackPanel {
+    #container; #bus;
+    constructor(container, bus) { this.#container = container; this.#bus = bus; bus.on("feedback:show", ({ question, state, correct }) => this.show(question, state, correct)); bus.on("feedback:hide", () => this.hide()); }
+    show(q, state, correct) {
+        const icon = correct
+            ? '<svg class="icon-sm" aria-hidden="true"><use href="#icon-check"/></svg>'
+            : '<svg class="icon-sm" aria-hidden="true"><use href="#icon-cross"/></svg>';
+        let html = `<div class="answer-feedback ${correct ? "correct" : "incorrect"}"><div class="answer-feedback-header">${icon} <span>${correct ? "正确" : "错误"}</span></div>`;
+        if (!correct) { const us = state.selections.join(", ") || "未作答"; html += `<div class="answer-feedback-content"><div>您的答案: ${esc(us)}</div><div>正确答案: ${esc(q.answer)}</div>${q.explanation ? `<div class="explanation-content">${MarkdownParser.parse(q.explanation)}</div>` : ""}</div>`; }
+        html += "</div>";
+        this.#container.innerHTML = html;
+        this.#container.classList.remove("hidden");
+    }
+    hide() { this.#container.classList.add("hidden"); this.#container.innerHTML = ""; }
+}
+
+class NavigationBar {
+    #container; #bus; #btns = [];
+    constructor(container, bus) { this.#container = container; this.#bus = bus; bus.on("nav:build", ({ total, quizState, masteredSet }) => this.#build(total, quizState, masteredSet)); bus.on("nav:updateStyles", ({ currentIdx, quizState, mode, masteredSet }) => this.#updateStyles(currentIdx, quizState, mode, masteredSet)); }
+    #build(total, quizState, masteredSet = new Set()) {
+        this.#container.replaceChildren();
+        this.#btns = Array.from({ length: total }, (_, i) => {
+            const btn = document.createElement("button");
+            btn.className = "question-nav-btn"; btn.type = "button"; btn.textContent = i + 1;
+            btn.setAttribute("aria-label", `题目 ${i + 1}`);
+            if (masteredSet.has(i)) btn.classList.add("mastered");
+            btn.addEventListener("click", () => { this.#bus.emit("nav:clicked", i); this.#closeOverlay(); });
+            this.#container.appendChild(btn); return btn;
+        });
+        this.#updateStyles(0, quizState, "practice", masteredSet);
+    }
+    #closeOverlay() {
+        const overlay = document.getElementById("navOverlay");
+        if (overlay && typeof overlay.close === "function" && overlay.open) overlay.close();
+    }
+    #updateStyles(currentIdx, quizState, mode, masteredSet = new Set()) {
+        this.#btns.forEach((btn, i) => {
+            btn.className = "question-nav-btn";
+            btn.classList.toggle("current", i === currentIdx);
+            btn.setAttribute("aria-current", i === currentIdx ? "true" : "false");
+            if (quizState.isAnswered(i)) btn.classList.add(quizState.isErrorAnswered(i) && mode !== "exam" ? "error-answered" : "answered");
+            if (quizState.get(i)?.marked) btn.classList.add("marked");
+            if (masteredSet.has(i)) btn.classList.add("mastered");
+        });
+    }
+}
+
+class ProgressBarComponent {
+    #el; constructor(el, bus) { this.#el = el; bus.on("progress:update", ({ answered, total }) => { const pct = total > 0 ? (answered / total) * 100 : 0; this.#el.style.width = `${pct}%`; const bar = this.#el.closest(".progress"); if (bar) { bar.setAttribute("aria-valuenow", String(Math.round(pct))); bar.setAttribute("aria-valuetext", `${answered}/${total} 题已完成`); } }); }
+}
+
+class StatsPanel {
+    #els; constructor(els, bus) { this.#els = els; bus.on("stats:update", ({ correct, incorrect, unanswered }) => { if (this.#els.correct) this.#els.correct.textContent = correct; if (this.#els.incorrect) this.#els.incorrect.textContent = incorrect; if (this.#els.unanswered) this.#els.unanswered.textContent = unanswered; }); }
+}
+
+class TimerDisplay {
+    #els; constructor(els, bus) { this.#els = els; bus.on("timer:tick", ({ questionTime, totalTime }) => { if (this.#els.cur) this.#els.cur.textContent = fmtTime(questionTime); if (this.#els.total) this.#els.total.textContent = fmtTime(totalTime); }); }
+}
+
+class ResultPanel {
+    #els; constructor(els, bus) { this.#els = els; bus.on("result:show", data => this.show(data)); }
+    show({ correct, incorrect, unanswered, total, totalTime, mode }) { const avg = (total - unanswered) > 0 ? totalTime / (total - unanswered) : 0; const pct = total > 0 ? (correct / total) * 100 : 0; if (this.#els.scoreValue) this.#els.scoreValue.textContent = correct; if (this.#els.totalScore) this.#els.totalScore.textContent = total; if (this.#els.resCorrect) this.#els.resCorrect.textContent = correct; if (this.#els.resIncorrect) this.#els.resIncorrect.textContent = incorrect; if (this.#els.resUnanswered) this.#els.resUnanswered.textContent = unanswered; if (this.#els.resultTotalTime) this.#els.resultTotalTime.textContent = fmtTime(totalTime); if (this.#els.avgTime) this.#els.avgTime.textContent = fmtTime(avg); if (this.#els.resultMsg) this.#els.resultMsg.textContent = pct >= 90 ? "优秀！" : pct >= 70 ? "良好" : "继续加油"; }
+}
+
+class HistoryPanel {
+    #container; #bus; #history;
+    constructor(container, bus) { this.#container = container; this.#bus = bus; this.#history = StorageAdapter.getHistory(); bus.on("history:updated", h => { this.#history = h; this.render(); }); this.render(); }
+    render() {
+        this.#container.replaceChildren();
+        this.#history.forEach(e => {
+            const div = document.createElement("div");
+            div.className = "history-item"; div.setAttribute("role", "listitem");
+            const time = document.createElement("time");
+            if (e.isoDate) time.setAttribute("datetime", e.isoDate);
+            time.textContent = e.date;
+            div.append(time, ` | ${e.mode === "exam" ? "考试" : "刷题"} | ${e.score}/${e.total} | ${fmtTime(e.totalTime || 0)} | ${e.percentage ?? 0}%`);
+            this.#container.appendChild(div);
+        });
+    }
+}
+
+class ThemeManager {
+    #buttons; #bus;
+    constructor(buttons, bus) { this.#buttons = buttons; this.#bus = bus; this.#init(); }
+    #init() {
+        const saved = StorageAdapter.getTheme() || (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+        this.setTheme(saved, false);
+        const arr = Array.from(this.#buttons);
+        this.#buttons.forEach(btn => {
+            btn.addEventListener("click", () => this.setTheme(btn.dataset.themeValue));
+            btn.addEventListener("keydown", e => {
+                const idx = arr.indexOf(btn);
+                let nextIdx = null;
+                if (e.key === "ArrowRight" || e.key === "ArrowDown") nextIdx = (idx + 1) % arr.length;
+                else if (e.key === "ArrowLeft" || e.key === "ArrowUp") nextIdx = (idx - 1 + arr.length) % arr.length;
+                if (nextIdx !== null) { e.preventDefault(); arr[nextIdx].focus(); this.setTheme(arr[nextIdx].dataset.themeValue); }
+            });
+        });
+        matchMedia("(prefers-color-scheme: dark)").addEventListener("change", e => { if (!StorageAdapter.getTheme()) this.setTheme(e.matches ? "dark" : "light"); });
+    }
+    setTheme(theme, emit = true) {
+        document.documentElement.setAttribute("data-theme", theme);
+        StorageAdapter.saveTheme(theme);
+        this.#buttons.forEach(btn => {
+            const isActive = btn.dataset.themeValue === theme;
+            btn.classList.toggle("selected", isActive);
+            btn.setAttribute("aria-checked", String(isActive));
+            btn.tabIndex = isActive ? 0 : -1; // roving tabindex for ARIA radiogroup
+        });
+        if (emit) this.#bus.emit("theme:changed", theme);
+    }
+}
+
+class ToastComponent {
+    #el; #tid = null;
+    constructor(el, bus) { this.#el = el; bus.on("toast:show", ({ message, isError, duration }) => this.show(message, isError, duration)); }
+    show(msg, isError = false, dur = 3000) { if (this.#tid) clearTimeout(this.#tid); this.#el.textContent = msg; this.#el.className = `snackbar show${isError ? " error" : ""}`; this.#tid = setTimeout(() => { this.#el.classList.remove("show"); this.#tid = null; }, dur); }
+}
+
+/* ===== Quiz Controller ===== */
+class QuizController {
+    #bus = new EventBus(); #quizState = null; #currentIdx = 0; #mode = "practice";
+    #questions = []; #masteredSet = new Set(); #settings; #history;
+    #justAnswered = false; #autoNextId = null;
+    #parser = new QuestionParser(); #timer; #els;
+
+    constructor() {
+        this.#settings = StorageAdapter.getSettings();
+        this.#history = StorageAdapter.getHistory();
+        this.#timer = new Timer(this.#bus);
+        this.#collectDOMRefs();
+        this.#initComponents();
+        this.#bindEvents();
+        this.#applySettings();
+        new ThemeManager(this.#els.themeOptions, this.#bus);
+        // Surface localStorage persistence failures (Nielsen error prevention).
+        StorageAdapter.onPersistError = (k, _e) => {
+            this.#bus.emit("toast:show", { message: `设置未能持久化（存储不可用或已满）`, isError: true });
+            console.warn(`[Storage] persist failed for "${k}"`);
+        };
+    }
+
+    #collectDOMRefs() {
+        const $ = id => document.getElementById(id);
+        this.#els = {
+            menuPanel: $("menuPanel"),
+            themeOptions: document.querySelectorAll(".theme-option"),
+            fileInput: $("fileInput"), fileDropZone: $("fileDropZone"),
+            fileList: $("fileList"), fileStatus: $("fileStatus"),
+            modeSection: $("modeSection"), modeCards: document.querySelectorAll(".mode-card"),
+            startBtn: $("startQuizBtn"),
+            autoNextToggle: $("autoNextToggle"), autoNextDelay: $("autoNextDelay"),
+            showHistoryToggle: $("showHistoryToggle"), hideMasteredToggle: $("hideMasteredToggle"),
+            quizSection: $("quizSection"), resultSection: $("resultSection"),
+            questionContainer: $("questionContainer"), feedback: $("answerFeedback"),
+            prevBtn: $("prevBtn"), nextBtn: $("nextBtn"), markBtn: $("markBtn"),
+            masterBtn: $("masterBtn"),
+            restartBtn: $("restartBtn"), reviewBtn: $("reviewBtn"),
+            wrongContainer: $("wrongContainer"), exportBtn: $("exportBtn"),
+            exportPanel: $("exportPanel"), exportLinks: $("exportLinks"),
+            copyExportBtn: $("copyExportBtn"), closeExportBtn: $("closeExportBtn"),
+            historyPanel: $("historyPanel"), historyList: $("historyList"),
+            snackbar: $("snackbar"),
+            curTime: $("curTime"), totalTime: $("totalTime"), progressBar: $("progressBar"),
+            currentQ: $("currentQ"), totalQ: $("totalQ"),
+            correctCount: $("correctCount"), incorrectCount: $("incorrectCount"), unansweredCount: $("unansweredCount"),
+            scoreValue: $("scoreValue"), totalScore: $("totalScore"),
+            resultTotalTime: $("resultTotalTime"), avgTime: $("avgTime"),
+            resCorrect: $("resCorrect"), resIncorrect: $("resIncorrect"), resUnanswered: $("resUnanswered"),
+            resultMsg: $("resultMsg"),
+            touchSwipeZone: $("touchSwipeZone"), questionSlideWrap: $("questionSlideWrap"),
+            swipeIndicatorLeft: document.querySelector(".swipe-indicator.left"),
+            swipeIndicatorRight: document.querySelector(".swipe-indicator.right"),
+            markBadge: $("markBadge"),
+            navFab: $("navFab"), navOverlay: $("navOverlay"),
+            navOverlayClose: $("navOverlayClose"), navSubmitBtn: $("navSubmitBtn"),
+            questionNav: $("questionNav"),
+        };
+    }
+
+    #initComponents() {
+        new OptionRenderer(this.#els.questionContainer, this.#bus);
+        new FeedbackPanel(this.#els.feedback, this.#bus);
+        new NavigationBar(this.#els.questionNav, this.#bus);
+        new ProgressBarComponent(this.#els.progressBar, this.#bus);
+        new StatsPanel({ correct: this.#els.correctCount, incorrect: this.#els.incorrectCount, unanswered: this.#els.unansweredCount }, this.#bus);
+        new TimerDisplay({ cur: this.#els.curTime, total: this.#els.totalTime }, this.#bus);
+        new ResultPanel({ scoreValue: this.#els.scoreValue, totalScore: this.#els.totalScore, resCorrect: this.#els.resCorrect, resIncorrect: this.#els.resIncorrect, resUnanswered: this.#els.resUnanswered, resultTotalTime: this.#els.resultTotalTime, avgTime: this.#els.avgTime, resultMsg: this.#els.resultMsg }, this.#bus);
+        new HistoryPanel(this.#els.historyList, this.#bus);
+        new ToastComponent(this.#els.snackbar, this.#bus);
+    }
+
+    #bindEvents() {
+        // File loading is initiated by selection (auto-load) and drag-drop.
+        // The native <label for="fileInput"> handles click activation.
+        this.#els.startBtn.addEventListener("click", () => this.#start());
+        this.#els.fileInput.addEventListener("change", () => this.#onFileSelected());
+        this.#els.prevBtn.addEventListener("click", () => this.#navigate(-1));
+        this.#els.nextBtn.addEventListener("click", () => this.#navigate(1));
+        this.#els.markBtn.addEventListener("click", () => this.#toggleMark());
+        this.#els.masterBtn?.addEventListener("click", () => this.#toggleMaster());
+        this.#els.navSubmitBtn?.addEventListener("click", () => this.#finish());
+        this.#els.restartBtn.addEventListener("click", () => this.#restart());
+        this.#els.reviewBtn.addEventListener("click", () => this.#showWrong());
+        this.#els.exportBtn.addEventListener("click", () => this.#exportWrong());
+        this.#els.copyExportBtn.addEventListener("click", () => this.#copyExport());
+        this.#els.closeExportBtn.addEventListener("click", () => this.#els.exportPanel.classList.add("hidden"));
+
+        this.#els.autoNextToggle.addEventListener("change", e => { this.#settings.autoNext = e.target.checked; StorageAdapter.saveSettings(this.#settings); });
+        this.#els.autoNextDelay.addEventListener("change", e => { this.#settings.autoDelay = +e.target.value; StorageAdapter.saveSettings(this.#settings); });
+        this.#els.showHistoryToggle.addEventListener("change", e => { this.#settings.showHistory = e.target.checked; this.#els.historyPanel.style.display = e.target.checked ? "" : "none"; StorageAdapter.saveSettings(this.#settings); });
+        this.#els.hideMasteredToggle?.addEventListener("change", e => { this.#settings.hideMastered = e.target.checked; StorageAdapter.saveSettings(this.#settings); this.#bus.emit("toast:show", { message: e.target.checked ? "已启用隐藏已掌握题目，下次加载生效" : "已禁用隐藏已掌握题目" }); });
+
+        this.#initModeCards(); // radiogroup pattern: roving tabindex + arrow keys + Enter/Space
+        document.addEventListener("keydown", e => this.#handleKey(e));
+
+        this.#bus.on("option:clicked", ({ key, isMulti }) => { if (!this.#quizState) return; this.#quizState.select(this.#currentIdx, key, isMulti); this.#justAnswered = true; this.#refresh(); });
+        this.#bus.on("multi:submit", () => { if (!this.#quizState) return; this.#quizState.submitMulti(this.#currentIdx); this.#justAnswered = true; this.#refresh(); });
+        this.#bus.on("nav:clicked", idx => { this.#justAnswered = false; this.#showQuestion(idx); });
+
+        // Floating nav — <dialog> provides native ESC + focus trap; we still handle
+        // backdrop click & explicit close buttons.
+        this.#els.navFab?.addEventListener("click", () => this.#toggleNavOverlay());
+        this.#els.navOverlayClose?.addEventListener("click", () => this.#closeNavOverlay());
+        this.#els.navOverlay?.addEventListener("click", e => { if (e.target === this.#els.navOverlay) this.#closeNavOverlay(); });
+        this.#els.navOverlay?.addEventListener("close", () => { /* state already handled by close() */ });
+
+        this.#initFileDrop();
+        this.#initTouchSwipe();
+    }
+
+    /* ARIA radiogroup pattern for mode selection: Enter/Space activates, arrow
+       keys move focus + selection, roving tabindex keeps a single tab stop. */
+    #initModeCards() {
+        const arr = Array.from(this.#els.modeCards);
+        arr.forEach(card => {
+            card.addEventListener("click", () => this.#selectMode(card.dataset.mode));
+            card.addEventListener("keydown", e => {
+                if (e.key === "Enter" || e.key === " ") { e.preventDefault(); this.#selectMode(card.dataset.mode); return; }
+                const idx = arr.indexOf(card);
+                let nextIdx = null;
+                if (e.key === "ArrowRight" || e.key === "ArrowDown") nextIdx = (idx + 1) % arr.length;
+                else if (e.key === "ArrowLeft" || e.key === "ArrowUp") nextIdx = (idx - 1 + arr.length) % arr.length;
+                if (nextIdx !== null) { e.preventDefault(); arr[nextIdx].focus(); this.#selectMode(arr[nextIdx].dataset.mode); }
+            });
+        });
+    }
+
+    /* Skeleton screen — shown in the question area during async parse/reload
+       (Nielsen “system state visible”, reduces perceived latency). */
+    #showSkeleton() {
+        this.#els.questionContainer.innerHTML =
+            '<div class="skeleton skeleton-title"></div>' +
+            '<div class="skeleton skeleton-option"></div>'.repeat(3);
+        this.#els.feedback.classList.add("hidden");
+        this.#els.feedback.innerHTML = "";
+    }
+
+    #toggleNavOverlay() {
+        const ov = this.#els.navOverlay;
+        if (!(ov && typeof ov.showModal === "function")) return;
+        if (ov.open) ov.close();
+        else {
+            try {
+                ov.showModal();
+                // Explicitly focus the close button so AT users land on an actionable element.
+                this.#els.navOverlayClose?.focus();
+            } catch (e) {
+                console.warn('[Nav] showModal failed:', e);
+                this.#bus.emit("toast:show", { message: "无法打开导航窗口", isError: true });
+            }
+        }
+    }
+
+    #closeNavOverlay() {
+        const ov = this.#els.navOverlay;
+        if (ov && typeof ov.close === "function" && ov.open) {
+            ov.close();
+            this.#els.navFab?.focus(); // return focus to trigger (Shneiderman control)
+        }
+    }
+
+    #onFileSelected(files = null) {
+        const fl = files ? Array.from(files) : Array.from(this.#els.fileInput.files || []);
+        if (!fl.length) { this.#els.fileList.innerHTML = ""; return; }
+        const ul = document.createElement("ul"); // <ul> has implicit role=list
+        fl.forEach(f => { const li = document.createElement("li"); li.textContent = f.name; ul.appendChild(li); });
+        this.#els.fileList.replaceChildren(ul);
+        // Auto-load (progressive: no manual “load” step → fewer decisions). Catch
+        // unexpected rejections and surface them rather than failing silently.
+        this.#load(fl).catch(err => this.#bus.emit("toast:show", { message: `加载失败：${err?.message || err}`, isError: true }));
+    }
+
+    #initFileDrop() {
+        const zone = this.#els.fileDropZone; if (!zone) return;
+        const stop = e => { e.preventDefault(); e.stopPropagation(); };
+        zone.addEventListener("dragenter", e => { stop(e); zone.classList.add("dragover"); });
+        zone.addEventListener("dragover",  e => { stop(e); zone.classList.add("dragover"); });
+        zone.addEventListener("dragleave", e => { stop(e); if (e.target === zone) zone.classList.remove("dragover"); });
+        zone.addEventListener("drop", e => {
+            stop(e); zone.classList.remove("dragover");
+            const dt = e.dataTransfer;
+            if (dt && dt.files && dt.files.length) {
+                // `input.files = dt.files` isn’t supported in Safari; fall back to
+                // loading directly from the DataTransfer list.
+                try { this.#els.fileInput.files = dt.files; this.#onFileSelected(); }
+                catch { this.#onFileSelected(dt.files); }
+            }
+        });
+    }
+
+    #applySettings() {
+        this.#els.autoNextToggle.checked = this.#settings.autoNext;
+        this.#els.autoNextDelay.value = this.#settings.autoDelay;
+        this.#els.showHistoryToggle.checked = this.#settings.showHistory;
+        this.#els.hideMasteredToggle.checked = this.#settings.hideMastered;
+        this.#els.historyPanel.style.display = this.#settings.showHistory ? "" : "none";
+    }
+
+    async #load(files = null) {
+        this.#timer.stop(); this.#timer.reset();
+        const fl = files ? Array.from(files) : Array.from(this.#els.fileInput.files || []);
+        if (!fl.length) { this.#bus.emit("toast:show", { message: "请选择文件", isError: true }); return; }
+        // System state visible (Nielsen): mark busy during async parse + skeleton.
+        this.#els.fileDropZone?.setAttribute("aria-busy", "true");
+        this.#els.fileStatus.setAttribute("aria-busy", "true");
+        this.#els.fileStatus.innerText = "正在解析题库…";
+        // Show skeleton if quiz area is already visible (reload scenario).
+        if (!this.#els.quizSection.classList.contains("hidden")) this.#showSkeleton();
+        try {
+            const { questions, errors } = await this.#parser.loadFiles(fl);
+            if (errors.length) this.#els.fileStatus.innerText = `解析错误: ${errors.map(e => `${e.file}: ${e.error || e.reason}`).join("; ")}`;
+            if (!questions.length) { this.#bus.emit("toast:show", { message: "无有效题目", isError: true }); return; }
+            let filtered = questions;
+            if (this.#settings.hideMastered) {
+                filtered = questions.filter(q => !StorageAdapter.isMastered(q.text));
+                const removed = questions.length - filtered.length;
+                if (removed) this.#els.fileStatus.innerText = `共导入 ${questions.length} 题，已过滤 ${removed} 道已掌握题目`;
+            }
+            this.#questions = filtered;
+            this.#quizState = new QuizState(filtered);
+            this.#currentIdx = 0;
+            this.#computeMasteredSet();
+            if (!this.#settings.hideMastered) this.#els.fileStatus.innerText = `成功加载 ${filtered.length} 题`;
+            this.#els.modeSection.classList.remove("hidden");
+            this.#selectMode("practice");
+        } finally {
+            this.#els.fileDropZone?.setAttribute("aria-busy", "false");
+            this.#els.fileStatus.setAttribute("aria-busy", "false");
+        }
+    }
+
+    #computeMasteredSet() {
+        this.#masteredSet = new Set();
+        this.#questions.forEach((q, i) => { if (StorageAdapter.isMastered(q.text)) this.#masteredSet.add(i); });
+    }
+
+    #toggleMaster() {
+        if (!this.#quizState) return;
+        const q = this.#questions[this.#currentIdx];
+        const nowMastered = StorageAdapter.toggleMastered(q.text);
+        if (nowMastered) this.#masteredSet.add(this.#currentIdx);
+        else this.#masteredSet.delete(this.#currentIdx);
+        const masterText = this.#els.masterBtn?.querySelector(".btn-text");
+        if (masterText) masterText.textContent = nowMastered ? "已掌握 ✓" : "已掌握";
+        this.#els.masterBtn.classList.toggle("btn-active", nowMastered);
+        this.#els.masterBtn.classList.toggle("btn-ghost", !nowMastered);
+        this.#els.masterBtn.setAttribute("aria-pressed", String(nowMastered));
+        this.#bus.emit("nav:updateStyles", { currentIdx: this.#currentIdx, quizState: this.#quizState, mode: this.#mode, masteredSet: this.#masteredSet });
+        this.#bus.emit("toast:show", { message: nowMastered ? "已标记为掌握，下次加载可隐藏" : "已取消掌握标记" });
+    }
+
+    #selectMode(mode) {
+        this.#mode = mode;
+        const arr = Array.from(this.#els.modeCards);
+        arr.forEach(c => {
+            const isActive = c.dataset.mode === mode;
+            c.classList.toggle("selected", isActive);
+            c.setAttribute("aria-checked", String(isActive));
+            c.tabIndex = isActive ? 0 : -1;
+        });
+    }
+
+    #start() {
+        if (!this.#quizState) return;
+        this.#els.modeSection.classList.add("hidden");
+        this.#els.menuPanel.open = false; // <details> native
+        this.#els.quizSection.classList.remove("hidden");
+        this.#els.navFab?.classList.remove("hidden");
+        this.#els.resultSection.classList.add("hidden");
+        this.#els.totalQ.textContent = this.#questions.length;
+        this.#computeMasteredSet();
+        this.#timer.reset(); this.#timer.start();
+        this.#bus.emit("nav:build", { total: this.#questions.length, quizState: this.#quizState, masteredSet: this.#masteredSet });
+        this.#showQuestion(0);
+    }
+
+    #showQuestion(idx) {
+        if (!this.#quizState || idx < 0 || idx >= this.#questions.length) return;
+        this.#timer.switchQuestion(this.#currentIdx, idx);
+        this.#currentIdx = idx;
+        const q = this.#questions[idx], s = this.#quizState.get(idx);
+        this.#els.currentQ.textContent = idx + 1;
+        const markText = this.#els.markBtn.querySelector(".btn-text");
+        if (markText) markText.textContent = s.marked ? "已标记" : "标记";
+        this.#els.markBtn.setAttribute("aria-label", s.marked ? "取消标记当前题目" : "标记当前题目");
+        this.#els.markBtn.setAttribute("aria-pressed", String(s.marked));
+        this.#els.markBtn.classList.toggle("btn-active", s.marked);
+        this.#els.markBtn.classList.toggle("btn-ghost", !s.marked);
+        this.#els.markBadge.classList.toggle("hidden", !s.marked);
+        this.#els.prevBtn.disabled = idx === 0;
+        this.#els.nextBtn.disabled = idx === this.#questions.length - 1;
+        const isMastered = this.#masteredSet.has(idx);
+        if (this.#els.masterBtn) {
+            const masterText = this.#els.masterBtn.querySelector(".btn-text");
+            if (masterText) masterText.textContent = "已掌握";
+            this.#els.masterBtn.classList.toggle("btn-active", isMastered);
+            this.#els.masterBtn.classList.toggle("btn-ghost", !isMastered);
+            this.#els.masterBtn.setAttribute("aria-pressed", String(isMastered));
+        }
+
+        this.#bus.emit("question:render", { question: q, state: s });
+        if (this.#mode === "practice" && this.#quizState.isAnswered(idx)) {
+            this.#bus.emit("feedback:show", { question: q, state: s, correct: this.#quizState.isCorrect(idx) });
+        } else { this.#bus.emit("feedback:hide"); }
+        this.#bus.emit("nav:updateStyles", { currentIdx: idx, quizState: this.#quizState, mode: this.#mode, masteredSet: this.#masteredSet });
+        this.#updateStats();
+        this.#updateProgress();
+
+        const wasJust = this.#justAnswered;
+        this.#justAnswered = false;
+        if (this.#autoNextId) { clearTimeout(this.#autoNextId); this.#autoNextId = null; }
+        if (wasJust && this.#settings.autoNext && this.#quizState.isAnswered(idx) && idx < this.#questions.length - 1) {
+            this.#autoNextId = setTimeout(() => { this.#navigate(1); this.#autoNextId = null; }, this.#settings.autoDelay * 1000);
+        }
+    }
+
+    #refresh() { this.#showQuestion(this.#currentIdx); }
+
+    #navigate(dir) { this.#justAnswered = false; if (this.#autoNextId) { clearTimeout(this.#autoNextId); this.#autoNextId = null; } this.#showQuestion(this.#currentIdx + dir); }
+
+    #toggleMark() {
+        if (!this.#quizState) return;
+        this.#quizState.toggleMark(this.#currentIdx);
+        this.#bus.emit("nav:updateStyles", { currentIdx: this.#currentIdx, quizState: this.#quizState, mode: this.#mode, masteredSet: this.#masteredSet });
+        const marked = this.#quizState.get(this.#currentIdx).marked;
+        const markText = this.#els.markBtn.querySelector(".btn-text");
+        if (markText) markText.textContent = marked ? "已标记" : "标记";
+        this.#els.markBtn.setAttribute("aria-label", marked ? "取消标记当前题目" : "标记当前题目");
+        this.#els.markBtn.setAttribute("aria-pressed", String(marked));
+        this.#els.markBtn.classList.toggle("btn-active", marked);
+        this.#els.markBtn.classList.toggle("btn-ghost", !marked);
+        this.#els.markBadge.classList.toggle("hidden", !marked);
+    }
+
+    #updateStats() {
+        if (!this.#quizState) return;
+        let c = 0, i = 0, u = 0;
+        this.#questions.forEach((_, idx) => { if (!this.#quizState.isAnswered(idx)) u++; else if (this.#quizState.isCorrect(idx)) c++; else i++; });
+        this.#bus.emit("stats:update", { correct: c, incorrect: i, unanswered: u });
+    }
+
+    #updateProgress() { if (!this.#quizState) return; const answered = this.#questions.filter((_, i) => this.#quizState.isAnswered(i)).length; this.#bus.emit("progress:update", { answered, total: this.#questions.length }); }
+
+    #finish() { this.#timer.stop(); if (this.#autoNextId) { clearTimeout(this.#autoNextId); this.#autoNextId = null; } this.#updateStats(); this.#saveHistory(); this.#showResults(); }
+
+    #countStats() { let c = 0, i = 0, u = 0; this.#questions.forEach((_, idx) => { if (!this.#quizState.isAnswered(idx)) u++; else if (this.#quizState.isCorrect(idx)) c++; else i++; }); return { correct: c, incorrect: i, unanswered: u }; }
+
+    #showResults() {
+        if (!this.#quizState) return;
+        this.#els.quizSection.classList.add("hidden");
+        this.#els.navFab?.classList.add("hidden");
+        this.#closeNavOverlay(); // <dialog> close
+        this.#els.resultSection.classList.remove("hidden");
+        const { correct, incorrect, unanswered } = this.#countStats();
+        this.#bus.emit("result:show", { correct, incorrect, unanswered, total: this.#questions.length, totalTime: this.#timer.getTotalTime(), mode: this.#mode });
+        if (this.#mode === "exam") this.#showWrong();
+    }
+
+    #saveHistory() {
+        if (!this.#quizState) return;
+        const now = new Date();
+        const correct = this.#questions.filter((_, i) => this.#quizState.isCorrect(i)).length;
+        this.#history.unshift({ date: now.toLocaleString(), isoDate: now.toISOString(), score: correct, total: this.#questions.length, percentage: Math.round((correct / this.#questions.length) * 100), mode: this.#mode, totalTime: this.#timer.getTotalTime() });
+        if (this.#history.length > 10) this.#history = this.#history.slice(0, 10);
+        StorageAdapter.saveHistory(this.#history);
+        this.#bus.emit("history:updated", this.#history);
+    }
+
+    #restart() {
+        if (!this.#quizState) return;
+        this.#quizState.reset(); this.#currentIdx = 0; this.#justAnswered = false;
+        if (this.#autoNextId) { clearTimeout(this.#autoNextId); this.#autoNextId = null; }
+        this.#timer.reset(); this.#timer.start();
+        this.#els.quizSection.classList.remove("hidden");
+        this.#els.navFab?.classList.remove("hidden");
+        this.#closeNavOverlay();
+        this.#els.resultSection.classList.add("hidden");
+        this.#els.menuPanel.open = true; // <details> open
+        this.#computeMasteredSet();
+        this.#bus.emit("nav:build", { total: this.#questions.length, quizState: this.#quizState, masteredSet: this.#masteredSet });
+        this.#showQuestion(0);
+    }
+
+    #showWrong() {
+        if (!this.#quizState) return;
+        this.#els.wrongContainer.innerHTML = '<div class="wrong-section-title">错题回顾</div>';
+        const wrong = []; this.#questions.forEach((q, i) => { if (!this.#quizState.isCorrect(i)) wrong.push({ q, i }); });
+        if (!wrong.length) { this.#els.wrongContainer.innerHTML += '<div class="wrong-all-correct">✓ 全部正确！</div>'; return; }
+        const totalW = wrong.length;
+        const summary = document.createElement("p"); summary.className = "wrong-summary"; summary.textContent = `共 ${totalW} 道错题，占总题数 ${this.#questions.length} 的 ${Math.round((totalW / this.#questions.length) * 100)}%`;
+        this.#els.wrongContainer.appendChild(summary);
+        wrong.forEach(({ q, i }) => {
+            const s = this.#quizState.get(i);
+            const card = document.createElement("div"); card.className = "wrong-card";
+            const header = document.createElement("div"); header.className = "wrong-card-header"; header.innerHTML = `<span>#${i + 1}</span><span class="badge">错题</span>`; card.appendChild(header);
+            const title = document.createElement("div"); title.className = "wrong-card-title"; title.textContent = q.text; card.appendChild(title);
+            const opts = document.createElement("div"); opts.className = "wrong-card-options"; q.options.forEach(o => { const span = document.createElement("span"); span.className = "wrong-card-option"; if (q.answer.includes(o.key)) span.classList.add("correct-answer"); span.textContent = `${o.key}. ${o.text}`; opts.appendChild(span); }); card.appendChild(opts);
+            const row = document.createElement("div"); row.className = "wrong-card-answer-row"; const us = s.selections.join(", ") || "未作答"; row.innerHTML = `<span>你的答案: <span class="wrong-card-user-ans">${esc(us)}</span></span><span>正确答案: <span class="wrong-card-correct-ans">${esc(q.answer)}</span></span>`; card.appendChild(row);
+            if (q.explanation) { const exp = document.createElement("div"); exp.className = "wrong-card-explanation"; exp.innerHTML = `<strong>解析：</strong>${MarkdownParser.parse(q.explanation)}`; card.appendChild(exp); }
+            this.#els.wrongContainer.appendChild(card);
+        });
+    }
+
+    #exportWrong() {
+        if (!this.#quizState) return; const wrong = []; this.#questions.forEach((q, i) => { if (!this.#quizState.isCorrect(i)) wrong.push({ q, i }); }); if (!wrong.length) { this.#bus.emit("toast:show", { message: "没有错题", isError: true }); return; } this.#els.exportLinks.value = wrong.map(({ q, i }) => `[[题库#${i + 1}. ${esc(q.text).substring(0, 30)}]]`).join("\n"); this.#els.exportPanel.classList.remove("hidden");
+    }
+    async #copyExport() { try { await navigator.clipboard.writeText(this.#els.exportLinks.value); this.#bus.emit("toast:show", { message: "已复制到剪贴板" }); } catch { this.#bus.emit("toast:show", { message: "复制失败，请手动复制", isError: true }); } }
+
+    #handleKey(e) {
+        const tag = document.activeElement?.tagName;
+        if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || document.activeElement?.isContentEditable) return;
+        if (!this.#quizState) return;
+        const q = this.#questions[this.#currentIdx];
+        if (e.key >= "1" && e.key <= "5") { const optIdx = +e.key - 1; if (q.options[optIdx]) { this.#quizState.select(this.#currentIdx, q.options[optIdx].key, q.type === "multiple"); this.#justAnswered = true; this.#refresh(); } }
+        else if (e.key === "ArrowLeft")  { e.preventDefault(); this.#navigate(-1); }
+        else if (e.key === "ArrowRight") { e.preventDefault(); this.#navigate(1); }
+        // m = toggleMark (markBtn), Shift+m = toggleMaster (masterBtn). Fixes the bug
+        // where both m and M previously triggered #toggleMark regardless.
+        else if (e.key === "m" && !e.shiftKey) { e.preventDefault(); this.#toggleMark(); }
+        else if ((e.key === "M" || (e.key === "m" && e.shiftKey))) { e.preventDefault(); this.#toggleMaster(); }
+        else if (e.key === "Enter") { if (q.type === "multiple" && this.#mode === "practice" && !this.#quizState.get(this.#currentIdx).submitted) { this.#quizState.submitMulti(this.#currentIdx); this.#justAnswered = true; this.#refresh(); } else if (this.#currentIdx < this.#questions.length - 1) this.#navigate(1); }
+        else if (e.key === "Escape") { this.#closeNavOverlay(); }
+    }
+
+    #initTouchSwipe() {
+        const zone = this.#els.touchSwipeZone, wrap = this.#els.questionSlideWrap;
+        const li = this.#els.swipeIndicatorLeft, ri = this.#els.swipeIndicatorRight;
+        if (!zone) return;
+        let startX = 0, startY = 0, swiping = false;
+        const THRESHOLD = 60, VRATIO = 1.2;
+        const clear = () => { swiping = false; zone.classList.remove("swiping"); li?.classList.remove("active", "reach"); ri?.classList.remove("active", "reach"); wrap?.classList.remove("sliding-left", "sliding-right"); };
+        zone.addEventListener("touchstart", e => { if (!this.#quizState) return; const t = e.changedTouches[0]; startX = t.clientX; startY = t.clientY; swiping = false; }, { passive: true });
+        zone.addEventListener("touchmove", e => { if (!this.#quizState) return; const t = e.changedTouches[0]; const dx = t.clientX - startX, dy = t.clientY - startY; const ax = Math.abs(dx), ay = Math.abs(dy); if (!swiping && ax > 20 && ax > ay * VRATIO) { swiping = true; zone.classList.add("swiping"); } if (swiping) { e.preventDefault(); if (dx < 0) { wrap?.classList.remove("sliding-right"); wrap?.classList.add("sliding-left"); ri?.classList.add("active"); li?.classList.remove("active", "reach"); if (ax >= THRESHOLD) ri?.classList.add("reach"); } else { wrap?.classList.remove("sliding-left"); wrap?.classList.add("sliding-right"); li?.classList.add("active"); ri?.classList.remove("active", "reach"); if (ax >= THRESHOLD) li?.classList.add("reach"); } } }, { passive: false });
+        zone.addEventListener("touchend", e => { if (!this.#quizState || !swiping) { clear(); return; } const t = e.changedTouches[0]; const ax = Math.abs(t.clientX - startX); if (ax >= THRESHOLD) { if (t.clientX - startX < 0) { if (this.#currentIdx < this.#questions.length - 1) this.#navigate(1); } else { if (this.#currentIdx > 0) this.#navigate(-1); } } clear(); }, { passive: true });
+        zone.addEventListener("touchcancel", clear, { passive: true });
+    }
+}
+
+/* ===== App Entry ===== */
+new QuizController();
+</script>
+</body>
+</html>
