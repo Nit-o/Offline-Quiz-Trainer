@@ -21,7 +21,7 @@ An HTML renderer that reads Markdown files and converts them into a quiz.
 
 ### 适配格式
 
-![示例](doc/示例.md)
+[示例](doc/示例.md)
 
 ## 也许会有帮助的链接
 
@@ -33,6 +33,7 @@ An HTML renderer that reads Markdown files and converts them into a quiz.
 - [业余无线电台操作技术能力验证题库（2025年版）](https://www.crac.org.cn/News/Detail?ID=d11def30d20d4d8fb12e08e7160e607d)
 
   *这是我在假期重新翻出这个网页的主要目的*
+
   [B类题库](doc/B类题库_origin.md)这是我处理过的题库，官网 Pdf 虽然能直接导出文字但会有些因排版导致的回车。
 
 ## 最后的话
@@ -41,4 +42,5 @@ An HTML renderer that reads Markdown files and converts them into a quiz.
 
 ## 最后的最后
 
-有没有大佬教教我怎么把[FSRS](https://github.com/open-spaced-repetition/ts-fsrs/blob/main/README_CN.md)塞进网页里，我丫一穷学生Deepseek都不敢使劲蹬。
+搁置
+- FsrsStore.prune

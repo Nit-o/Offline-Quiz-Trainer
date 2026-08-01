@@ -338,12 +338,13 @@
             .menu-panel .card-content {
                 display: grid;
                 grid-template-columns: 1fr 1fr;
-                grid-template-areas: "file file" "theme settings";
+                grid-template-areas: "file file" "theme settings" "fsrs fsrs";
                 gap: var(--sp-6) var(--sp-8);
             }
             .menu-panel .menu-group--file     { grid-area: file; }
             .menu-panel .menu-group--theme    { grid-area: theme; }
             .menu-panel .menu-group--settings { grid-area: settings; }
+            .menu-panel .menu-group--fsrs     { grid-area: fsrs; }
         }
         .menu-panel .menu-group-title {
             font-family: var(--font-sans);
@@ -369,8 +370,54 @@
                 &:focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; }
             }
             & input[type="checkbox"] { width: 18px; height: 18px; accent-color: var(--primary); cursor: pointer; }
+            & select {
+                padding: var(--sp-1) var(--sp-2);
+                border: var(--bw-1) solid var(--divider); border-radius: var(--radius);
+                background: var(--surface); color: var(--text);
+                font-size: var(--text-sm); font-family: var(--font-sans);
+                &:focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; }
+            }
+        }
+        /* FSRS 设置子菜单（内嵌 details，随 FSRS 启用开关显隐） */
+        .fsrs-submenu {
+            margin-block-start: var(--sp-3);
+            border: var(--bw-1) solid var(--divider);
+            border-radius: var(--radius);
+            & summary {
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                cursor: pointer; user-select: none;
+                padding: var(--sp-3) var(--sp-4);
+                font-size: var(--text-sm); font-weight: 600;
+                color: var(--primary);
+                list-style: none;
+                &::-webkit-details-marker { display: none; }
+                &::after { content: "▸"; color: var(--text-muted); }
+            }
+            &[open] summary::after { content: "▾"; }
+            & .fsrs-submenu-content {
+                display: flex;
+                flex-direction: column;
+                gap: var(--space-related);
+                padding: var(--sp-2) var(--sp-4) var(--sp-4);
+            }
         }
         .menu-row-hint { font-size: var(--text-xs); color: var(--text-muted); flex-basis: 100%; }
+        /* FSRS 复习数据摘要 + 管理操作（备份/导入为 JSON，纯本地） */
+        .fsrs-stats {
+            display: flex;
+            flex-wrap: wrap;
+            gap: var(--sp-2) var(--sp-6);
+            font-size: var(--text-sm);
+            color: var(--text-soft);
+        }
+        .fsrs-stats b { color: var(--text); font-weight: 600; }
+        .fsrs-actions {
+            display: flex;
+            flex-wrap: wrap;
+            gap: var(--sp-2);
+        }
         /* File dropzone — semantic <label> wraps <input>; auto-loads on change.
            Fitts: large hit target; dashed border signals affordance (Closure). */
         .file-drop {
@@ -645,6 +692,24 @@
             color: var(--text-soft);
         }
 
+        /* FSRS 复习模式：评分条（四档记忆自评）+ 下次复习提示 */
+        .rating-bar {
+            display: flex;
+            flex-wrap: wrap;
+            gap: var(--sp-2);
+            margin-block-start: var(--sp-4);
+        }
+        .rating-hint {
+            margin-block-start: var(--sp-3);
+            font-size: var(--text-xs);
+            color: var(--text-muted);
+        }
+        .rating-result {
+            margin-block-start: var(--sp-2);
+            font-weight: 600;
+            color: var(--text);
+        }
+
         /* ============================================================
            CONTROLS — toolbar with two semantic regions
            Fitts: bottom-anchored; primary nav on the traversing edge.
@@ -805,6 +870,76 @@
             align-items: center;
             justify-content: center;
             box-shadow: 0 1px 3px oklch(0 0 0 / 0.3);
+        }
+
+        /* ============================================================
+           PRESET DIALOG — 自定义自动评分标准阈值
+           ============================================================ */
+        dialog.preset-dialog {
+            border: none; background: none; padding: 0;
+            position: fixed; inset: 0;
+            width: 100%; height: 100%; max-width: 100%; max-height: 100%;
+            display: flex; align-items: center; justify-content: center;
+            -webkit-tap-highlight-color: transparent;
+            &::backdrop { background: oklch(0 0 0 / 0.45); animation: fadeIn .15s var(--ease-out); }
+        }
+        dialog.preset-dialog:not([open]) { display: none !important; }
+        dialog.preset-dialog[open] { display: flex; }
+        dialog.preset-dialog[open] .preset-dialog-panel { animation: scaleIn .15s var(--ease-out); }
+        .preset-dialog-panel {
+            background: var(--surface);
+            border-radius: var(--radius-xl);
+            box-shadow: var(--shadow-lg);
+            padding: var(--sp-5);
+            max-width: min(420px, calc(100vw - 32px));
+            width: 100%;
+            display: flex;
+            flex-direction: column;
+        }
+        .preset-dialog-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-block-end: var(--sp-3);
+            padding-block-end: var(--sp-3);
+            border-block-end: 1px solid var(--divider);
+        }
+        .preset-dialog-title { font-family: var(--font-sans); font-size: var(--text-base); font-weight: 600; }
+        .preset-dialog-close {
+            border: none; background: none; cursor: pointer;
+            font-size: 1.25rem; line-height: 1;
+            color: var(--text-muted);
+            padding: var(--sp-2);
+            border-radius: var(--radius);
+            &:hover { color: var(--text); }
+            &:focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; }
+        }
+        .preset-dialog-hint { font-size: var(--text-xs); color: var(--text-muted); margin-block-end: var(--sp-4); }
+        .preset-dialog-body { display: flex; flex-direction: column; gap: var(--sp-4); }
+        .preset-row {
+            display: flex;
+            align-items: center;
+            gap: var(--sp-2);
+            flex-wrap: wrap;
+            font-size: var(--text-sm);
+        }
+        .preset-name { min-width: 3em; font-weight: 600; color: var(--text); }
+        .preset-sep { color: var(--text-muted); font-size: var(--text-xs); }
+        .preset-row input[type="number"] {
+            width: 64px;
+            padding: var(--sp-1) var(--sp-2);
+            border: var(--bw-1) solid var(--divider); border-radius: var(--radius);
+            background: var(--surface); color: var(--text);
+            font-size: var(--text-sm); font-family: var(--font-sans);
+            &:focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; }
+        }
+        .preset-dialog-actions {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-block-start: var(--sp-5);
+            padding-block-start: var(--sp-4);
+            border-block-start: 1px solid var(--divider);
         }
 
         /* Question nav buttons inside overlay — plain <button>, no tab semantic */
@@ -1067,6 +1202,58 @@
                             <input type="checkbox" id="hideMasteredToggle" aria-describedby="hideMasteredHint">
                             <span class="menu-row-hint" id="hideMasteredHint">已掌握题目下次加载时自动跳过</span>
                         </div>
+                        <div class="menu-row">
+                            <label for="fsrsEnabledToggle">FSRS 启用</label>
+                            <input type="checkbox" id="fsrsEnabledToggle" aria-describedby="fsrsEnabledHint">
+                            <span class="menu-row-hint" id="fsrsEnabledHint">间隔记忆：刷题模式按记忆曲线安排每日题目并记录复习数据</span>
+                        </div>
+                        <details class="fsrs-submenu" id="fsrsSubmenu">
+                            <summary>FSRS 设置</summary>
+                            <div class="fsrs-submenu-content">
+                                <div class="menu-row">
+                                    <label for="retentionInput">记忆保持率</label>
+                                    <input type="number" id="retentionInput" value="0.90" step="0.05" min="0.8" max="0.95" inputmode="decimal" aria-describedby="retentionHint">
+                                    <span class="menu-row-hint" id="retentionHint">0.80–0.95，越高复习越勤</span>
+                                </div>
+                                <div class="menu-row">
+                                    <label for="autoRateToggle">自动评分</label>
+                                    <input type="checkbox" id="autoRateToggle" aria-describedby="autoRateHint">
+                                    <span class="menu-row-hint" id="autoRateHint">按用时与对错自动评分，跳过手动评分条</span>
+                                </div>
+                                <div class="menu-row" id="autoRatePresetRow">
+                                    <input type="checkbox" id="autoRateCustomToggle" aria-label="自定义自动评分标准阈值">
+                                    <label for="autoRatePresetSelect">自动评分标准</label>
+                                    <select id="autoRatePresetSelect" aria-describedby="autoRatePresetHint">
+                                        <option value="strict">严格</option>
+                                        <option value="standard">标准</option>
+                                        <option value="relaxed">宽松</option>
+                                    </select>
+                                    <span class="menu-row-hint" id="autoRatePresetHint">严格 3/10 秒 · 标准 5/15 秒 · 宽松 10/30 秒；<br>勾选左侧开关可自定义各标准阈值</span>
+                                </div>
+                                <div class="menu-row">
+                                    <label for="dailyNewInput">每日新卡上限</label>
+                                    <input type="number" id="dailyNewInput" value="20" step="5" min="0" max="200" inputmode="numeric" aria-describedby="dailyNewHint">
+                                    <span class="menu-row-hint" id="dailyNewHint">0 = 不限</span>
+                                </div>
+                            </div>
+                        </details>
+                    </div>
+                </div>
+                <div class="menu-group menu-group--fsrs">
+                    <h3 class="menu-group-title">复习数据</h3>
+                    <div class="menu-group-content">
+                        <div class="fsrs-stats" aria-label="复习数据统计">
+                            <span>总卡 <b id="fsrsTotalCards">0</b></span>
+                            <span>今日到期 <b id="fsrsDueToday">0</b></span>
+                            <span>平均稳定度 <b id="fsrsAvgStability">—</b></span>
+                        </div>
+                        <div class="fsrs-actions">
+                            <button id="resetFsrsBtn" class="btn btn-outline btn-sm">重置数据</button>
+                            <button id="exportFsrsBtn" class="btn btn-outline btn-sm">导出备份</button>
+                            <button id="importFsrsBtn" class="btn btn-outline btn-sm">导入备份</button>
+                        </div>
+                        <input type="file" id="fsrsImportInput" accept=".json,application/json" hidden>
+                        <span class="menu-row-hint" id="fsrsHint">备份/导入为 JSON 文件，仅存于本地；导入将覆盖现有数据</span>
                     </div>
                 </div>
             </div>
@@ -1079,7 +1266,7 @@
                 <div class="mode-selection" id="modeSelection" role="radiogroup" aria-label="答题模式选择">
                     <div class="mode-card selected" data-mode="practice" tabindex="0" role="radio" aria-checked="true">
                         <span class="mode-label">📖 刷题模式</span>
-                        <span class="mode-desc">即时反馈，每道题做完即出答案</span>
+                        <span class="mode-desc">即时反馈；启用 FSRS 后按记忆曲线安排每日题目</span>
                     </div>
                     <div class="mode-card" data-mode="exam" tabindex="-1" role="radio" aria-checked="false">
                         <span class="mode-label">📋 考试模式</span>
@@ -1188,6 +1375,44 @@
     </div>
 </dialog>
 
+<!-- 自定义自动评分标准对话框：勾选“自动评分标准”左侧开关时弹出 -->
+<dialog class="preset-dialog" id="presetDialog" aria-labelledby="presetDialogTitle">
+    <div class="preset-dialog-panel">
+        <div class="preset-dialog-header">
+            <span class="preset-dialog-title" id="presetDialogTitle">自定义自动评分标准</span>
+            <button id="presetDialogClose" class="preset-dialog-close" aria-label="关闭">×</button>
+        </div>
+        <p class="preset-dialog-hint">答对且用时不超过该秒数 → 简单 / 良好；超过 → 困难。范围 1–120 秒</p>
+        <div class="preset-dialog-body">
+            <div class="preset-row" data-preset="strict">
+                <span class="preset-name">严格</span>
+                <input type="number" class="preset-easy" min="1" max="120" step="1" inputmode="numeric" aria-label="严格：简单用时上限（秒）">
+                <span class="preset-sep">秒内简单</span>
+                <input type="number" class="preset-good" min="2" max="120" step="1" inputmode="numeric" aria-label="严格：良好用时上限（秒）">
+                <span class="preset-sep">秒内良好</span>
+            </div>
+            <div class="preset-row" data-preset="standard">
+                <span class="preset-name">标准</span>
+                <input type="number" class="preset-easy" min="1" max="120" step="1" inputmode="numeric" aria-label="标准：简单用时上限（秒）">
+                <span class="preset-sep">秒内简单</span>
+                <input type="number" class="preset-good" min="2" max="120" step="1" inputmode="numeric" aria-label="标准：良好用时上限（秒）">
+                <span class="preset-sep">秒内良好</span>
+            </div>
+            <div class="preset-row" data-preset="relaxed">
+                <span class="preset-name">宽松</span>
+                <input type="number" class="preset-easy" min="1" max="120" step="1" inputmode="numeric" aria-label="宽松：简单用时上限（秒）">
+                <span class="preset-sep">秒内简单</span>
+                <input type="number" class="preset-good" min="2" max="120" step="1" inputmode="numeric" aria-label="宽松：良好用时上限（秒）">
+                <span class="preset-sep">秒内良好</span>
+            </div>
+        </div>
+        <div class="preset-dialog-actions">
+            <button id="presetResetBtn" class="btn btn-outline btn-sm">恢复默认值</button>
+            <button id="presetSaveBtn" class="btn btn-sm">保存</button>
+        </div>
+    </div>
+</dialog>
+
 <div class="snackbar" id="snackbar" role="status" aria-live="polite"></div>
 
 <script type="module">
@@ -1235,7 +1460,7 @@ class Timer {
 }
 
 /* ===== Storage ===== */
-const DEFAULTS = Object.freeze({ autoNext: true, autoDelay: 0.5, showHistory: true, hideMastered: false });
+const DEFAULTS = Object.freeze({ autoNext: true, autoDelay: 0.5, showHistory: true, hideMastered: false, fsrsEnabled: false, retention: 0.9, dailyNew: 20, autoRate: false, autoRatePreset: "standard", autoRateCustom: false, autoRatePresets: null });
 class StorageAdapter {
     /* Storage write failures (private mode, quota) are surfaced via onPersistError
        so the UI can notify the user — never silently swallow (Nielsen error prevention). */
@@ -1256,6 +1481,212 @@ class StorageAdapter {
     static toggleMastered(text) { const list = this.getMastered(); const h = hashStr(text); const idx = list.indexOf(h); idx > -1 ? list.splice(idx, 1) : list.push(h); this.saveMastered(list); return idx === -1; }
     static isMastered(text) { return this.getMastered().includes(hashStr(text)); }
 }
+
+/* ===== FSRS Engine — 移植自 ts-fsrs v5.4.1 / FSRS-6.0（MIT License）=====
+   仅保留 LongTermScheduler 语义（enable_short_term=false、enable_fuzz=false），
+   公式与 packages/fsrs/src/{algorithm,help,constant}.ts 逐行对应。
+   对拍验证见 scripts/fsrs_compare.cjs */
+const FSRS_STATE = Object.freeze({ New: 0, Learning: 1, Review: 2, Relearning: 3 });
+const FSRS_RATING = Object.freeze({ Again: 1, Hard: 2, Good: 3, Easy: 4 });
+/* 自动评分映射（复习模式）：答错→忘记了(1)；答对按用时 ≤ easyMs 简单(4)、≤ goodMs 良好(3)、更久 困难(2) */
+const AUTO_RATE_PRESETS = Object.freeze({
+    strict: { easyMs: 3000, goodMs: 10000 },
+    standard: { easyMs: 5000, goodMs: 15000 },
+    relaxed: { easyMs: 10000, goodMs: 30000 },
+});
+const autoRateFor = (correct, ms, preset = AUTO_RATE_PRESETS.standard) => {
+    if (!correct) return FSRS_RATING.Again;
+    return ms <= preset.easyMs ? FSRS_RATING.Easy : ms <= preset.goodMs ? FSRS_RATING.Good : FSRS_RATING.Hard;
+};
+/* 解析生效阈值：自定义开启且含当前标准 → 自定义值（秒→毫秒）；否则预设值 */
+const resolvePreset = (settings) => {
+    const name = settings?.autoRatePreset ?? "standard";
+    const base = AUTO_RATE_PRESETS[name] ?? AUTO_RATE_PRESETS.standard;
+    const custom = settings?.autoRateCustom && settings?.autoRatePresets?.[name];
+    return custom ? { easyMs: custom.easySec * 1000, goodMs: custom.goodSec * 1000 } : base;
+};
+const clamp = (v, min, max) => Math.min(Math.max(v, min), max);
+const roundTo = (num, decimals) => { const f = 10 ** decimals; return Math.round(num * f) / f; };
+/* dateDiffInDays — 与 ts-fsrs help.ts 一致：按 UTC 日历日取整 */
+function dateDiffInDays(last, cur) {
+    const utc1 = Date.UTC(last.getUTCFullYear(), last.getUTCMonth(), last.getUTCDate());
+    const utc2 = Date.UTC(cur.getUTCFullYear(), cur.getUTCMonth(), cur.getUTCDate());
+    return Math.floor((utc2 - utc1) / 86400000);
+}
+
+class FsrsEngine {
+    static W = Object.freeze([0.212, 1.2931, 2.3065, 8.2956, 6.4133, 0.8334, 3.0194, 0.001, 1.8722, 0.1666, 0.796, 1.4835, 0.0614, 0.2629, 1.6483, 0.6014, 1.8729, 0.5425, 0.0912, 0.0658, 0.1542]);
+    static S_MIN = 0.001;
+    static S_MAX = 36500;
+
+    constructor({ requestRetention = 0.9, maximumInterval = 36500 } = {}) {
+        if (requestRetention <= 0 || requestRetention > 1) throw new Error("Requested retention rate should be in the range (0,1]");
+        this.maximumInterval = maximumInterval;
+        const decay = -FsrsEngine.W[20]; // w20 为 FSRS-6 decay
+        const factor = Math.exp(Math.pow(decay, -1) * Math.log(0.9)) - 1.0;
+        this.decay = decay;
+        this.factor = roundTo(factor, 8);
+        this.intervalModifier = roundTo((Math.pow(requestRetention, 1 / decay) - 1) / this.factor, 8);
+    }
+
+    createEmptyCard(now = new Date()) {
+        return { due: now, stability: 0, difficulty: 0, elapsed_days: 0, scheduled_days: 0, reps: 0, lapses: 0, learning_steps: 0, state: FSRS_STATE.New, last_review: null };
+    }
+
+    /* R(t,S) = (1 + FACTOR * t/S)^DECAY */
+    forgettingCurve(elapsedDays, stability) {
+        return roundTo(Math.pow(1 + (this.factor * elapsedDays) / stability, this.decay), 8);
+    }
+
+    /* S0(G) = max(w[G-1], 0.1) */
+    initStability(g) { return Math.max(FsrsEngine.W[g - 1], 0.1); }
+
+    /* D0(G) = w4 - e^((G-1)*w5) + 1 */
+    initDifficulty(g) { return roundTo(FsrsEngine.W[4] - Math.exp((g - 1) * FsrsEngine.W[5]) + 1, 8); }
+
+    linearDamping(deltaD, oldD) { return roundTo((deltaD * (10 - oldD)) / 9, 8); }
+
+    /* w7*init + (1-w7)*current */
+    meanReversion(init, current) { return roundTo(FsrsEngine.W[7] * init + (1 - FsrsEngine.W[7]) * current, 8); }
+
+    nextDifficulty(d, g) {
+        const deltaD = -FsrsEngine.W[6] * (g - 3);
+        const nextD = d + this.linearDamping(deltaD, d);
+        return clamp(this.meanReversion(this.initDifficulty(4), nextD), 1, 10);
+    }
+
+    nextRecallStability(d, s, r, g) {
+        const w = FsrsEngine.W;
+        const hardPenalty = g === FSRS_RATING.Hard ? w[15] : 1;
+        const easyBound = g === FSRS_RATING.Easy ? w[16] : 1;
+        return roundTo(clamp(
+            s * (1 + Math.exp(w[8]) * (11 - d) * Math.pow(s, -w[9]) * (Math.exp((1 - r) * w[10]) - 1) * hardPenalty * easyBound),
+            FsrsEngine.S_MIN, FsrsEngine.S_MAX), 8);
+    }
+
+    nextForgetStability(d, s, r) {
+        const w = FsrsEngine.W;
+        return roundTo(clamp(
+            w[11] * Math.pow(d, -w[12]) * (Math.pow(s + 1, w[13]) - 1) * Math.exp((1 - r) * w[14]),
+            FsrsEngine.S_MIN, FsrsEngine.S_MAX), 8);
+    }
+
+    /* 单步记忆状态转移；enable_short_term=false 时 Again 的 stability 上限为当前值 */
+    nextState(d, s, t, g) {
+        if (d === 0 && s === 0) {
+            return { difficulty: clamp(this.initDifficulty(g), 1, 10), stability: this.initStability(g) };
+        }
+        const r = this.forgettingCurve(t, s);
+        const newS = g === FSRS_RATING.Again
+            ? clamp(roundTo(s, 8), FsrsEngine.S_MIN, this.nextForgetStability(d, s, r))
+            : this.nextRecallStability(d, s, r, g);
+        return { difficulty: this.nextDifficulty(d, g), stability: newS };
+    }
+
+    /* I(s) = min(max(1, round(s * modifier)), maxInterval)；fuzz 关闭时无随机扰动 */
+    nextInterval(s) {
+        return Math.min(Math.max(1, Math.round(s * this.intervalModifier)), this.maximumInterval);
+    }
+
+    /* 单次调度（对应 fsrs.next）——LongTermScheduler 语义 */
+    next(card, now, grade) {
+        const c = this.#normalize(card);
+        const elapsed = (c.state !== FSRS_STATE.New && c.last_review)
+            ? dateDiffInDays(c.last_review, now) : 0;
+        const base = { ...c, last_review: now, elapsed_days: elapsed, reps: c.reps + 1 };
+        if (c.state === FSRS_STATE.New) base.scheduled_days = 0;
+        const r = c.state !== FSRS_STATE.New ? this.forgettingCurve(elapsed, c.stability) : undefined;
+        const again = this.#nextDS(base, elapsed, FSRS_RATING.Again);
+        const hard = this.#nextDS(base, elapsed, FSRS_RATING.Hard);
+        const good = this.#nextDS(base, elapsed, FSRS_RATING.Good);
+        const easy = this.#nextDS(base, elapsed, FSRS_RATING.Easy);
+        this.#applyIntervalOrdering(again, hard, good, easy, now);
+        for (const card of [again, hard, good, easy]) { card.state = FSRS_STATE.Review; card.learning_steps = 0; }
+        if (c.state !== FSRS_STATE.New) again.lapses += 1;
+        return [null, again, hard, good, easy][grade];
+    }
+
+    /* 记忆保留率，用于队列排序（弱记忆优先）；与 fsrs.get_retrievability(false) 一致 */
+    getRetrievability(card, now = new Date()) {
+        const c = this.#normalize(card);
+        if (c.state === FSRS_STATE.New || !c.last_review) return 0;
+        const t = Math.max(Math.floor((now.getTime() - c.last_review.getTime()) / 86400000), 0);
+        return this.forgettingCurve(t, +c.stability.toFixed(8));
+    }
+
+    #nextDS(base, t, g) {
+        const ns = this.nextState(base.difficulty, base.stability, t, g);
+        return { ...base, difficulty: ns.difficulty, stability: ns.stability };
+    }
+
+    /* 四评分区间强制递增：again ≤ hard < good < easy（与 LongTermScheduler.next_interval 一致） */
+    #applyIntervalOrdering(again, hard, good, easy, now) {
+        let againIvl = this.nextInterval(again.stability);
+        let hardIvl = this.nextInterval(hard.stability);
+        let goodIvl = this.nextInterval(good.stability);
+        let easyIvl = this.nextInterval(easy.stability);
+        againIvl = Math.min(againIvl, hardIvl);
+        hardIvl = Math.max(hardIvl, againIvl + 1);
+        goodIvl = Math.max(goodIvl, hardIvl + 1);
+        easyIvl = Math.max(easyIvl, goodIvl + 1);
+        for (const [card, ivl] of [[again, againIvl], [hard, hardIvl], [good, goodIvl], [easy, easyIvl]]) {
+            card.scheduled_days = ivl;
+            card.due = new Date(now.getTime() + ivl * 86400000);
+        }
+    }
+
+    #normalize(card) {
+        return { ...card, due: this.#toDate(card.due), last_review: card.last_review ? this.#toDate(card.last_review) : null };
+    }
+
+    #toDate(v) { return v instanceof Date ? v : new Date(v); }
+}
+
+/* ===== FsrsStore — 复习卡持久化（localStorage，题干全文为键） ===== */
+class FsrsStore {
+    static KEY = "fsrs_cards_v1";
+    static load() { try { const raw = localStorage.getItem(this.KEY); return raw ? JSON.parse(raw) : {}; } catch { return {}; } }
+    static save(map) {
+        try { localStorage.setItem(this.KEY, JSON.stringify(map)); }
+        catch (e) { if (typeof StorageAdapter.onPersistError === "function") StorageAdapter.onPersistError(this.KEY, e); }
+    }
+    static get(text) { return this.load()[text] ?? null; }
+    static upsert(text, card) {
+        const map = this.load();
+        map[text] = {
+            due: card.due instanceof Date ? card.due.getTime() : card.due,
+            stability: card.stability, difficulty: card.difficulty,
+            scheduled_days: card.scheduled_days, elapsed_days: card.elapsed_days,
+            reps: card.reps, lapses: card.lapses, learning_steps: card.learning_steps,
+            state: card.state,
+            last_review: card.last_review ? (card.last_review instanceof Date ? card.last_review.getTime() : card.last_review) : null,
+        };
+        this.save(map);
+        return map[text];
+    }
+    /* 删除题库中已不存在的卡片记录，返回删除数量（孤儿卡清理） */
+    static prune(validTexts) {
+        const map = this.load();
+        const valid = new Set(validTexts);
+        const before = Object.keys(map).length;
+        for (const k of Object.keys(map)) if (!valid.has(k)) delete map[k];
+        if (Object.keys(map).length !== before) this.save(map);
+        return before - Object.keys(map).length;
+    }
+    static count() { return Object.keys(this.load()).length; }
+    /* 汇总统计：总卡数 / 今日到期 / 平均稳定度（天）/ 总复习次数 / 总遗忘次数 */
+    static stats(now = new Date()) {
+        const entries = Object.values(this.load());
+        let due = 0, stSum = 0, stCount = 0, reps = 0, lapses = 0;
+        for (const c of entries) {
+            if (c.due <= now.getTime()) due++;
+            if (c.stability > 0) { stSum += c.stability; stCount++; }
+            reps += c.reps; lapses += c.lapses;
+        }
+        return { total: entries.length, due, avgStability: stCount ? stSum / stCount : 0, reps, lapses };
+    }
+}
+/* ===== End FSRS Engine ===== */
 
 /* ===== Question Parser ===== */
 class QuestionParser {
@@ -1282,23 +1713,28 @@ class QuestionParser {
 
 /* ===== Quiz State ===== */
 class QuizState {
-    #questions; #map = new Map();
-    constructor(qs) { this.#questions = qs; qs.forEach((_, i) => this.#map.set(i, { selections: [], submitted: false, marked: false })); }
+    #questions; #map = new Map(); #ratedMode = false;
+    /* ratedMode（FSRS 复习模式）下，“已完成”= 已评分；其余模式保持原语义 */
+    constructor(qs, { ratedMode = false } = {}) { this.#questions = qs; this.#ratedMode = ratedMode; qs.forEach((_, i) => this.#map.set(i, { selections: [], submitted: false, marked: false, rated: false, rating: 0, nextDue: null })); }
     get(i) { return this.#map.get(i); }
     select(i, key, multi = false) { const s = this.get(i); if (!multi) s.selections = [key]; else { const p = s.selections.indexOf(key); p > -1 ? s.selections.splice(p, 1) : s.selections.push(key); } }
     submitMulti(i) { this.get(i).submitted = true; }
     toggleMark(i) { this.get(i).marked = !this.get(i).marked; }
-    isAnswered(i) { const s = this.get(i), q = this.#questions[i]; return q.type === "multiple" ? s.submitted && s.selections.length > 0 : s.selections.length > 0; }
+    markRated(i, rating, nextDue) { const s = this.get(i); s.rated = true; s.rating = rating; s.nextDue = nextDue; }
+    isRated(i) { return this.get(i)?.rated === true; }
+    /* 已作答（不带 ratedMode 门控）——用于判定真实对错 */
+    isAnsweredRaw(i) { const s = this.get(i), q = this.#questions[i]; return q.type === "multiple" ? s.submitted && s.selections.length > 0 : s.selections.length > 0; }
+    isAnswered(i) { return this.#ratedMode ? this.isRated(i) : this.isAnsweredRaw(i); }
     isErrorAnswered(i) { return this.isAnswered(i) && !this.isCorrect(i); }
-    isCorrect(i) { const q = this.#questions[i], s = this.get(i); if (!this.isAnswered(i)) return false; if (q.type !== "multiple") return s.selections[0] === q.answer; return [...s.selections].sort().join("") === [...q.answer.replace(/\s/g, "")].sort().join(""); }
-    reset() { this.#questions.forEach((_, i) => this.#map.set(i, { selections: [], submitted: false, marked: false })); }
+    isCorrect(i) { const q = this.#questions[i], s = this.get(i); if (!this.isAnsweredRaw(i)) return false; if (q.type !== "multiple") return s.selections[0] === q.answer; return [...s.selections].sort().join("") === [...q.answer.replace(/\s/g, "")].sort().join(""); }
+    reset() { this.#questions.forEach((_, i) => this.#map.set(i, { selections: [], submitted: false, marked: false, rated: false, rating: 0, nextDue: null })); }
 }
 
 /* ===== Components ===== */
 
 class OptionRenderer {
     #container; #bus;
-    constructor(container, bus) { this.#container = container; this.#bus = bus; bus.on("question:render", ({ question, state }) => this.#render(question, state)); bus.on("feedback:show", ({ question, state }) => this.#applyFeedback(question, state)); bus.on("feedback:hide", () => this.#clearFeedback()); }
+    constructor(container, bus) { this.#container = container; this.#bus = bus; bus.on("question:render", ({ question, state }) => this.#render(question, state)); bus.on("feedback:show", ({ question, state }) => this.#applyFeedback(question, state)); bus.on("fsrs:awaitRating", ({ question, state }) => this.#applyFeedback(question, state)); bus.on("fsrs:rated", ({ question, state }) => this.#applyFeedback(question, state)); bus.on("feedback:hide", () => this.#clearFeedback()); }
     #render(q, state) {
         let html = `<div class="question-title">${esc(q.text)}${q.type === "multiple" ? ' <small>(多选)</small>' : q.type === "judgment" ? ' <small>(判断)</small>' : ""}</div><div class="options">`;
         q.options.forEach(opt => { const sel = state.selections.includes(opt.key); const dis = q.type === "multiple" && state.submitted ? " disabled" : ""; html += `<div class="option${sel ? " selected" : ""}${dis}" data-key="${esc(opt.key)}" role="button" tabindex="0" aria-pressed="${sel}"><span>${esc(opt.key)}. ${esc(opt.text)}</span></div>`; });
@@ -1314,14 +1750,37 @@ class OptionRenderer {
 
 class FeedbackPanel {
     #container; #bus;
-    constructor(container, bus) { this.#container = container; this.#bus = bus; bus.on("feedback:show", ({ question, state, correct }) => this.show(question, state, correct)); bus.on("feedback:hide", () => this.hide()); }
+    constructor(container, bus) { this.#container = container; this.#bus = bus; bus.on("feedback:show", ({ question, state, correct }) => this.show(question, state, correct)); bus.on("feedback:hide", () => this.hide()); bus.on("fsrs:awaitRating", ({ question, state, correct, preselected }) => this.showRatingBar(question, state, correct, preselected)); bus.on("fsrs:rated", ({ question, state, correct, rating, timeSpent }) => this.showRated(question, state, correct, rating, timeSpent)); }
+    static RATING_NAMES = ["", "忘记了", "困难", "良好", "简单"];
+    #icon(correct) { return correct ? '<svg class="icon-sm" aria-hidden="true"><use href="#icon-check"/></svg>' : '<svg class="icon-sm" aria-hidden="true"><use href="#icon-cross"/></svg>'; }
+    #answerRow(q, state) { const us = state.selections.join(", ") || "未作答"; return `<div>您的答案: ${esc(us)}</div><div>正确答案: ${esc(q.answer)}</div>`; }
     show(q, state, correct) {
-        const icon = correct
-            ? '<svg class="icon-sm" aria-hidden="true"><use href="#icon-check"/></svg>'
-            : '<svg class="icon-sm" aria-hidden="true"><use href="#icon-cross"/></svg>';
-        let html = `<div class="answer-feedback ${correct ? "correct" : "incorrect"}"><div class="answer-feedback-header">${icon} <span>${correct ? "正确" : "错误"}</span></div>`;
+        let html = `<div class="answer-feedback ${correct ? "correct" : "incorrect"}"><div class="answer-feedback-header">${this.#icon(correct)} <span>${correct ? "正确" : "错误"}</span></div>`;
         if (!correct) { const us = state.selections.join(", ") || "未作答"; html += `<div class="answer-feedback-content"><div>您的答案: ${esc(us)}</div><div>正确答案: ${esc(q.answer)}</div>${q.explanation ? `<div class="explanation-content">${MarkdownParser.parse(q.explanation)}</div>` : ""}</div>`; }
         html += "</div>";
+        this.#container.innerHTML = html;
+        this.#container.classList.remove("hidden");
+    }
+    /* FSRS 复习模式：先显示对错 + 评分条，用户自评后安排下次复习（解析延后到评分后） */
+    showRatingBar(q, state, correct, preselected = correct ? 3 : 1) {
+        const btns = [1, 2, 3, 4].map(r => `<button type="button" class="btn btn-sm rating-btn${r === preselected ? " btn-accent" : ""}" data-rating="${r}" aria-pressed="${r === preselected}">${FeedbackPanel.RATING_NAMES[r]}</button>`).join("");
+        let html = `<div class="answer-feedback ${correct ? "correct" : "incorrect"}"><div class="answer-feedback-header">${this.#icon(correct)} <span>${correct ? "正确" : "错误"}</span></div>`;
+        html += `<div class="answer-feedback-content">${this.#answerRow(q, state)}<div class="rating-bar" role="group" aria-label="记忆评分">${btns}</div><p class="rating-hint">这题记住了吗？评分后安排下次复习（快捷键 1–4，Enter 确认预选）</p></div></div>`;
+        this.#container.innerHTML = html;
+        this.#container.querySelectorAll(".rating-btn").forEach(el => el.addEventListener("click", () => this.#bus.emit("fsrs:rate", { rating: +el.dataset.rating })));
+        this.#container.classList.remove("hidden");
+    }
+    /* 评分完成：下次复习时间 + 本题用时 + 解析（用时透明化自动评分的依据） */
+    showRated(q, state, correct, rating, timeSpent) {
+        const due = new Date(state.nextDue);
+        const days = Math.max(0, Math.ceil((due.getTime() - Date.now()) / 86400000));
+        const when = days <= 0 ? "今天" : days === 1 ? "明天" : `${days} 天后`;
+        const timeText = timeSpent != null ? ` · 用时 ${timeSpent < 60000 ? `${(timeSpent / 1000).toFixed(1)} 秒` : fmtTime(timeSpent)}` : "";
+        let html = `<div class="answer-feedback ${correct ? "correct" : "incorrect"}"><div class="answer-feedback-header">${this.#icon(correct)} <span>${correct ? "正确" : "错误"}</span></div>`;
+        html += `<div class="answer-feedback-content"><div class="rating-result">已评分「${FeedbackPanel.RATING_NAMES[rating]}」${timeText} · 下次复习：${when}</div>`;
+        if (!correct) html += this.#answerRow(q, state);
+        if (q.explanation) html += `<div class="explanation-content">${MarkdownParser.parse(q.explanation)}</div>`;
+        html += "</div></div>";
         this.#container.innerHTML = html;
         this.#container.classList.remove("hidden");
     }
@@ -1387,7 +1846,7 @@ class HistoryPanel {
             const time = document.createElement("time");
             if (e.isoDate) time.setAttribute("datetime", e.isoDate);
             time.textContent = e.date;
-            div.append(time, ` | ${e.mode === "exam" ? "考试" : "刷题"} | ${e.score}/${e.total} | ${fmtTime(e.totalTime || 0)} | ${e.percentage ?? 0}%`);
+            div.append(time, ` | ${e.mode === "exam" ? "考试" : e.mode === "fsrs" ? "刷题(FSRS)" : "刷题"} | ${e.score}/${e.total} | ${fmtTime(e.totalTime || 0)} | ${e.percentage ?? 0}%`);
             this.#container.appendChild(div);
         });
     }
@@ -1437,6 +1896,9 @@ class QuizController {
     #questions = []; #masteredSet = new Set(); #settings; #history;
     #justAnswered = false; #autoNextId = null;
     #parser = new QuestionParser(); #timer; #els;
+    #fsrsEngine = new FsrsEngine();
+    /* FSRS 生效条件：总开关开启 + 刷题模式（考试模式不受影响） */
+    get #fsrsActive() { return this.#settings.fsrsEnabled && this.#mode === "practice"; }
 
     constructor() {
         this.#settings = StorageAdapter.getSettings();
@@ -1452,6 +1914,7 @@ class QuizController {
             this.#bus.emit("toast:show", { message: `设置未能持久化（存储不可用或已满）`, isError: true });
             console.warn(`[Storage] persist failed for "${k}"`);
         };
+        this.#refreshFsrsStats();
     }
 
     #collectDOMRefs() {
@@ -1464,7 +1927,16 @@ class QuizController {
             modeSection: $("modeSection"), modeCards: document.querySelectorAll(".mode-card"),
             startBtn: $("startQuizBtn"),
             autoNextToggle: $("autoNextToggle"), autoNextDelay: $("autoNextDelay"),
-            showHistoryToggle: $("showHistoryToggle"), hideMasteredToggle: $("hideMasteredToggle"),
+            showHistoryToggle: $("showHistoryToggle"), hideMasteredToggle: $("hideMasteredToggle"), autoRateToggle: $("autoRateToggle"),
+            fsrsEnabledToggle: $("fsrsEnabledToggle"), fsrsSubmenu: $("fsrsSubmenu"),
+            autoRatePresetSelect: $("autoRatePresetSelect"), autoRatePresetRow: $("autoRatePresetRow"),
+            autoRateCustomToggle: $("autoRateCustomToggle"),
+            presetDialog: $("presetDialog"), presetDialogClose: $("presetDialogClose"),
+            presetResetBtn: $("presetResetBtn"), presetSaveBtn: $("presetSaveBtn"),
+            presetRows: document.querySelectorAll(".preset-row"),
+            retentionInput: $("retentionInput"), dailyNewInput: $("dailyNewInput"),
+            resetFsrsBtn: $("resetFsrsBtn"), exportFsrsBtn: $("exportFsrsBtn"), importFsrsBtn: $("importFsrsBtn"), fsrsImportInput: $("fsrsImportInput"),
+            fsrsTotalCards: $("fsrsTotalCards"), fsrsDueToday: $("fsrsDueToday"), fsrsAvgStability: $("fsrsAvgStability"),
             quizSection: $("quizSection"), resultSection: $("resultSection"),
             questionContainer: $("questionContainer"), feedback: $("answerFeedback"),
             prevBtn: $("prevBtn"), nextBtn: $("nextBtn"), markBtn: $("markBtn"),
@@ -1524,12 +1996,58 @@ class QuizController {
         this.#els.autoNextDelay.addEventListener("change", e => { this.#settings.autoDelay = +e.target.value; StorageAdapter.saveSettings(this.#settings); });
         this.#els.showHistoryToggle.addEventListener("change", e => { this.#settings.showHistory = e.target.checked; this.#els.historyPanel.style.display = e.target.checked ? "" : "none"; StorageAdapter.saveSettings(this.#settings); });
         this.#els.hideMasteredToggle?.addEventListener("change", e => { this.#settings.hideMastered = e.target.checked; StorageAdapter.saveSettings(this.#settings); this.#bus.emit("toast:show", { message: e.target.checked ? "已启用隐藏已掌握题目，下次加载生效" : "已禁用隐藏已掌握题目" }); });
+        this.#els.autoRateToggle.addEventListener("change", e => { this.#settings.autoRate = e.target.checked; StorageAdapter.saveSettings(this.#settings); this.#els.autoRatePresetRow.style.display = e.target.checked ? "" : "none"; this.#bus.emit("toast:show", { message: e.target.checked ? "已开启自动评分" : "已关闭自动评分" }); });
+        this.#els.autoRatePresetSelect.addEventListener("change", e => { this.#settings.autoRatePreset = e.target.value; StorageAdapter.saveSettings(this.#settings); this.#bus.emit("toast:show", { message: `自动评分标准：${e.target.options[e.target.selectedIndex].text}` }); });
+        // 自定义阈值开关：勾选即启用并弹出编辑对话框；取消勾选恢复预设
+        this.#els.autoRateCustomToggle.addEventListener("change", e => {
+            if (e.target.checked) {
+                this.#settings.autoRateCustom = true;
+                StorageAdapter.saveSettings(this.#settings);
+                this.#openPresetDialog();
+            } else {
+                this.#settings.autoRateCustom = false;
+                StorageAdapter.saveSettings(this.#settings);
+                if (this.#els.presetDialog.open) this.#els.presetDialog.close();
+                this.#bus.emit("toast:show", { message: "已恢复预设评分标准" });
+            }
+        });
+        this.#els.presetDialogClose.addEventListener("click", () => this.#els.presetDialog.close());
+        this.#els.presetResetBtn.addEventListener("click", () => this.#resetPresetDialogInputs());
+        this.#els.presetSaveBtn.addEventListener("click", () => this.#savePresetDialog());
+        this.#els.fsrsEnabledToggle.addEventListener("change", e => {
+            this.#settings.fsrsEnabled = e.target.checked;
+            StorageAdapter.saveSettings(this.#settings);
+            this.#els.fsrsSubmenu.style.display = e.target.checked ? "" : "none";
+            this.#bus.emit("toast:show", { message: e.target.checked ? "已启用 FSRS，刷题模式将按记忆曲线安排题目" : "已关闭 FSRS，刷题模式恢复即时反馈" });
+        });
+        this.#els.retentionInput.addEventListener("change", e => {
+            const v = Math.min(0.95, Math.max(0.8, +e.target.value));
+            e.target.value = v;
+            this.#settings.retention = v;
+            StorageAdapter.saveSettings(this.#settings);
+            this.#fsrsEngine = new FsrsEngine({ requestRetention: v });
+            this.#bus.emit("toast:show", { message: `记忆保持率已设为 ${v.toFixed(2)}` });
+        });
+        this.#els.dailyNewInput.addEventListener("change", e => {
+            const v = Math.max(0, Math.min(200, Math.round(+e.target.value)));
+            e.target.value = v;
+            this.#settings.dailyNew = v;
+            StorageAdapter.saveSettings(this.#settings);
+            this.#bus.emit("toast:show", { message: v > 0 ? `每日新卡上限 ${v} 题` : "每日新卡不限量" });
+        });
+        this.#els.resetFsrsBtn?.addEventListener("click", () => this.#resetFsrsData());
+        this.#els.exportFsrsBtn?.addEventListener("click", () => this.#exportFsrsBackup());
+        this.#els.importFsrsBtn?.addEventListener("click", () => this.#els.fsrsImportInput?.click());
+        this.#els.fsrsImportInput?.addEventListener("change", () => this.#onImportFsrsFile());
+        // 菜单打开时刷新复习数据摘要（<details> toggle 事件）
+        this.#els.menuPanel?.addEventListener("toggle", () => this.#refreshFsrsStats());
 
         this.#initModeCards(); // radiogroup pattern: roving tabindex + arrow keys + Enter/Space
         document.addEventListener("keydown", e => this.#handleKey(e));
 
-        this.#bus.on("option:clicked", ({ key, isMulti }) => { if (!this.#quizState) return; this.#quizState.select(this.#currentIdx, key, isMulti); this.#justAnswered = true; this.#refresh(); });
-        this.#bus.on("multi:submit", () => { if (!this.#quizState) return; this.#quizState.submitMulti(this.#currentIdx); this.#justAnswered = true; this.#refresh(); });
+        this.#bus.on("option:clicked", ({ key, isMulti }) => { if (!this.#quizState) return; this.#quizState.select(this.#currentIdx, key, isMulti); this.#afterAnswer(); });
+        this.#bus.on("multi:submit", () => { if (!this.#quizState) return; this.#quizState.submitMulti(this.#currentIdx); this.#afterAnswer(); });
+        this.#bus.on("fsrs:rate", ({ rating }) => this.#rateCard(rating));
         this.#bus.on("nav:clicked", idx => { this.#justAnswered = false; this.#showQuestion(idx); });
 
         // Floating nav — <dialog> provides native ESC + focus trap; we still handle
@@ -1628,7 +2146,16 @@ class QuizController {
         this.#els.autoNextDelay.value = this.#settings.autoDelay;
         this.#els.showHistoryToggle.checked = this.#settings.showHistory;
         this.#els.hideMasteredToggle.checked = this.#settings.hideMastered;
+        this.#els.fsrsEnabledToggle.checked = this.#settings.fsrsEnabled;
+        this.#els.autoRateToggle.checked = this.#settings.autoRate;
+        this.#els.autoRatePresetSelect.value = this.#settings.autoRatePreset;
+        this.#els.autoRateCustomToggle.checked = this.#settings.autoRateCustom;
+        this.#els.retentionInput.value = this.#settings.retention;
+        this.#els.dailyNewInput.value = this.#settings.dailyNew;
         this.#els.historyPanel.style.display = this.#settings.showHistory ? "" : "none";
+        this.#els.fsrsSubmenu.style.display = this.#settings.fsrsEnabled ? "" : "none";
+        this.#els.autoRatePresetRow.style.display = this.#settings.autoRate ? "" : "none";
+        this.#fsrsEngine = new FsrsEngine({ requestRetention: this.#settings.retention });
     }
 
     async #load(files = null) {
@@ -1702,11 +2229,159 @@ class QuizController {
         this.#els.quizSection.classList.remove("hidden");
         this.#els.navFab?.classList.remove("hidden");
         this.#els.resultSection.classList.add("hidden");
+        if (this.#fsrsActive) this.#buildFsrsQueue();
         this.#els.totalQ.textContent = this.#questions.length;
         this.#computeMasteredSet();
         this.#timer.reset(); this.#timer.start();
         this.#bus.emit("nav:build", { total: this.#questions.length, quizState: this.#quizState, masteredSet: this.#masteredSet });
         this.#showQuestion(0);
+    }
+
+    /* FSRS 复习队列：到期卡（按记忆保留率升序，弱记忆优先）+ 新卡（受每日上限约束）；队列在开赛前固定 */
+    #buildFsrsQueue() {
+        const now = new Date();
+        const total = this.#questions.length; // 重建前保存，用于统计未到期卡
+        const due = [], fresh = [];
+        this.#questions.forEach(q => {
+            const card = FsrsStore.get(q.text);
+            if (!card) fresh.push(q);
+            else if (card.due <= now.getTime()) due.push(q);
+        });
+        due.sort((a, b) => this.#fsrsEngine.getRetrievability(FsrsStore.get(a.text), now) - this.#fsrsEngine.getRetrievability(FsrsStore.get(b.text), now));
+        let freshQueue = fresh;
+        const limit = this.#settings.dailyNew;
+        if (limit > 0 && fresh.length > limit) freshQueue = fresh.slice(0, limit);
+        this.#questions = due.concat(freshQueue);
+        this.#quizState = new QuizState(this.#questions, { ratedMode: true });
+        this.#currentIdx = 0;
+        const skipped = total - this.#questions.length; // 已学未到期 + 超限新卡今日不刷
+        const newText = freshQueue.length < fresh.length ? `新卡 ${freshQueue.length}/${fresh.length} 题` : `新卡 ${fresh.length} 题`;
+        this.#bus.emit("toast:show", { message: `复习队列：今日到期 ${due.length} 题 · ${newText}${skipped > 0 ? ` · ${skipped} 题未到期` : ""}` });
+    }
+
+    /* FSRS：按自评写入卡片调度并标记已评分；未评分跳题视为未复习（卡片不动） */
+    #rateCard(rating) {
+        if (!this.#fsrsActive || !this.#quizState) return;
+        const idx = this.#currentIdx;
+        const q = this.#questions[idx];
+        const s = this.#quizState.get(idx);
+        if (!s || s.rated || !this.#quizState.isAnsweredRaw(idx)) return;
+        const now = new Date();
+        let card = FsrsStore.get(q.text);
+        if (!card) card = this.#fsrsEngine.createEmptyCard(now);
+        const nextCard = this.#fsrsEngine.next(card, now, rating);
+        FsrsStore.upsert(q.text, nextCard);
+        this.#quizState.markRated(idx, rating, nextCard.due instanceof Date ? nextCard.due : new Date(nextCard.due));
+        this.#justAnswered = true;
+        this.#refresh();
+    }
+
+    /* 作答完成后的统一出口：自动评分开启时直接评分，否则渲染评分条 */
+    #afterAnswer() {
+        this.#justAnswered = true;
+        if (this.#fsrsActive && this.#settings.autoRate && !this.#quizState.get(this.#currentIdx).rated && this.#quizState.isAnsweredRaw(this.#currentIdx)) {
+            this.#rateCard(this.#autoRating());
+        } else {
+            this.#refresh();
+        }
+    }
+
+    /* 自动评分：对错 + 本题用时 → 四档评分（按设置的评分标准，支持自定义阈值） */
+    #autoRating() {
+        return autoRateFor(this.#quizState.isCorrect(this.#currentIdx), this.#timer.getQuestionTime(this.#currentIdx), resolvePreset(this.#settings));
+    }
+
+    /* 复习数据摘要（菜单打开时刷新） */
+    #refreshFsrsStats() {
+        const s = FsrsStore.stats();
+        if (this.#els.fsrsTotalCards) this.#els.fsrsTotalCards.textContent = s.total;
+        if (this.#els.fsrsDueToday) this.#els.fsrsDueToday.textContent = s.due;
+        if (this.#els.fsrsAvgStability) this.#els.fsrsAvgStability.textContent = s.avgStability > 0 ? `${Math.round(s.avgStability)} 天` : "—";
+    }
+
+    #resetFsrsData() {
+        if (!confirm("确定重置全部复习数据？此操作不可恢复。")) return;
+        FsrsStore.save({});
+        this.#refreshFsrsStats();
+        this.#bus.emit("toast:show", { message: "复习数据已重置" });
+    }
+
+    /* 打开自定义阈值对话框：预填当前生效值（自定义或预设） */
+    #openPresetDialog() {
+        const custom = this.#settings.autoRatePresets ?? {};
+        this.#els.presetRows.forEach(row => {
+            const name = row.dataset.preset;
+            const v = custom[name] ?? AUTO_RATE_PRESETS[name];
+            row.querySelector(".preset-easy").value = v.easySec ?? Math.round(v.easyMs / 1000);
+            row.querySelector(".preset-good").value = v.goodSec ?? Math.round(v.goodMs / 1000);
+        });
+        try { this.#els.presetDialog.showModal(); } catch { /* 旧浏览器降级：无对话框也可用 */ }
+    }
+
+    /* 保存：校验并夹紧（1 ≤ easy < good ≤ 120），写入设置 */
+    #savePresetDialog() {
+        const presets = {};
+        this.#els.presetRows.forEach(row => {
+            const name = row.dataset.preset;
+            let easy = Math.round(+row.querySelector(".preset-easy").value) || 1;
+            let good = Math.round(+row.querySelector(".preset-good").value) || easy + 1;
+            easy = Math.min(120, Math.max(1, easy));
+            good = Math.min(120, Math.max(easy + 1, good));
+            presets[name] = { easySec: easy, goodSec: good };
+        });
+        this.#settings.autoRatePresets = presets;
+        this.#settings.autoRateCustom = true;
+        StorageAdapter.saveSettings(this.#settings);
+        this.#els.autoRateCustomToggle.checked = true;
+        this.#els.presetDialog.close();
+        this.#bus.emit("toast:show", { message: "自定义评分标准已保存" });
+    }
+
+    /* 恢复默认值：仅回填输入框，需点保存生效 */
+    #resetPresetDialogInputs() {
+        this.#els.presetRows.forEach(row => {
+            const v = AUTO_RATE_PRESETS[row.dataset.preset];
+            row.querySelector(".preset-easy").value = Math.round(v.easyMs / 1000);
+            row.querySelector(".preset-good").value = Math.round(v.goodMs / 1000);
+        });
+    }
+
+    #exportFsrsBackup() {
+        const blob = new Blob([JSON.stringify({
+            app: "Offline-Quiz-Trainer", kind: "fsrs-cards", version: 1,
+            exportedAt: new Date().toISOString(), cards: FsrsStore.load(),
+        })], { type: "application/json" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `fsrs-backup-${new Date().toISOString().slice(0, 10)}.json`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(url);
+        this.#bus.emit("toast:show", { message: "备份已导出" });
+    }
+
+    #onImportFsrsFile() {
+        const fl = this.#els.fsrsImportInput?.files;
+        if (!fl || !fl.length) return;
+        const file = fl[0];
+        file.text().then(text => {
+            let cards;
+            try {
+                const data = JSON.parse(text);
+                cards = data && typeof data === "object" && data.cards ? data.cards : data;
+            } catch { this.#bus.emit("toast:show", { message: "备份文件解析失败", isError: true }); return; }
+            const valid = {}; let bad = 0;
+            for (const [k, v] of Object.entries(cards)) {
+                if (v && typeof v.due === "number" && typeof v.stability === "number" && typeof v.state === "number") valid[k] = v;
+                else bad++;
+            }
+            FsrsStore.save(valid);
+            this.#refreshFsrsStats();
+            this.#els.fsrsImportInput.value = "";
+            this.#bus.emit("toast:show", { message: `已导入 ${Object.keys(valid).length} 张卡${bad ? `，跳过 ${bad} 条无效数据` : ""}` });
+        }).catch(() => this.#bus.emit("toast:show", { message: "读取备份文件失败", isError: true }));
     }
 
     #showQuestion(idx) {
@@ -1734,8 +2409,14 @@ class QuizController {
         }
 
         this.#bus.emit("question:render", { question: q, state: s });
-        if (this.#mode === "practice" && this.#quizState.isAnswered(idx)) {
+        if (this.#mode === "practice" && !this.#fsrsActive && this.#quizState.isAnswered(idx)) {
             this.#bus.emit("feedback:show", { question: q, state: s, correct: this.#quizState.isCorrect(idx) });
+        } else if (this.#fsrsActive) {
+            if (s.rated) {
+                this.#bus.emit("fsrs:rated", { question: q, state: s, correct: this.#quizState.isCorrect(idx), rating: s.rating, timeSpent: this.#timer.getQuestionTime(idx) });
+            } else if (s.submitted || (q.type !== "multiple" && s.selections.length)) {
+                this.#bus.emit("fsrs:awaitRating", { question: q, state: s, correct: this.#quizState.isCorrect(idx), preselected: this.#quizState.isCorrect(idx) ? 3 : 1 });
+            } else { this.#bus.emit("feedback:hide"); }
         } else { this.#bus.emit("feedback:hide"); }
         this.#bus.emit("nav:updateStyles", { currentIdx: idx, quizState: this.#quizState, mode: this.#mode, masteredSet: this.#masteredSet });
         this.#updateStats();
@@ -1795,7 +2476,7 @@ class QuizController {
         if (!this.#quizState) return;
         const now = new Date();
         const correct = this.#questions.filter((_, i) => this.#quizState.isCorrect(i)).length;
-        this.#history.unshift({ date: now.toLocaleString(), isoDate: now.toISOString(), score: correct, total: this.#questions.length, percentage: Math.round((correct / this.#questions.length) * 100), mode: this.#mode, totalTime: this.#timer.getTotalTime() });
+        this.#history.unshift({ date: now.toLocaleString(), isoDate: now.toISOString(), score: correct, total: this.#questions.length, percentage: Math.round((correct / this.#questions.length) * 100), mode: this.#fsrsActive ? "fsrs" : this.#mode, totalTime: this.#timer.getTotalTime() });
         if (this.#history.length > 10) this.#history = this.#history.slice(0, 10);
         StorageAdapter.saveHistory(this.#history);
         this.#bus.emit("history:updated", this.#history);
@@ -1803,7 +2484,14 @@ class QuizController {
 
     #restart() {
         if (!this.#quizState) return;
-        this.#quizState.reset(); this.#currentIdx = 0; this.#justAnswered = false;
+        if (this.#fsrsActive) {
+            // 重新构建队列：已评分的题下次到期在将来，不会重复出现
+            this.#buildFsrsQueue();
+            if (!this.#questions.length) { this.#bus.emit("toast:show", { message: "今日复习已完成 🎉" }); return; }
+        } else {
+            this.#quizState.reset();
+        }
+        this.#currentIdx = 0; this.#justAnswered = false;
         if (this.#autoNextId) { clearTimeout(this.#autoNextId); this.#autoNextId = null; }
         this.#timer.reset(); this.#timer.start();
         this.#els.quizSection.classList.remove("hidden");
@@ -1847,14 +2535,27 @@ class QuizController {
         if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || tag === "BUTTON" || tag === "A" || document.activeElement?.isContentEditable) return;
         if (!this.#quizState) return;
         const q = this.#questions[this.#currentIdx];
-        if (e.key >= "1" && e.key <= "5") { const optIdx = +e.key - 1; if (q.options[optIdx]) { this.#quizState.select(this.#currentIdx, q.options[optIdx].key, q.type === "multiple"); this.#justAnswered = true; this.#refresh(); } }
+        if (e.key >= "1" && e.key <= "5") {
+            if (this.#fsrsActive && this.#quizState.isAnsweredRaw(this.#currentIdx) && !this.#quizState.get(this.#currentIdx).rated && e.key <= "4") {
+                e.preventDefault(); this.#rateCard(+e.key); return; // 待评分：1–4 = 评分
+            }
+            const optIdx = +e.key - 1; if (q.options[optIdx]) { this.#quizState.select(this.#currentIdx, q.options[optIdx].key, q.type === "multiple"); this.#afterAnswer(); }
+        }
         else if (e.key === "ArrowLeft")  { e.preventDefault(); this.#navigate(-1); }
         else if (e.key === "ArrowRight") { e.preventDefault(); this.#navigate(1); }
         // m = toggleMark (markBtn), Shift+m = toggleMaster (masterBtn). Fixes the bug
         // where both m and M previously triggered #toggleMark regardless.
         else if (e.key === "m" && !e.shiftKey) { e.preventDefault(); this.#toggleMark(); }
         else if ((e.key === "M" || (e.key === "m" && e.shiftKey))) { e.preventDefault(); this.#toggleMaster(); }
-        else if (e.key === "Enter") { if (q.type === "multiple" && this.#mode === "practice" && !this.#quizState.get(this.#currentIdx).submitted) { this.#quizState.submitMulti(this.#currentIdx); this.#justAnswered = true; this.#refresh(); } else if (this.#currentIdx < this.#questions.length - 1) this.#navigate(1); }
+        else if (e.key === "Enter") {
+            if (this.#fsrsActive) {
+                const st = this.#quizState.get(this.#currentIdx);
+                if (q.type === "multiple" && !st.submitted) { this.#quizState.submitMulti(this.#currentIdx); this.#afterAnswer(); }
+                else if (this.#quizState.isAnsweredRaw(this.#currentIdx) && !st.rated) { this.#rateCard(this.#quizState.isCorrect(this.#currentIdx) ? 3 : 1); }
+                else if (this.#currentIdx < this.#questions.length - 1) this.#navigate(1);
+            } else if (q.type === "multiple" && this.#mode === "practice" && !this.#quizState.get(this.#currentIdx).submitted) { this.#quizState.submitMulti(this.#currentIdx); this.#justAnswered = true; this.#refresh(); }
+            else if (this.#currentIdx < this.#questions.length - 1) this.#navigate(1);
+        }
         else if (e.key === "Escape") { this.#closeNavOverlay(); }
     }
 
