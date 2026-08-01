@@ -1222,16 +1222,16 @@ class MarkdownParser {
 
 /* ===== Timer ===== */
 class Timer {
-    #bus; #startTime = 0; #questionStart = 0; #accumulated = []; #currentIdx = 0; #running = false; #rafId = null;
+    #bus; #startTime = 0; #questionStart = 0; #accumulated = []; #currentIdx = 0; #running = false; #rafId = null; #lastTotal = 0;
     constructor(bus) { this.#bus = bus; }
     start() { if (this.#running) return; const now = performance.now(); this.#startTime = now; this.#questionStart = now; this.#running = true; this.#tick(); }
-    stop() { if (!this.#running) return; this.#accrue(this.#currentIdx); this.#running = false; if (this.#rafId) { cancelAnimationFrame(this.#rafId); this.#rafId = null; } }
-    reset() { this.stop(); this.#accumulated = []; this.#startTime = 0; this.#questionStart = 0; this.#currentIdx = 0; }
+    stop() { if (!this.#running) return; this.#accrue(this.#currentIdx); this.#lastTotal = performance.now() - this.#startTime; this.#running = false; if (this.#rafId) { cancelAnimationFrame(this.#rafId); this.#rafId = null; } }
+    reset() { this.stop(); this.#accumulated = []; this.#startTime = 0; this.#questionStart = 0; this.#currentIdx = 0; this.#lastTotal = 0; }
     switchQuestion(from, to) { if (!this.#running || from === to) return; this.#accrue(from); this.#currentIdx = to; this.#questionStart = performance.now(); }
     #accrue(idx) { const elapsed = performance.now() - this.#questionStart; this.#accumulated[idx] = (this.#accumulated[idx] || 0) + elapsed; this.#questionStart = performance.now(); }
     #tick() { if (!this.#running) return; const now = performance.now(); const qTime = (this.#accumulated[this.#currentIdx] || 0) + (now - this.#questionStart); this.#bus.emit("timer:tick", { questionTime: qTime, totalTime: now - this.#startTime }); this.#rafId = requestAnimationFrame(() => this.#tick()); }
     getQuestionTime(idx) { if (idx === this.#currentIdx && this.#running) return (this.#accumulated[idx] || 0) + (performance.now() - this.#questionStart); return this.#accumulated[idx] || 0; }
-    getTotalTime() { return this.#running ? performance.now() - this.#startTime : 0; }
+    getTotalTime() { return this.#running ? performance.now() - this.#startTime : this.#lastTotal; }
 }
 
 /* ===== Storage ===== */
@@ -1263,8 +1263,8 @@ class QuestionParser {
     parseMarkdown(text, fileName = "") {
         const questions = []; let section = null, cur = null;
         const detectType = s => { s = s.toLowerCase(); if (s.includes("单选") || s.includes("a1") || s.includes("a2")) return "single"; if (s.includes("多选") || s.includes("x1") || s.includes("x2")) return "multiple"; if (s.includes("判断")) return "judgment"; return null; };
-        const commit = () => { if (!cur) return; if (cur.options.length && cur.answer) { cur.type ??= cur.answer.length > 1 ? "multiple" : section ?? "single"; questions.push(cur); } else if (!cur.answer) { this.errors.push({ file: fileName, line: cur.text.slice(0, 30), reason: "缺少答案" }); } cur = null; };
-        const RE = { heading: /^#+\s*(?:[一二三四五六七八九十]+、\s*)?(单选题|多选题|判断题|A[12]型题|X[12]型题)/i, secBreak: /^#+\s+[一二三四五六七八九十]+、/, qStart: /^(?:### \d+[.．]\s*|\[Q\]\s*)(.*)/, optBr: /^\[([A-E])\]\s*(.*)/, optDot: /^([A-E])[.．、]\s*(.*)/, answer: /^(?:\[T\]|\*\*答案[：:]\s*\*\*)\s*(.*)/, explain: /^\*\*解析[：:]\s*\*\*\s*(.*)/ };
+        const commit = () => { if (!cur) return; if (cur.options.length && cur.answer) { cur.type ??= cur.answer.length > 1 ? "multiple" : section ?? "single"; questions.push(cur); } else if (!cur.answer) { this.errors.push({ file: fileName, line: cur.text.slice(0, 30), reason: "缺少答案" }); } else { this.errors.push({ file: fileName, line: cur.text.slice(0, 30), reason: "缺少选项" }); } cur = null; };
+        const RE = { heading: /^#+\s*(?:[一二三四五六七八九十]+、\s*)?(单选题|多选题|判断题|A[12]型题|X[12]型题)/i, secBreak: /^#+\s+[一二三四五六七八九十]+、/, qStart: /^(?:### \d+[.．]\s*|\[Q\]\s*)(.*)/, optBr: /^\[([A-E])\]\s*(.*)/, optDot: /^([A-E])[.．、]\s*(.*)/, answer: /^(?:\[T\]|\*\*答案[：:]\s*)[*\s]*(.*?)[*\s]*$/, /* 兼容 `**答案： A**`（答案在星号内）与 `**答案：** A`（星号后）两种写法 */ explain: /^\*\*解析[：:]\s*\*\*\s*(.*)/ };
         for (const raw of text.split(/\r?\n/)) {
             const line = raw.trim(); if (!line) continue; let m;
             if      (m = line.match(RE.heading))  { commit(); section = detectType(m[1]) ?? section; }
@@ -1843,7 +1843,8 @@ class QuizController {
 
     #handleKey(e) {
         const tag = document.activeElement?.tagName;
-        if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || document.activeElement?.isContentEditable) return;
+        // 按钮/链接保留原生键盘激活，避免全局 Enter 逻辑与按钮 click 双重触发
+        if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || tag === "BUTTON" || tag === "A" || document.activeElement?.isContentEditable) return;
         if (!this.#quizState) return;
         const q = this.#questions[this.#currentIdx];
         if (e.key >= "1" && e.key <= "5") { const optIdx = +e.key - 1; if (q.options[optIdx]) { this.#quizState.select(this.#currentIdx, q.options[optIdx].key, q.type === "multiple"); this.#justAnswered = true; this.#refresh(); } }
