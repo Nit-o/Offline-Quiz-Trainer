@@ -11,7 +11,11 @@ An HTML renderer that reads Markdown files and converts them into a quiz.
 
 ### 使用说明
 
-- 左右滑动（支持触屏）切换题目
+通过[ts-fsrs](https://github.com/open-spaced-repetition/ts-fsrs)支持了FSRS。
+
+主题切换（黑夜模式）。~~你可以在床上背着舍友偷偷内卷了~~
+
+- 支持触屏：左右滑动切换题目
 
 - 快捷键
   - 左右箭头 = 切换题目
