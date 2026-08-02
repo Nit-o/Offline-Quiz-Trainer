@@ -491,6 +491,7 @@
             padding: var(--sp-4) var(--sp-6); font: 600 var(--text-sm) var(--font-sans); cursor: pointer;
             min-height: var(--touch-min); display: inline-flex; align-items: center; justify-content: center;
             gap: var(--space-related); user-select: none; position: relative; overflow: hidden;
+            touch-action: manipulation; /* 消除移动端双击缩放延迟 */
             transition: transform .12s var(--ease-out), background .2s var(--ease), box-shadow .2s var(--ease), color .2s var(--ease);
             letter-spacing: .02em;
 
@@ -635,8 +636,11 @@
         .options { display: flex; flex-direction: column; gap: var(--space-related); margin-block-end: var(--sp-5); }
 
         .option {
+            /* <button> 重置：继承字体/颜色、占满宽度、左对齐；touch-action 消除双击缩放延迟 */
+            width: 100%; font: inherit; color: var(--text); text-align: left; appearance: none;
             background: var(--surface); border: var(--bw-2) solid var(--divider); border-radius: var(--radius-lg);
             padding: 14px var(--sp-5); cursor: pointer; display: flex; align-items: center; gap: var(--sp-4);
+            touch-action: manipulation;
             transition: border-color .15s var(--ease), background .15s var(--ease), transform .12s var(--ease-out), box-shadow .15s var(--ease);
             user-select: none; min-height: 48px; position: relative;
 
@@ -1670,8 +1674,17 @@ class FsrsEngine {
 /* ===== FsrsStore — 复习卡持久化（localStorage，题干全文为键） ===== */
 class FsrsStore {
     static KEY = "fsrs_cards_v1";
-    static load() { try { const raw = localStorage.getItem(this.KEY); return raw ? JSON.parse(raw) : {}; } catch { return {}; } }
+    /* 内存缓存：卡表仅在首次访问时解析一次，save 后同步更新——
+       避免每次 get()/stats() 都 JSON.parse 全表（大题库下可省下秒级阻塞） */
+    static #cache = null;
+    static load() {
+        if (this.#cache) return this.#cache;
+        try { const raw = localStorage.getItem(this.KEY); this.#cache = raw ? JSON.parse(raw) : {}; }
+        catch { this.#cache = {}; }
+        return this.#cache;
+    }
     static save(map) {
+        this.#cache = map;
         try { localStorage.setItem(this.KEY, JSON.stringify(map)); }
         catch (e) { if (typeof StorageAdapter.onPersistError === "function") StorageAdapter.onPersistError(this.KEY, e); }
     }
@@ -1762,15 +1775,16 @@ class OptionRenderer {
     constructor(container, bus) { this.#container = container; this.#bus = bus; bus.on("question:render", ({ question, state }) => this.#render(question, state)); bus.on("feedback:show", ({ question, state }) => this.#applyFeedback(question, state)); bus.on("fsrs:awaitRating", ({ question, state }) => this.#applyFeedback(question, state)); bus.on("fsrs:rated", ({ question, state }) => this.#applyFeedback(question, state)); bus.on("feedback:hide", () => this.#clearFeedback()); }
     #render(q, state) {
         let html = `<div class="question-title">${esc(q.text)}${q.type === "multiple" ? ' <small>(多选)</small>' : q.type === "judgment" ? ' <small>(判断)</small>' : ""}</div><div class="options">`;
-        q.options.forEach(opt => { const sel = state.selections.includes(opt.key); const dis = q.type === "multiple" && state.submitted ? " disabled" : ""; html += `<div class="option${sel ? " selected" : ""}${dis}" data-key="${esc(opt.key)}" role="button" tabindex="0" aria-pressed="${sel}"><span>${esc(opt.key)}. ${esc(opt.text)}</span></div>`; });
+        q.options.forEach(opt => { const sel = state.selections.includes(opt.key); const dis = q.type === "multiple" && state.submitted; html += `<button type="button" class="option${sel ? " selected" : ""}${dis ? " disabled" : ""}" data-key="${esc(opt.key)}"${dis ? " disabled" : ""} aria-pressed="${sel}"><span>${esc(opt.key)}. ${esc(opt.text)}</span></button>`; });
         html += "</div>";
         if (q.type === "multiple" && !state.submitted) html += `<div class="multi-submit-bar"><button id="multiSubmitBtn" class="btn btn-sm" ${state.selections.length ? "" : "disabled"} aria-label="提交多选题答案">提交答案</button></div>`;
         this.#container.innerHTML = html;
-        this.#container.querySelectorAll(".option:not(.disabled)").forEach(el => { el.addEventListener("click", () => this.#bus.emit("option:clicked", { key: el.dataset.key, isMulti: q.type === "multiple" })); el.addEventListener("keydown", e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); el.click(); } }); });
+        /* <button> 原生支持 Enter/Space 激活与键盘焦点；此处只需监听 click */
+        this.#container.querySelectorAll(".option:not(.disabled)").forEach(el => { el.addEventListener("click", () => this.#bus.emit("option:clicked", { key: el.dataset.key, isMulti: q.type === "multiple" })); });
         const mb = this.#container.querySelector("#multiSubmitBtn"); if (mb) mb.addEventListener("click", () => this.#bus.emit("multi:submit"));
     }
-    #applyFeedback(q, state) { this.#container.querySelectorAll(".option").forEach(el => { el.classList.remove("correct", "incorrect"); if (q.answer.includes(el.dataset.key)) el.classList.add("correct"); else if (state.selections.includes(el.dataset.key)) el.classList.add("incorrect"); el.classList.add("disabled"); }); }
-    #clearFeedback() { this.#container.querySelectorAll(".option").forEach(el => el.classList.remove("correct", "incorrect", "disabled")); }
+    #applyFeedback(q, state) { this.#container.querySelectorAll(".option").forEach(el => { el.classList.remove("correct", "incorrect"); if (q.answer.includes(el.dataset.key)) el.classList.add("correct"); else if (state.selections.includes(el.dataset.key)) el.classList.add("incorrect"); el.classList.add("disabled"); el.disabled = true; }); }
+    #clearFeedback() { this.#container.querySelectorAll(".option").forEach(el => { el.classList.remove("correct", "incorrect", "disabled"); el.disabled = false; }); }
 }
 
 class FeedbackPanel {
@@ -2200,19 +2214,21 @@ class QuizController {
         if (!this.#els.quizSection.classList.contains("hidden")) this.#showSkeleton();
         try {
             const { questions, errors } = await this.#parser.loadFiles(fl);
-            if (errors.length) this.#els.fileStatus.innerText = `解析错误: ${errors.map(e => `${e.file}: ${e.error || e.reason}`).join("; ")}`;
+            /* 错误信息独立保留，后续成功/过滤提示拼接追加，避免被覆盖 */
+            const errMsg = errors.length ? `解析错误: ${errors.map(e => `${e.file}: ${e.error || e.reason}`).join("; ")}` : "";
+            if (errMsg) this.#els.fileStatus.innerText = errMsg;
             if (!questions.length) { this.#bus.emit("toast:show", { message: "无有效题目", isError: true }); return; }
             let filtered = questions;
             if (this.#settings.hideMastered) {
                 filtered = questions.filter(q => !StorageAdapter.isMastered(q.text));
                 const removed = questions.length - filtered.length;
-                if (removed) this.#els.fileStatus.innerText = `共导入 ${questions.length} 题，已过滤 ${removed} 道已掌握题目`;
+                if (removed) this.#els.fileStatus.innerText = `共导入 ${questions.length} 题，已过滤 ${removed} 道已掌握题目${errMsg ? `；${errMsg}` : ""}`;
             }
             this.#questions = filtered;
             this.#quizState = new QuizState(filtered);
             this.#currentIdx = 0;
             this.#computeMasteredSet();
-            if (!this.#settings.hideMastered) this.#els.fileStatus.innerText = `成功加载 ${filtered.length} 题`;
+            if (!this.#settings.hideMastered) this.#els.fileStatus.innerText = `成功加载 ${filtered.length} 题${errMsg ? `；${errMsg}` : ""}`;
             this.#els.modeSection.classList.remove("hidden");
             this.#selectMode("practice");
         } finally {
@@ -2271,13 +2287,16 @@ class QuizController {
     #buildFsrsQueue() {
         const now = new Date();
         const total = this.#questions.length; // 重建前保存，用于统计未到期卡
-        const due = [], fresh = [];
+        const dueEntries = [], fresh = [];
         this.#questions.forEach(q => {
-            const card = FsrsStore.get(q.text);
+            const card = FsrsStore.get(q.text); // 内存缓存读取 O(1)
             if (!card) fresh.push(q);
-            else if (card.due <= now.getTime()) due.push(q);
+            else if (card.due <= now.getTime()) dueEntries.push({ q, card });
         });
-        due.sort((a, b) => this.#fsrsEngine.getRetrievability(FsrsStore.get(a.text), now) - this.#fsrsEngine.getRetrievability(FsrsStore.get(b.text), now));
+        /* 弱记忆优先：每张卡只计算一次记忆保留率再排序（避免比较器内重复计算） */
+        dueEntries.forEach(e => { e.r = this.#fsrsEngine.getRetrievability(e.card, now); });
+        dueEntries.sort((a, b) => a.r - b.r);
+        const due = dueEntries.map(e => e.q);
         let freshQueue = fresh;
         const limit = this.#settings.dailyNew;
         if (limit > 0 && fresh.length > limit) freshQueue = fresh.slice(0, limit);
@@ -2441,17 +2460,22 @@ class QuizController {
             let cards;
             try {
                 const data = JSON.parse(text);
-                cards = data && typeof data === "object" && data.cards ? data.cards : data;
+                cards = data && typeof data === "object" && !Array.isArray(data) && data.cards ? data.cards : data;
             } catch { this.#bus.emit("toast:show", { message: "备份文件解析失败", isError: true }); return; }
+            if (!cards || typeof cards !== "object" || Array.isArray(cards)) { this.#bus.emit("toast:show", { message: "备份文件格式无效", isError: true }); return; }
             const valid = {}; let bad = 0;
             for (const [k, v] of Object.entries(cards)) {
                 if (v && typeof v.due === "number" && typeof v.stability === "number" && typeof v.state === "number") valid[k] = v;
                 else bad++;
             }
+            const count = Object.keys(valid).length;
+            if (!count) { this.#bus.emit("toast:show", { message: "备份中无有效卡片", isError: true }); return; }
+            /* 覆盖现有数据属破坏性操作：先确认（与「重置数据」一致） */
+            if (!confirm(`导入将覆盖现有 ${FsrsStore.count()} 张卡，共 ${count} 张卡数据，确定继续？`)) return;
             FsrsStore.save(valid);
             this.#refreshFsrsStats();
             this.#els.fsrsImportInput.value = "";
-            this.#bus.emit("toast:show", { message: `已导入 ${Object.keys(valid).length} 张卡${bad ? `，跳过 ${bad} 条无效数据` : ""}` });
+            this.#bus.emit("toast:show", { message: `已导入 ${count} 张卡${bad ? `，跳过 ${bad} 条无效数据` : ""}` });
         }).catch(() => this.#bus.emit("toast:show", { message: "读取备份文件失败", isError: true }));
     }
 
@@ -2497,7 +2521,9 @@ class QuizController {
         this.#justAnswered = false;
         if (this.#autoNextId) { clearTimeout(this.#autoNextId); this.#autoNextId = null; }
         if (wasJust && this.#settings.autoNext && this.#quizState.isAnswered(idx) && idx < this.#questions.length - 1) {
-            this.#autoNextId = setTimeout(() => { this.#navigate(1); this.#autoNextId = null; }, this.#settings.autoDelay * 1000);
+            /* FSRS 评分完成后至少停留 0.6s，保证「下次复习时间」可读 */
+            const delay = this.#fsrsActive && this.#quizState.isRated(idx) ? Math.max(this.#settings.autoDelay, 0.6) : this.#settings.autoDelay;
+            this.#autoNextId = setTimeout(() => { this.#navigate(1); this.#autoNextId = null; }, delay * 1000);
         }
     }
 
