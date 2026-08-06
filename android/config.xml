@@ -9,8 +9,12 @@
     </author>
     <content src="index.html" />
     <!-- 本应用完全离线，无需网络权限；保留默认 intent 白名单以免误伤 -->
+    <!-- 注意：allow-intent 不是权限，只是“允许跳转到外部浏览器”的运行时白名单 -->
     <allow-intent href="http://*/*" />
     <allow-intent href="https://*/*" />
+    <!-- 移除 cordova 模板默认添加的 INTERNET 权限，让 APK 零权限 -->
+    <!-- 若以后引入联网功能（在线题库、远程图片等），删除这段即可恢复网络权限 -->
+    <edit-config file="app/src/main/AndroidManifest.xml" mode="remove" target="/manifest/uses-permission[@android:name='android.permission.INTERNET']" />
     <!-- 应用使用 oklch()/CSS Color 5，需较新 WebView；Android 8.0+ 起步 -->
     <preference name="android-minSdkVersion" value="26" />
     <preference name="Orientation" value="default" />
