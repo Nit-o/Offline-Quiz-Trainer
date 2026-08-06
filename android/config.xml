@@ -1,0 +1,17 @@
+<?xml version='1.0' encoding='utf-8'?>
+<widget id="com.quiztrainer.app" version="1.0.0" xmlns="http://www.w3.org/ns/widgets" xmlns:cdv="http://cordova.apache.org/ns/1.0">
+    <name>智能刷题系统</name>
+    <description>
+        离线 · 安全 · 高效的 Markdown 题库刷题工具（FSRS 间隔记忆 / LaTeX 公式 / 数据统计）
+    </description>
+    <author email="" href="">
+        Offline-Quiz-Trainer
+    </author>
+    <content src="index.html" />
+    <!-- 本应用完全离线，无需网络权限；保留默认 intent 白名单以免误伤 -->
+    <allow-intent href="http://*/*" />
+    <allow-intent href="https://*/*" />
+    <!-- 应用使用 oklch()/CSS Color 5，需较新 WebView；Android 8.0+ 起步 -->
+    <preference name="android-minSdkVersion" value="26" />
+    <preference name="Orientation" value="default" />
+</widget>

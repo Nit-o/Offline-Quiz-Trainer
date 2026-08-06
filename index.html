@@ -1361,7 +1361,7 @@
                             <button id="importFsrsBtn" class="btn btn-outline btn-sm">导入备份</button>
                         </div>
                         <input type="file" id="fsrsImportInput" accept=".json,application/json" hidden>
-                        <span class="menu-row-hint" id="fsrsHint">备份/导入为 JSON 文件，仅存于本地；导入将覆盖现有数据。WebView 无法下载时可用「复制备份」粘贴保存为 .json</span>
+                        <span class="menu-row-hint" id="fsrsHint">备份/导入为 JSON 文件，仅存于本地；导入将覆盖现有数据。导出会调起系统分享，可保存到「文件」或发送到电脑；也可用「复制备份」手动保存为 .json</span>
                     </div>
                 </div>
                 <div class="menu-group menu-group--stats">
@@ -2760,15 +2760,32 @@ class QuizController {
         });
     }
 
+    /* 导出备份：优先 Web Share API 调起系统分享面板（可保存到文件/网盘/微信等）。
+       Cordova WebView 未实现 onDownloadStart，<a download> 的 blob 下载会静默失败，
+       因此仅桌面浏览器保留下载路径；旧版 WebView 无文件分享时退回复制到剪贴板。 */
     #exportFsrsBackup() {
-        const blob = new Blob([JSON.stringify({
+        const data = {
             app: "Offline-Quiz-Trainer", kind: "fsrs-cards", version: 1,
             exportedAt: new Date().toISOString(), cards: FsrsStore.load(),
-        })], { type: "application/json" });
+        };
+        const json = JSON.stringify(data, null, 2);
+        const name = `fsrs-backup-${new Date().toISOString().slice(0, 10)}.json`;
+        const file = new File([json], name, { type: "application/json" });
+
+        if (navigator.canShare?.({ files: [file] })) {
+            navigator.share({ files: [file], title: "FSRS 复习备份" })
+                .then(() => this.#bus.emit("toast:show", { message: "备份已通过系统分享导出" }))
+                .catch(e => { if (e?.name !== "AbortError") this.#copyFsrsBackup(json); });
+            return;
+        }
+        if (/android/i.test(navigator.userAgent)) { this.#copyFsrsBackup(json); return; }
+
+        // 桌面浏览器：常规 blob 下载
+        const blob = new Blob([json], { type: "application/json" });
         const url = URL.createObjectURL(blob);
         const a = document.createElement("a");
         a.href = url;
-        a.download = `fsrs-backup-${new Date().toISOString().slice(0, 10)}.json`;
+        a.download = name;
         document.body.appendChild(a);
         a.click();
         a.remove();
@@ -2778,17 +2795,16 @@ class QuizController {
 
     /* 复制备份：WebView / file:// 下 <a download> 常被系统拦截，剪贴板是最稳的离线方案。
        降级链：Clipboard API → execCommand("copy") → 新窗口展示全文手动复制 */
-    #copyFsrsBackup() {
-        const data = {
+    #copyFsrsBackup(json = null) {
+        const text = json ?? JSON.stringify({
             app: "Offline-Quiz-Trainer", kind: "fsrs-cards", version: 1,
             exportedAt: new Date().toISOString(), cards: FsrsStore.load(),
-        };
-        const json = JSON.stringify(data, null, 2);
+        }, null, 2);
         const ok = () => this.#bus.emit("toast:show", { message: "备份已复制到剪贴板，请粘贴保存为 .json 文件" });
         if (navigator.clipboard?.writeText) {
-            navigator.clipboard.writeText(json).then(ok).catch(() => this.#fallbackCopy(json, ok));
+            navigator.clipboard.writeText(text).then(ok).catch(() => this.#fallbackCopy(text, ok));
         } else {
-            this.#fallbackCopy(json, ok);
+            this.#fallbackCopy(text, ok);
         }
     }
 

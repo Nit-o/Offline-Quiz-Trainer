@@ -1,0 +1,63 @@
+name: 自动打包 Cordova APK
+
+# 1. 触发条件：只要你把代码推送到 GitHub 的 main 分支，它就会自动开始打包
+on:
+  push:
+    branches: [ "main" ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest  # 使用 GitHub 提供的免费云电脑
+
+    steps:
+      # 2. 拉取你的代码
+      - name: 拉取代码
+        uses: actions/checkout@v4
+
+      # 3. 安装 Node.js 环境 (Cordova 依赖它)
+      - name: 安装 Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      # 4. 安装 Java 环境 (Android 打包必须，小白直接复制版本号就行)
+      - name: 安装 Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+
+      # 5. 全局安装 Cordova 打包工具
+      - name: 安装 Cordova
+        run: npm install -g cordova
+
+      # 6. 安装 android/ 目录下的依赖（Cordova 项目在 android/ 里，所有命令都要先进入该目录）
+      - name: 安装依赖
+        working-directory: android
+        run: npm install
+
+      # 7. 以仓库根目录的 index.html 和 vendor/ 为唯一数据源，同步到 android/www（避免手工复制导致 APK 里是旧页面）
+      - name: 同步网页文件到 www
+        working-directory: android
+        run: |
+          mkdir -p www
+          cp ../index.html www/index.html
+          rm -rf www/vendor
+          cp -r ../vendor www/vendor
+
+      # 8. 添加 Android 平台 (如果报错，可能是 node_modules 没装，上面已经自动补装)
+      - name: 添加 Android 平台
+        working-directory: android
+        run: cordova platform add android --no-interactive
+
+      # 9. 开始打包 (生成的是 Debug 版，不需要签名，直接就能装手机测试)
+      - name: 打包成 APK
+        working-directory: android
+        run: cordova build android
+
+      # 10. 将打包好的 APK 上传到网页，供你下载
+      - name: 上传 APK 文件
+        uses: actions/upload-artifact@v4
+        with:
+          name: 我的APP安装包
+          path: android/platforms/android/app/build/outputs/apk/debug/app-debug.apk
