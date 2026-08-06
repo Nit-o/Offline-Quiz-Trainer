@@ -64,9 +64,9 @@
             --text-xl:    clamp(1.5rem,   1.3rem + 0.75vw,  2rem);
             --text-2xl:   clamp(2rem,     1.7rem + 1vw,     2.5rem);
 
-            --font-serif: "Songti SC", "STKaiti", "Noto Serif CJK SC", "Source Han Serif SC", Georgia, serif;
-            --font-sans:  "PingFang SC", "SF Pro Text", system-ui, -apple-system, sans-serif;
-            --font-mono:  "SF Mono", "Menlo", "Consolas", monospace;
+            --font-serif: Georgia, ui-serif, serif;
+            --font-sans:  system-ui, -apple-system, sans-serif;
+            --font-mono:  ui-monospace, monospace;
 
             --sp-1:  0.125rem;
             --sp-2:  0.25rem;
@@ -167,7 +167,7 @@
 
         html {
             -webkit-tap-highlight-color: transparent;
-            text-size-adjust: none;
+            -webkit-text-size-adjust: none;
             scrollbar-color: var(--text-muted) transparent;
             scrollbar-width: thin;
         }
@@ -192,7 +192,7 @@
         h1 { margin-block: calc(var(--rhythm) * 2) var(--rhythm); }
         h2 { margin-block: calc(var(--rhythm) * 2) var(--rhythm); }
         h3 { margin-block: var(--rhythm) calc(var(--rhythm) * 0.5); }
-        p, li, .question-title, .explanation-content, .wrong-card-explanation { text-wrap: pretty; max-width: var(--measure); }
+        p, li, .question-title, .explanation-content, .wrong-card-explanation { max-width: var(--measure); }
         /* Ident consecutive paragraphs (1lh — defined but kept off by default for UI text). */
         article p + p { text-indent: var(--lh-unit); }
 
