@@ -7,6 +7,10 @@
     <meta name="theme-color" content="#f0ebe3" media="(prefers-color-scheme: light)">
     <meta name="theme-color" content="#181a20" media="(prefers-color-scheme: dark)">
     <title>Offline-Quiz-Trainer</title>
+    <!-- KaTeX 0.16.11（本地 vendor/katex，完全离线渲染 $...$ / $$...$$ 数学公式；MIT License） -->
+    <link rel="stylesheet" href="vendor/katex/katex.min.css">
+    <script defer src="vendor/katex/katex.min.js"></script>
+    <script defer src="vendor/katex/contrib/auto-render.min.js"></script>
     <!-- 技术基线（Standards baseline）：
          HTML Living Standard — Last Updated 20 July 2026
          ECMAScript 2026（ES2026）· CSS Snapshot 2026（含 CSS Color 5）
@@ -342,13 +346,14 @@
             .menu-panel .card-content {
                 display: grid;
                 grid-template-columns: 1fr 1fr;
-                grid-template-areas: "file file" "theme settings" "fsrs fsrs";
+                grid-template-areas: "file file" "theme settings" "fsrs fsrs" "stats stats";
                 gap: var(--sp-6) var(--sp-8);
             }
             .menu-panel .menu-group--file     { grid-area: file; }
             .menu-panel .menu-group--theme    { grid-area: theme; }
             .menu-panel .menu-group--settings { grid-area: settings; }
             .menu-panel .menu-group--fsrs     { grid-area: fsrs; }
+            .menu-panel .menu-group--stats    { grid-area: stats; }
         }
         .menu-panel .menu-group-title {
             font-family: var(--font-sans);
@@ -382,8 +387,8 @@
                 &:focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; }
             }
         }
-        /* FSRS 设置子菜单（内嵌 details，随 FSRS 启用开关显隐） */
-        .fsrs-submenu {
+        /* FSRS 设置子菜单（内嵌 details，随 FSRS 启用开关显隐）与数据面板趋势展开区共用样式 */
+        .fsrs-submenu, .trend-details {
             margin-block-start: var(--sp-3);
             border: var(--bw-1) solid var(--divider);
             border-radius: var(--radius);
@@ -422,6 +427,96 @@
             flex-wrap: wrap;
             gap: var(--sp-2);
         }
+        /* 数据统计面板：累计概览磁贴 + 近 7 天趋势柱状图 */
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: var(--sp-3);
+        }
+        @media (min-width: 720px) { .stats-grid { grid-template-columns: repeat(4, 1fr); } }
+        .stats-tile {
+            display: flex;
+            flex-direction: column;
+            gap: var(--sp-1);
+            padding: var(--sp-3) var(--sp-4);
+            border: var(--bw-1) solid var(--divider);
+            border-radius: var(--radius);
+            background: var(--surface);
+        }
+        .stats-value {
+            font-size: var(--text-lg);
+            font-weight: 700;
+            line-height: 1.1;
+            color: var(--primary);
+            font-variant-numeric: tabular-nums;
+        }
+        .stats-label { font-size: var(--text-xs); color: var(--text-muted); }
+        .trend-chart {
+            display: flex;
+            align-items: stretch;
+            gap: var(--sp-2);
+            height: 88px;
+            padding: var(--sp-2) var(--sp-1) 0;
+        }
+        .trend-col {
+            flex: 1;
+            min-width: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: flex-end;
+            gap: 2px;
+        }
+        .trend-val {
+            height: 15px;
+            line-height: 15px;
+            font-size: 10px;
+            color: var(--text-soft);
+            font-variant-numeric: tabular-nums;
+        }
+        .trend-fill {
+            width: 100%;
+            max-width: 26px;
+            border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+            background: var(--primary);
+            opacity: 0.85;
+            transition: height var(--ease) 0.25s;
+        }
+        .trend-fill.empty { background: var(--divider); }
+        .trend-label { height: 14px; line-height: 14px; font-size: 10px; color: var(--text-muted); }
+        /* 未来 3 天复习量预测 + 展开图表（近 1 周实际 / 未来 1 周预计，颜色区分：复习/新增/预计） */
+        .forecast-row {
+            display: flex;
+            flex-wrap: wrap;
+            gap: var(--sp-2) var(--sp-6);
+            font-size: var(--text-sm);
+            color: var(--text-soft);
+        }
+        .forecast-item b { color: var(--primary); font-weight: 600; font-variant-numeric: tabular-nums; }
+        .trend-chart--wide { height: 96px; }
+        .trend-fill.fill-review { background: var(--primary); }
+        .trend-fill.fill-new    { background: var(--accent); }
+        .trend-fill.fill-due    { background: var(--text-muted); opacity: 0.5; }
+        .trend-fill.fill-review.empty, .trend-fill.fill-new.empty, .trend-fill.fill-due.empty { background: var(--divider); opacity: 1; }
+        .trend-details .trend-chart { margin-block-start: var(--sp-3); }
+        .trend-legend {
+            display: flex;
+            flex-wrap: wrap;
+            gap: var(--sp-2) var(--sp-6);
+            margin-block-start: var(--sp-2);
+            font-size: var(--text-xs);
+            color: var(--text-muted);
+        }
+        .legend-dot {
+            display: inline-block;
+            width: 10px; height: 10px;
+            margin-inline-end: 4px;
+            border-radius: 2px;
+            vertical-align: -1px;
+        }
+        .legend-review { background: var(--primary); }
+        .legend-new    { background: var(--accent); }
+        .legend-due    { background: var(--text-muted); opacity: 0.5; }
         /* File dropzone — semantic <label> wraps <input>; auto-loads on change.
            Fitts: large hit target; dashed border signals affordance (Closure). */
         .file-drop {
@@ -1269,6 +1364,49 @@
                         <span class="menu-row-hint" id="fsrsHint">备份/导入为 JSON 文件，仅存于本地；导入将覆盖现有数据。WebView 无法下载时可用「复制备份」粘贴保存为 .json</span>
                     </div>
                 </div>
+                <div class="menu-group menu-group--stats">
+                    <h3 class="menu-group-title">数据统计</h3>
+                    <div class="menu-group-content">
+                        <div class="stats-grid" aria-label="累计统计">
+                            <div class="stats-tile">
+                                <span class="stats-value" id="ovSessions">0</span>
+                                <span class="stats-label">练习次数</span>
+                            </div>
+                            <div class="stats-tile">
+                                <span class="stats-value" id="ovAnswered">0</span>
+                                <span class="stats-label">累计答题</span>
+                            </div>
+                            <div class="stats-tile">
+                                <span class="stats-value" id="ovAccuracy">—</span>
+                                <span class="stats-label">总正确率</span>
+                            </div>
+                            <div class="stats-tile">
+                                <span class="stats-value" id="ovMastered">0</span>
+                                <span class="stats-label">已掌握</span>
+                            </div>
+                        </div>
+                        <div class="trend-chart" id="trendChart" role="img" aria-label="近 7 天每日答题与复习量柱状图"></div>
+                        <div class="forecast-row" aria-label="未来 3 天复习量预测">
+                            <span class="forecast-item">今天 <b id="fc0">0</b></span>
+                            <span class="forecast-item">明天 <b id="fc1">0</b></span>
+                            <span class="forecast-item">后天 <b id="fc2">0</b></span>
+                        </div>
+                        <details class="trend-details">
+                            <summary>近 1 周实际 / 未来 1 周预计</summary>
+                            <div class="trend-chart trend-chart--wide" id="trendChartWide" role="img" aria-label="近 1 周实际复习量与未来 1 周预计复习量柱状图"></div>
+                            <div class="trend-legend" aria-hidden="true">
+                                <span><i class="legend-dot legend-review"></i>实际复习</span>
+                                <span><i class="legend-dot legend-new"></i>新增</span>
+                                <span><i class="legend-dot legend-due"></i>预计</span>
+                            </div>
+                        </details>
+                        <div class="fsrs-stats" aria-label="复习汇总">
+                            <span>累计复习 <b id="ovReps">0</b></span>
+                            <span>累计遗忘 <b id="ovLapses">0</b></span>
+                            <span>平均每题 <b id="ovAvgTime">—</b></span>
+                        </div>
+                    </div>
+                </div>
             </div>
         </details>
 
@@ -1443,6 +1581,18 @@ class EventBus {
 const esc = str => str == null ? "" : String(str).replace(/[&<>"']/g, m => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;", "'": "&#039;" })[m]);
 const fmtTime = ms => { const sec = Math.floor(ms / 1000); return `${String(Math.floor(sec / 60)).padStart(2, "0")}:${String(sec % 60).padStart(2, "0")}`; };
 const hashStr = s => { let h = 0; for (let i = 0; i < s.length; i++) { h = ((h << 5) - h) + s.charCodeAt(i); h |= 0; } return String(h); };
+const dateKey = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+/* KaTeX 离线渲染（vendor/katex）：$...$ / $$...$$ / \(...\) / \[...\]；auto-render 默认忽略 <code>/<pre>，行内代码不受影响；渲染失败保持原文 */
+const MATH_OPTS = { delimiters: [
+    { left: "$$", right: "$$", display: true },
+    { left: "$", right: "$", display: false },
+    { left: "\\\(", right: "\\\)", display: false },
+    { left: "\\\[", right: "\\\]", display: true },
+], throwOnError: false };
+const renderMath = el => {
+    if (!el || typeof window.renderMathInElement !== "function") return;
+    try { window.renderMathInElement(el, MATH_OPTS); } catch { /* 保持原文 */ }
+};
 
 /* ===== Markdown Parser — code blocks wrapped in <figure> + <figcaption> (CLT context anchor) ===== */
 class MarkdownParser {
@@ -1493,6 +1643,30 @@ class StorageAdapter {
     static saveMastered(m) { this.#s("quiz_mastered", m); }
     static toggleMastered(text) { const list = this.getMastered(); const h = hashStr(text); const idx = list.indexOf(h); idx > -1 ? list.splice(idx, 1) : list.push(h); this.saveMastered(list); return idx === -1; }
     static isMastered(text) { return this.getMastered().includes(hashStr(text)); }
+    /* 累计统计（数据统计面板）：练习次数 / 答题 / 正确 / 用时 + 近 30 天每日明细 */
+    static getStats() { const s = this.#g("quiz_stats", null); return s && typeof s === "object" ? { sessions: 0, answered: 0, correct: 0, timeMs: 0, daily: {}, ...s } : { sessions: 0, answered: 0, correct: 0, timeMs: 0, daily: {} }; }
+    static saveStats(s) { this.#s("quiz_stats", s); }
+    /* answered 为实际作答数（未答不计）；fsrs 会话的每日活动由卡片 last_review
+       承载（可随备份导入/导出），不重复记入 daily，避免趋势图双重计数 */
+    static recordSession({ correct = 0, answered = 0, timeMs = 0, fsrs = false } = {}) {
+        const s = this.getStats();
+        s.sessions++; s.answered += answered; s.correct += correct; s.timeMs += timeMs;
+        if (!fsrs) {
+            const d = new Date();
+            const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+            const day = s.daily[key] || { answered: 0, correct: 0 };
+            day.answered += answered; day.correct += correct;
+            s.daily[key] = day;
+            /* 只保留近 30 天，防止存储无限增长 */
+            const cutoff = new Date(d.getFullYear(), d.getMonth(), d.getDate() - 29).getTime();
+            for (const k of Object.keys(s.daily)) {
+                const t = new Date(`${k}T00:00:00`).getTime();
+                if (Number.isNaN(t) || t < cutoff) delete s.daily[k];
+            }
+        }
+        this.saveStats(s);
+        return s;
+    }
 }
 
 /* ===== FSRS Engine — 移植自 ts-fsrs v5.4.1 / FSRS-6.0（MIT License）=====
@@ -1723,6 +1897,60 @@ class FsrsStore {
         }
         return { total: entries.length, due, avgStability: stCount ? stSum / stCount : 0, reps, lapses };
     }
+    /* 按卡片 last_review 统计近 N 天每日复习量：备份导入后趋势图立即适配 */
+    static dailyReviews(days = 7, now = new Date()) {
+        const counts = {};
+        const from = new Date(now.getFullYear(), now.getMonth(), now.getDate() - (days - 1)).getTime();
+        for (const c of Object.values(this.load())) {
+            if (!c.last_review) continue;
+            const d = new Date(c.last_review);
+            if (d.getTime() < from) continue;
+            const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+            counts[key] = (counts[key] ?? 0) + 1;
+        }
+        return counts;
+    }
+    /* 未来 N 天（含今天）每日到期卡数预测：过期卡并入今天 */
+    static dueForecast(days = 3, now = new Date()) {
+        const dayMs = 86400000;
+        const starts = [];
+        for (let i = 0; i < days; i++) starts.push(new Date(now.getFullYear(), now.getMonth(), now.getDate() + i).getTime());
+        const counts = new Array(days).fill(0);
+        for (const c of Object.values(this.load())) {
+            const due = c.due;
+            for (let i = 0; i < days; i++) {
+                if (due < starts[i] + dayMs) { counts[i]++; break; }
+            }
+        }
+        return counts;
+    }
+    /* 近 N 天实际复习量（按 last_review，首次复习 reps=1 记为新增）+
+       未来 N 天预计复习量（按 due，从明天起） */
+    static weeklyDetail(days = 7, now = new Date()) {
+        const dayMs = 86400000;
+        const past = [], future = [];
+        for (let i = days - 1; i >= 0; i--) {
+            const d = new Date(now.getFullYear(), now.getMonth(), now.getDate() - i);
+            past.push({ key: dateKey(d), label: `${d.getMonth() + 1}/${d.getDate()}`, reviews: 0, fresh: 0 });
+        }
+        for (let i = 1; i <= days; i++) {
+            const d = new Date(now.getFullYear(), now.getMonth(), now.getDate() + i);
+            future.push({ key: dateKey(d), label: `${d.getMonth() + 1}/${d.getDate()}`, due: 0 });
+        }
+        const pastByKey = new Map(past.map(p => [p.key, p]));
+        const futureStart = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1).getTime();
+        for (const c of Object.values(this.load())) {
+            if (c.last_review) {
+                const day = pastByKey.get(dateKey(new Date(c.last_review)));
+                if (day) { day.reviews++; if (c.reps === 1) day.fresh++; }
+            }
+            if (c.due >= futureStart) {
+                const idx = Math.floor((c.due - futureStart) / dayMs);
+                if (idx < days) future[idx].due++;
+            }
+        }
+        return { past, future };
+    }
 }
 /* ===== End FSRS Engine ===== */
 
@@ -1779,6 +2007,7 @@ class OptionRenderer {
         html += "</div>";
         if (q.type === "multiple" && !state.submitted) html += `<div class="multi-submit-bar"><button id="multiSubmitBtn" class="btn btn-sm" ${state.selections.length ? "" : "disabled"} aria-label="提交多选题答案">提交答案</button></div>`;
         this.#container.innerHTML = html;
+        renderMath(this.#container);
         /* <button> 原生支持 Enter/Space 激活与键盘焦点；此处只需监听 click */
         this.#container.querySelectorAll(".option:not(.disabled)").forEach(el => { el.addEventListener("click", () => this.#bus.emit("option:clicked", { key: el.dataset.key, isMulti: q.type === "multiple" })); });
         const mb = this.#container.querySelector("#multiSubmitBtn"); if (mb) mb.addEventListener("click", () => this.#bus.emit("multi:submit"));
@@ -1798,6 +2027,7 @@ class FeedbackPanel {
         if (!correct) { const us = state.selections.join(", ") || "未作答"; html += `<div class="answer-feedback-content"><div>您的答案: ${esc(us)}</div><div>正确答案: ${esc(q.answer)}</div>${q.explanation ? `<div class="explanation-content">${MarkdownParser.parse(q.explanation)}</div>` : ""}</div>`; }
         html += "</div>";
         this.#container.innerHTML = html;
+        renderMath(this.#container);
         this.#container.classList.remove("hidden");
     }
     /* FSRS 复习模式：先显示对错 + 评分条，用户自评后安排下次复习（解析延后到评分后） */
@@ -1806,6 +2036,7 @@ class FeedbackPanel {
         let html = `<div class="answer-feedback ${correct ? "correct" : "incorrect"}"><div class="answer-feedback-header">${this.#icon(correct)} <span>${correct ? "正确" : "错误"}</span></div>`;
         html += `<div class="answer-feedback-content">${this.#answerRow(q, state)}<div class="rating-bar" role="group" aria-label="记忆评分">${btns}</div><p class="rating-hint">这题记住了吗？评分后安排下次复习（快捷键 1–4，Enter 确认预选）</p></div></div>`;
         this.#container.innerHTML = html;
+        renderMath(this.#container);
         this.#container.querySelectorAll(".rating-btn").forEach(el => el.addEventListener("click", () => this.#bus.emit("fsrs:rate", { rating: +el.dataset.rating })));
         this.#container.classList.remove("hidden");
     }
@@ -1821,6 +2052,7 @@ class FeedbackPanel {
         if (q.explanation) html += `<div class="explanation-content">${MarkdownParser.parse(q.explanation)}</div>`;
         html += "</div></div>";
         this.#container.innerHTML = html;
+        renderMath(this.#container);
         this.#container.classList.remove("hidden");
     }
     hide() { this.#container.classList.add("hidden"); this.#container.innerHTML = ""; }
@@ -1887,6 +2119,120 @@ class HistoryPanel {
             time.textContent = e.date;
             div.append(time, ` | ${e.mode === "exam" ? "考试" : e.mode === "fsrs" ? "刷题(FSRS)" : "刷题"} | ${e.score}/${e.total} | ${fmtTime(e.totalTime || 0)} | ${e.percentage ?? 0}%`);
             this.#container.appendChild(div);
+        });
+    }
+}
+
+/* 数据统计面板：累计概览磁贴 + 近 7 天答题/复习趋势柱状图 + 未来 3 天预测 +
+   近 1 周实际/未来 1 周预计展开图（复习/新增/预计颜色区分）+ FSRS 复习汇总 */
+class OverviewPanel {
+    #els;
+    constructor(els, bus) { this.#els = els; bus.on("overview:update", ({ stats, fsrs, reviews, forecast, weekly, mastered }) => this.render(stats, fsrs, reviews, forecast, weekly, mastered)); }
+    render(stats, fsrs, reviews, forecast, weekly, mastered) {
+        const e = this.#els;
+        if (e.sessions) e.sessions.textContent = stats.sessions;
+        if (e.answered) e.answered.textContent = stats.answered;
+        if (e.accuracy) e.accuracy.textContent = stats.answered ? `${Math.round((stats.correct / stats.answered) * 100)}%` : "—";
+        if (e.mastered) e.mastered.textContent = mastered;
+        if (e.reps) e.reps.textContent = fsrs.reps;
+        if (e.lapses) e.lapses.textContent = fsrs.lapses;
+        if (e.avgTime) e.avgTime.textContent = stats.answered ? fmtTime(Math.round(stats.timeMs / stats.answered)) : "—";
+        this.#renderTrend(stats.daily || {}, reviews || {});
+        this.#renderForecast(forecast || []);
+        this.#renderWeekly(weekly || { past: [], future: [] });
+    }
+    #renderForecast(forecast) {
+        const els = this.#els.forecast;
+        if (!els) return;
+        els.forEach((el, i) => { if (el) el.textContent = forecast[i] ?? 0; });
+    }
+    /* 近 1 周实际（绿=复习 + 琥珀=新增叠加）/ 未来 1 周预计（灰）柱状图 */
+    #renderWeekly({ past = [], future = [] }) {
+        const el = this.#els.wideChart;
+        if (!el) return;
+        el.replaceChildren();
+        const max = Math.max(1, ...past.map(d => (d.reviews || 0) + (d.fresh || 0)), ...future.map(d => d.due || 0));
+        /* 柱高可用区 = 图表高(96px) − 数值行(15px) − 日期行(14px) − 间距(4px)；菜单收起时 clientHeight 为 0，回退 96 */
+        const maxFill = Math.max(0, Math.round(el.clientHeight || 96) - 33);
+        const makeCol = (title, valText) => {
+            const c = document.createElement("div");
+            c.className = "trend-col";
+            c.setAttribute("aria-hidden", "true");
+            c.title = title;
+            const v = document.createElement("span");
+            v.className = "trend-val";
+            v.textContent = valText;
+            c.appendChild(v);
+            return c;
+        };
+        const seg = (c, cls, h) => {
+            const s = document.createElement("span");
+            s.className = `trend-fill ${cls}`;
+            s.style.height = `${h}px`;
+            c.appendChild(s);
+            return s;
+        };
+        const label = (c, text) => {
+            const l = document.createElement("span");
+            l.className = "trend-label";
+            l.textContent = text;
+            c.appendChild(l);
+        };
+        past.forEach(d => {
+            const total = (d.reviews || 0) + (d.fresh || 0);
+            const c = makeCol(total ? `${d.label}：复习 ${d.reviews}，新增 ${d.fresh}` : `${d.label}：无复习`, total || "");
+            if (!total) { seg(c, "fill-review empty", 2); seg(c, "fill-new empty", 0); }
+            else {
+                seg(c, "fill-review", d.reviews ? Math.max(2, Math.round((d.reviews / max) * maxFill)) : 0);
+                seg(c, "fill-new", d.fresh ? Math.max(2, Math.round((d.fresh / max) * maxFill)) : 0);
+            }
+            label(c, d.label);
+            el.appendChild(c);
+        });
+        future.forEach(d => {
+            const c = makeCol(d.due ? `${d.label}：预计 ${d.due}` : `${d.label}：无到期`, d.due || "");
+            seg(c, d.due ? "fill-due" : "fill-due empty", d.due ? Math.max(2, Math.round((d.due / max) * maxFill)) : 2);
+            label(c, d.label);
+            el.appendChild(c);
+        });
+    }
+    /* 近 7 天柱状图：柱高 = 当日活动量（会话答题 + 卡片复习） / 7 天峰值；无记录日显示占位矮柱 */
+    #renderTrend(daily, reviews) {
+        const el = this.#els.chart;
+        if (!el) return;
+        el.replaceChildren();
+        const now = new Date();
+        const days = [];
+        for (let i = 6; i >= 0; i--) {
+            const d = new Date(now.getFullYear(), now.getMonth(), now.getDate() - i);
+            const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+            const session = daily[key];
+            const rev = reviews[key] ?? 0;
+            days.push({ key, label: `${d.getMonth() + 1}/${d.getDate()}`, session, rev, total: (session?.answered ?? 0) + rev });
+        }
+        const max = Math.max(1, ...days.map(d => d.total));
+        /* 柱高可用区 = 图表高(88px) − 数值行(15px) − 日期行(14px) − 间距(4px)；菜单收起时 clientHeight 为 0，回退 88 */
+        const maxFill = Math.max(0, Math.round(el.clientHeight || 88) - 33);
+        days.forEach(d => {
+            const col = document.createElement("div");
+            col.className = "trend-col";
+            col.setAttribute("aria-hidden", "true");
+            const parts = [];
+            if (d.session?.answered) parts.push(`答题 ${d.session.answered}，正确 ${d.session.correct ?? 0}`);
+            if (d.rev) parts.push(`复习 ${d.rev}`);
+            col.title = parts.length ? `${d.label}：${parts.join(" · ")}` : `${d.label}：无活动`;
+            const val = document.createElement("span");
+            val.className = "trend-val";
+            val.textContent = d.total || "";
+            const fill = document.createElement("span");
+            fill.className = "trend-fill";
+            if (!d.total) fill.classList.add("empty");
+            fill.style.height = `${Math.max(2, Math.round((d.total / max) * maxFill))}px`;
+            const label = document.createElement("span");
+            label.className = "trend-label";
+            label.textContent = d.label;
+            col.append(val, fill, label);
+            el.appendChild(col);
         });
     }
 }
@@ -1958,6 +2304,7 @@ class QuizController {
             console.warn(`[Storage] persist failed for "${k}"`);
         };
         this.#refreshFsrsStats();
+        this.#refreshOverview();
     }
 
     #collectDOMRefs() {
@@ -1980,6 +2327,9 @@ class QuizController {
             retentionInput: $("retentionInput"), dailyNewInput: $("dailyNewInput"),
             resetFsrsBtn: $("resetFsrsBtn"), exportFsrsBtn: $("exportFsrsBtn"), copyFsrsBtn: $("copyFsrsBtn"), importFsrsBtn: $("importFsrsBtn"), fsrsImportInput: $("fsrsImportInput"),
             fsrsTotalCards: $("fsrsTotalCards"), fsrsDueToday: $("fsrsDueToday"), fsrsAvgStability: $("fsrsAvgStability"),
+            ovSessions: $("ovSessions"), ovAnswered: $("ovAnswered"), ovAccuracy: $("ovAccuracy"), ovMastered: $("ovMastered"),
+            ovReps: $("ovReps"), ovLapses: $("ovLapses"), ovAvgTime: $("ovAvgTime"), trendChart: $("trendChart"),
+            forecast: [$("fc0"), $("fc1"), $("fc2")], trendChartWide: $("trendChartWide"),
             quizSection: $("quizSection"), resultSection: $("resultSection"),
             questionContainer: $("questionContainer"), feedback: $("answerFeedback"),
             prevBtn: $("prevBtn"), nextBtn: $("nextBtn"), markBtn: $("markBtn"),
@@ -2016,6 +2366,7 @@ class QuizController {
         new TimerDisplay({ cur: this.#els.curTime, total: this.#els.totalTime }, this.#bus);
         new ResultPanel({ scoreValue: this.#els.scoreValue, totalScore: this.#els.totalScore, resCorrect: this.#els.resCorrect, resIncorrect: this.#els.resIncorrect, resUnanswered: this.#els.resUnanswered, resultTotalTime: this.#els.resultTotalTime, avgTime: this.#els.avgTime, resultMsg: this.#els.resultMsg }, this.#bus);
         new HistoryPanel(this.#els.historyList, this.#bus);
+        new OverviewPanel({ sessions: this.#els.ovSessions, answered: this.#els.ovAnswered, accuracy: this.#els.ovAccuracy, mastered: this.#els.ovMastered, reps: this.#els.ovReps, lapses: this.#els.ovLapses, avgTime: this.#els.ovAvgTime, chart: this.#els.trendChart, forecast: this.#els.forecast, wideChart: this.#els.trendChartWide }, this.#bus);
         new ToastComponent(this.#els.snackbar, this.#bus);
     }
 
@@ -2083,8 +2434,8 @@ class QuizController {
         this.#els.copyFsrsBtn?.addEventListener("click", () => this.#copyFsrsBackup());
         this.#els.importFsrsBtn?.addEventListener("click", () => this.#els.fsrsImportInput?.click());
         this.#els.fsrsImportInput?.addEventListener("change", () => this.#onImportFsrsFile());
-        // 菜单打开时刷新复习数据摘要（<details> toggle 事件）
-        this.#els.menuPanel?.addEventListener("toggle", () => this.#refreshFsrsStats());
+        // 菜单打开时刷新复习数据摘要与数据统计（<details> toggle 事件）
+        this.#els.menuPanel?.addEventListener("toggle", () => { this.#refreshFsrsStats(); this.#refreshOverview(); });
 
         this.#initModeCards(); // radiogroup pattern: roving tabindex + arrow keys + Enter/Space
         document.addEventListener("keydown", e => this.#handleKey(e));
@@ -2255,6 +2606,7 @@ class QuizController {
         this.#els.masterBtn.setAttribute("aria-pressed", String(nowMastered));
         this.#bus.emit("nav:updateStyles", { currentIdx: this.#currentIdx, quizState: this.#quizState, mode: this.#mode, masteredSet: this.#masteredSet });
         this.#bus.emit("toast:show", { message: nowMastered ? "已标记为掌握，下次加载可隐藏" : "已取消掌握标记" });
+        this.#refreshOverview();
     }
 
     #selectMode(mode) {
@@ -2348,10 +2700,23 @@ class QuizController {
         if (this.#els.fsrsAvgStability) this.#els.fsrsAvgStability.textContent = s.avgStability > 0 ? `${Math.round(s.avgStability)} 天` : "—";
     }
 
+    /* 数据统计面板刷新：累计统计 + 近 7 天卡片复习量 + 未来 3 天预测 + 周明细 + FSRS 汇总 + 已掌握数 */
+    #refreshOverview() {
+        this.#bus.emit("overview:update", {
+            stats: StorageAdapter.getStats(),
+            fsrs: FsrsStore.stats(),
+            reviews: FsrsStore.dailyReviews(7),
+            forecast: FsrsStore.dueForecast(3),
+            weekly: FsrsStore.weeklyDetail(7),
+            mastered: StorageAdapter.getMastered().length,
+        });
+    }
+
     #resetFsrsData() {
         if (!confirm("确定重置全部复习数据？此操作不可恢复。")) return;
         FsrsStore.save({});
         this.#refreshFsrsStats();
+        this.#refreshOverview();
         this.#bus.emit("toast:show", { message: "复习数据已重置" });
     }
 
@@ -2474,6 +2839,7 @@ class QuizController {
             if (!confirm(`导入将覆盖现有 ${FsrsStore.count()} 张卡，共 ${count} 张卡数据，确定继续？`)) return;
             FsrsStore.save(valid);
             this.#refreshFsrsStats();
+            this.#refreshOverview();
             this.#els.fsrsImportInput.value = "";
             this.#bus.emit("toast:show", { message: `已导入 ${count} 张卡${bad ? `，跳过 ${bad} 条无效数据` : ""}` });
         }).catch(() => this.#bus.emit("toast:show", { message: "读取备份文件失败", isError: true }));
@@ -2572,10 +2938,13 @@ class QuizController {
     #saveHistory() {
         if (!this.#quizState) return;
         const now = new Date();
-        const correct = this.#questions.filter((_, i) => this.#quizState.isCorrect(i)).length;
+        const { correct, incorrect } = this.#countStats();
+        const answered = correct + incorrect; // 实际作答数，未答不计
         this.#history.unshift({ date: now.toLocaleString(), isoDate: now.toISOString(), score: correct, total: this.#questions.length, percentage: Math.round((correct / this.#questions.length) * 100), mode: this.#fsrsActive ? "fsrs" : this.#mode, totalTime: this.#timer.getTotalTime() });
         if (this.#history.length > 10) this.#history = this.#history.slice(0, 10);
         StorageAdapter.saveHistory(this.#history);
+        StorageAdapter.recordSession({ correct, answered, timeMs: this.#timer.getTotalTime(), fsrs: this.#fsrsActive });
+        this.#refreshOverview();
         this.#bus.emit("history:updated", this.#history);
     }
 
@@ -2613,12 +2982,13 @@ class QuizController {
             const s = this.#quizState.get(i);
             const card = document.createElement("div"); card.className = "wrong-card";
             const header = document.createElement("div"); header.className = "wrong-card-header"; header.innerHTML = `<span>#${i + 1}</span><span class="badge">错题</span>`; card.appendChild(header);
-            const title = document.createElement("div"); title.className = "wrong-card-title"; title.textContent = q.text; card.appendChild(title);
+            const title = document.createElement("div"); title.className = "wrong-card-title"; title.innerHTML = esc(q.text); card.appendChild(title);
             const opts = document.createElement("div"); opts.className = "wrong-card-options"; q.options.forEach(o => { const span = document.createElement("span"); span.className = "wrong-card-option"; if (q.answer.includes(o.key)) span.classList.add("correct-answer"); span.textContent = `${o.key}. ${o.text}`; opts.appendChild(span); }); card.appendChild(opts);
             const row = document.createElement("div"); row.className = "wrong-card-answer-row"; const us = s.selections.join(", ") || "未作答"; row.innerHTML = `<span>你的答案: <span class="wrong-card-user-ans">${esc(us)}</span></span><span>正确答案: <span class="wrong-card-correct-ans">${esc(q.answer)}</span></span>`; card.appendChild(row);
             if (q.explanation) { const exp = document.createElement("div"); exp.className = "wrong-card-explanation"; exp.innerHTML = `<strong>解析：</strong>${MarkdownParser.parse(q.explanation)}`; card.appendChild(exp); }
             this.#els.wrongContainer.appendChild(card);
         });
+        renderMath(this.#els.wrongContainer);
     }
 
     #exportWrong() {
