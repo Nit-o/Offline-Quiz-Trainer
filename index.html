@@ -11,10 +11,9 @@
     <link rel="stylesheet" href="vendor/katex/katex.min.css">
     <script defer src="vendor/katex/katex.min.js"></script>
     <script defer src="vendor/katex/contrib/auto-render.min.js"></script>
-    <!-- 技术基线（Standards baseline）：
+    <!-- Standards baseline：
          HTML Living Standard — Last Updated 20 July 2026
-         ECMAScript 2026（ES2026）· CSS Snapshot 2026（含 CSS Color 5）
-         适配 Chromium / Android WebView、Firefox、Safari；支持 file:// 本地离线运行 -->
+         ECMAScript 2026（ES2026）· CSS Snapshot 2026（含 CSS Color 5） -->
     <style>
         /* ============================================================
            1. DESIGN TOKENS — oklch() perceptual colorspace (CSS Color L5)
@@ -545,6 +544,39 @@
         .file-drop-text { display: flex; flex-direction: column; gap: var(--sp-1); min-width: 0; }
         .file-drop-title { font-weight: 600; font-size: var(--text-sm); color: var(--text); }
         .file-drop-hint  { font-size: var(--text-xs); color: var(--text-muted); }
+        /* 缓存题库：导入成功后自动缓存，可一键加载免去再次在文件选择器中查找 */
+        .bank-cache {
+            margin-top: var(--sp-5);
+            padding-top: var(--sp-4);
+            border-top: var(--bw-1) solid var(--divider);
+        }
+        .bank-cache-title {
+            margin: 0 0 var(--sp-2);
+            font-size: var(--text-xs);
+            font-weight: 600;
+            color: var(--text-muted);
+        }
+        .bank-cache-empty { margin: 0; font-size: var(--text-xs); color: var(--text-muted); }
+        .bank-cache-item {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: var(--sp-3);
+            padding: var(--sp-3) 0;
+            border-bottom: var(--bw-1) solid var(--divider);
+        }
+        .bank-cache-meta { min-width: 0; }
+        .bank-cache-name {
+            display: block;
+            font-size: var(--text-sm);
+            font-weight: 600;
+            color: var(--text);
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .bank-cache-sub { display: block; font-size: var(--text-xs); color: var(--text-muted); margin-top: 2px; }
+        .bank-cache-actions { display: flex; gap: var(--sp-2); flex-shrink: 0; }
 
         /* Theme selector — ARIA radiogroup; arrow-key navigation handled in JS. */
         .theme-selector {
@@ -1275,6 +1307,10 @@
                         </label>
                         <div id="fileList" aria-label="已选文件列表"></div>
                         <div id="fileStatus" class="file-status" role="status" aria-live="polite" aria-busy="false"></div>
+                        <div class="bank-cache" aria-label="缓存的题库">
+                            <h4 class="bank-cache-title">缓存题库 · 免重新选文件</h4>
+                            <div id="bankCacheList"></div>
+                        </div>
                     </div>
                 </div>
                 <div class="menu-group menu-group--theme">
@@ -1582,6 +1618,22 @@ const esc = str => str == null ? "" : String(str).replace(/[&<>"']/g, m => ({ "&
 const fmtTime = ms => { const sec = Math.floor(ms / 1000); return `${String(Math.floor(sec / 60)).padStart(2, "0")}:${String(sec % 60).padStart(2, "0")}`; };
 const hashStr = s => { let h = 0; for (let i = 0; i < s.length; i++) { h = ((h << 5) - h) + s.charCodeAt(i); h |= 0; } return String(h); };
 const dateKey = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+/* 读取文件文本：优先 File.text()（Chromium 系），缺失或超时降级 FileReader。
+   部分 Android WebView 的 File.text() 永不 resolve，若无兜底会一直卡在“正在解析题库…” */
+const readFileText = (file, timeoutMs = 20000) => new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(`读取文件超时（${file.name}）`)), timeoutMs);
+    if (typeof file.text === "function") {
+        file.text().then(
+            v => { clearTimeout(timer); resolve(v); },
+            e => { clearTimeout(timer); reject(e); }
+        );
+        return;
+    }
+    const fr = new FileReader();
+    fr.onload  = () => { clearTimeout(timer); resolve(fr.result); };
+    fr.onerror = () => { clearTimeout(timer); reject(fr.error || new Error(`读取文件失败（${file.name}）`)); };
+    fr.readAsText(file, "utf-8");
+});
 /* KaTeX 离线渲染（vendor/katex）：$...$ / $$...$$ / \(...\) / \[...\]；auto-render 默认忽略 <code>/<pre>，行内代码不受影响；渲染失败保持原文 */
 const MATH_OPTS = { delimiters: [
     { left: "$$", right: "$$", display: true },
@@ -1666,6 +1718,36 @@ class StorageAdapter {
         }
         this.saveStats(s);
         return s;
+    }
+}
+
+/* ===== BankCache — 题库本地缓存 =====
+   导入解析成功后自动缓存（存解析结果），之后可一键加载，免去在文件选择器中重新查找；
+   沿用 localStorage（与应用现有存储一致）；配额不足时 save 返回 false，由调用方提示降级。 */
+class BankCache {
+    static #INDEX = "quiz_bank_index";
+    static #key(id) { return `quiz_bank_${id}`; }
+    /* 索引只存元信息（名称/时间/题数），题目本体单独存储，列表渲染不读大题量数据 */
+    static list() { try { const raw = localStorage.getItem(this.#INDEX); const arr = raw ? JSON.parse(raw) : []; return Array.isArray(arr) ? arr : []; } catch { return []; } }
+    static get(id) { try { const raw = localStorage.getItem(this.#key(id)); return raw ? JSON.parse(raw) : null; } catch { return null; } }
+    static save(bank, max = 3) {
+        try { localStorage.setItem(this.#key(bank.id), JSON.stringify(bank)); }
+        catch { return false; }
+        try {
+            const list = this.list().filter(b => b.id !== bank.id);
+            list.unshift({ id: bank.id, name: bank.name, importedAt: bank.importedAt, count: bank.count });
+            while (list.length > max) { const old = list.pop(); try { localStorage.removeItem(this.#key(old.id)); } catch { /* ignore */ } }
+            localStorage.setItem(this.#INDEX, JSON.stringify(list));
+            return true;
+        } catch {
+            /* 索引写入失败（配额不足）时回滚数据条目，避免孤立缓存 */
+            try { localStorage.removeItem(this.#key(bank.id)); } catch { /* ignore */ }
+            return false;
+        }
+    }
+    static remove(id) {
+        try { localStorage.removeItem(this.#key(id)); } catch { /* ignore */ }
+        try { localStorage.setItem(this.#INDEX, JSON.stringify(this.list().filter(b => b.id !== id))); } catch { /* ignore */ }
     }
 }
 
@@ -1974,7 +2056,7 @@ class QuestionParser {
         }
         commit(); return questions;
     }
-    async loadFiles(files) { this.errors = []; const all = []; for (const file of files) { try { const text = await file.text(); const qs = this.parseMarkdown(text, file.name); if (!qs.length) this.errors.push({ file: file.name, error: "无有效题目" }); all.push(...qs); } catch (e) { this.errors.push({ file: file.name, error: e.message }); } } return { questions: all, errors: this.errors }; }
+    async loadFiles(files) { this.errors = []; const all = []; for (const file of files) { try { const text = await readFileText(file); const qs = this.parseMarkdown(text, file.name); if (!qs.length) this.errors.push({ file: file.name, error: "无有效题目" }); all.push(...qs); } catch (e) { this.errors.push({ file: file.name, error: e.message }); } } return { questions: all, errors: this.errors }; }
 }
 
 /* ===== Quiz State ===== */
@@ -2305,6 +2387,7 @@ class QuizController {
         };
         this.#refreshFsrsStats();
         this.#refreshOverview();
+        this.#renderBankCache();
     }
 
     #collectDOMRefs() {
@@ -2313,7 +2396,7 @@ class QuizController {
             menuPanel: $("menuPanel"),
             themeOptions: document.querySelectorAll(".theme-option"),
             fileInput: $("fileInput"), fileDropZone: $("fileDropZone"),
-            fileList: $("fileList"), fileStatus: $("fileStatus"),
+            fileList: $("fileList"), fileStatus: $("fileStatus"), bankCacheList: $("bankCacheList"),
             modeSection: $("modeSection"), modeCards: document.querySelectorAll(".mode-card"),
             startBtn: $("startQuizBtn"),
             autoNextToggle: $("autoNextToggle"), autoNextDelay: $("autoNextDelay"),
@@ -2430,10 +2513,17 @@ class QuizController {
             this.#bus.emit("toast:show", { message: v > 0 ? `每日新卡上限 ${v} 题` : "每日新卡不限量" });
         });
         this.#els.resetFsrsBtn?.addEventListener("click", () => this.#resetFsrsData());
-        this.#els.exportFsrsBtn?.addEventListener("click", () => this.#exportFsrsBackup());
+        this.#els.exportFsrsBtn?.addEventListener("click", () => { this.#exportFsrsBackup().catch(() => this.#copyFsrsBackup()); });
         this.#els.copyFsrsBtn?.addEventListener("click", () => this.#copyFsrsBackup());
         this.#els.importFsrsBtn?.addEventListener("click", () => this.#els.fsrsImportInput?.click());
         this.#els.fsrsImportInput?.addEventListener("change", () => this.#onImportFsrsFile());
+        // 缓存题库列表：加载 / 删除（事件委托，条目由 #renderBankCache 动态生成）
+        this.#els.bankCacheList?.addEventListener("click", e => {
+            const loadBtn = e.target.closest("[data-bank-load]");
+            if (loadBtn) { this.#loadCachedBank(loadBtn.dataset.bankLoad); return; }
+            const delBtn = e.target.closest("[data-bank-del]");
+            if (delBtn) this.#removeCachedBank(delBtn.dataset.bankDel);
+        });
         // 菜单打开时刷新复习数据摘要与数据统计（<details> toggle 事件）
         this.#els.menuPanel?.addEventListener("toggle", () => { this.#refreshFsrsStats(); this.#refreshOverview(); });
 
@@ -2553,6 +2643,8 @@ class QuizController {
         this.#fsrsEngine = new FsrsEngine({ requestRetention: this.#settings.retention });
     }
 
+    /* 文件导入：解析 → 缓存 → 应用。全程 try/catch + 超时兜底（readFileText），
+       保证“正在解析题库…”不会永久停留（Nielsen 系统状态可见）。 */
     async #load(files = null) {
         this.#timer.stop(); this.#timer.reset();
         const fl = files ? Array.from(files) : Array.from(this.#els.fileInput.files || []);
@@ -2567,25 +2659,104 @@ class QuizController {
             const { questions, errors } = await this.#parser.loadFiles(fl);
             /* 错误信息独立保留，后续成功/过滤提示拼接追加，避免被覆盖 */
             const errMsg = errors.length ? `解析错误: ${errors.map(e => `${e.file}: ${e.error || e.reason}`).join("; ")}` : "";
-            if (errMsg) this.#els.fileStatus.innerText = errMsg;
-            if (!questions.length) { this.#bus.emit("toast:show", { message: "无有效题目", isError: true }); return; }
-            let filtered = questions;
-            if (this.#settings.hideMastered) {
-                filtered = questions.filter(q => !StorageAdapter.isMastered(q.text));
-                const removed = questions.length - filtered.length;
-                if (removed) this.#els.fileStatus.innerText = `共导入 ${questions.length} 题，已过滤 ${removed} 道已掌握题目${errMsg ? `；${errMsg}` : ""}`;
+            if (!questions.length) {
+                this.#els.fileStatus.innerText = errMsg || "未解析到有效题目";
+                this.#bus.emit("toast:show", { message: "无有效题目", isError: true });
+                return;
             }
-            this.#questions = filtered;
-            this.#quizState = new QuizState(filtered);
-            this.#currentIdx = 0;
-            this.#computeMasteredSet();
-            if (!this.#settings.hideMastered) this.#els.fileStatus.innerText = `成功加载 ${filtered.length} 题${errMsg ? `；${errMsg}` : ""}`;
-            this.#els.modeSection.classList.remove("hidden");
-            this.#selectMode("practice");
+            /* 解析成功后自动缓存，下次可一键加载（免文件选择器） */
+            const cached = this.#saveToBankCache(questions, fl.map(f => f.name).join("、"));
+            this.#applyQuestions(questions, `成功加载 ${questions.length} 题${cached ? "，已缓存到本地" : ""}${errMsg ? `；${errMsg}` : ""}`);
+        } catch (e) {
+            this.#els.fileStatus.innerText = `加载失败：${e?.message || e}`;
+            this.#bus.emit("toast:show", { message: `加载失败：${e?.message || e}`, isError: true });
         } finally {
             this.#els.fileDropZone?.setAttribute("aria-busy", "false");
             this.#els.fileStatus.setAttribute("aria-busy", "false");
         }
+    }
+
+    /* 应用题库（文件导入与缓存加载共用）：过滤已掌握 → 重建状态 → 收起答题区 → 显示模式选择 */
+    #applyQuestions(questions, summary) {
+        let filtered = questions;
+        if (this.#settings.hideMastered) {
+            filtered = questions.filter(q => !StorageAdapter.isMastered(q.text));
+            const removed = questions.length - filtered.length;
+            if (removed) summary += `；已过滤 ${removed} 道已掌握题目`;
+        }
+        this.#questions = filtered;
+        this.#quizState = new QuizState(filtered);
+        this.#currentIdx = 0;
+        this.#computeMasteredSet();
+        this.#els.fileStatus.innerText = summary;
+        this.#els.quizSection.classList.add("hidden");
+        this.#els.resultSection.classList.add("hidden");
+        this.#els.navFab?.classList.add("hidden");
+        this.#els.modeSection.classList.remove("hidden");
+        this.#selectMode("practice");
+    }
+
+    /* 缓存解析结果；配额不足时仅提示，不影响本次使用 */
+    #saveToBankCache(questions, names) {
+        const ok = BankCache.save({
+            id: `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`,
+            name: names, importedAt: Date.now(), count: questions.length, questions,
+        });
+        if (ok) this.#renderBankCache();
+        else this.#bus.emit("toast:show", { message: "缓存题库失败（本地存储空间不足），本次仍可使用", isError: true });
+        return ok;
+    }
+
+    /* 缓存列表渲染：名称 / 题数 / 导入时间 + 加载、删除操作 */
+    #renderBankCache() {
+        const listEl = this.#els.bankCacheList; if (!listEl) return;
+        const banks = BankCache.list();
+        listEl.replaceChildren();
+        if (!banks.length) {
+            const empty = document.createElement("p");
+            empty.className = "bank-cache-empty";
+            empty.textContent = "暂无缓存：导入 .md 题库后自动缓存，下次可直接加载";
+            listEl.appendChild(empty);
+            return;
+        }
+        banks.forEach(b => {
+            const item = document.createElement("div"); item.className = "bank-cache-item";
+            const meta = document.createElement("div"); meta.className = "bank-cache-meta";
+            const name = document.createElement("span"); name.className = "bank-cache-name";
+            name.textContent = b.name; name.title = b.name;
+            const sub = document.createElement("span"); sub.className = "bank-cache-sub";
+            sub.textContent = `${b.count} 题 · ${new Date(b.importedAt).toLocaleString()}`;
+            meta.append(name, sub);
+            const actions = document.createElement("div"); actions.className = "bank-cache-actions";
+            const load = document.createElement("button");
+            load.type = "button"; load.className = "btn btn-sm"; load.dataset.bankLoad = b.id; load.textContent = "加载";
+            const del = document.createElement("button");
+            del.type = "button"; del.className = "btn btn-outline btn-sm"; del.dataset.bankDel = b.id; del.textContent = "删除";
+            actions.append(load, del);
+            item.append(meta, actions);
+            listEl.appendChild(item);
+        });
+    }
+
+    /* 从缓存一键加载：跳过文件选择与解析（同步读取，无加载闪烁） */
+    #loadCachedBank(id) {
+        const bank = BankCache.get(id);
+        if (!bank || !Array.isArray(bank.questions) || !bank.questions.length) {
+            this.#bus.emit("toast:show", { message: "缓存题库已失效，请重新导入", isError: true });
+            this.#renderBankCache();
+            return;
+        }
+        this.#timer.stop(); this.#timer.reset();
+        this.#applyQuestions(bank.questions, `已从缓存加载 ${bank.questions.length} 题（${bank.name}）`);
+    }
+
+    #removeCachedBank(id) {
+        const bank = BankCache.get(id);
+        if (!bank) return;
+        if (!confirm(`删除缓存题库「${bank.name}」（${bank.count} 题）？`)) return;
+        BankCache.remove(id);
+        this.#renderBankCache();
+        this.#bus.emit("toast:show", { message: "缓存题库已删除" });
     }
 
     #computeMasteredSet() {
@@ -2761,9 +2932,10 @@ class QuizController {
     }
 
     /* 导出备份：优先 Web Share API 调起系统分享面板（可保存到文件/网盘/微信等）。
-       Cordova WebView 未实现 onDownloadStart，<a download> 的 blob 下载会静默失败，
-       因此仅桌面浏览器保留下载路径；旧版 WebView 无文件分享时退回复制到剪贴板。 */
-    #exportFsrsBackup() {
+       不再依赖 canShare() 预检——部分 WebView 缺失该方法或对 .json 文件返回 false，
+       导致分享面板从未弹出；改为直接尝试，文件分享失败再降级文本分享（同样调起系统面板），
+       全部失败才退回复制（Cordova WebView 未实现 onDownloadStart，<a download> 会静默失败）。 */
+    async #exportFsrsBackup() {
         const data = {
             app: "Offline-Quiz-Trainer", kind: "fsrs-cards", version: 1,
             exportedAt: new Date().toISOString(), cards: FsrsStore.load(),
@@ -2771,12 +2943,15 @@ class QuizController {
         const json = JSON.stringify(data, null, 2);
         const name = `fsrs-backup-${new Date().toISOString().slice(0, 10)}.json`;
         const file = new File([json], name, { type: "application/json" });
-
-        if (navigator.canShare?.({ files: [file] })) {
-            navigator.share({ files: [file], title: "FSRS 复习备份" })
-                .then(() => this.#bus.emit("toast:show", { message: "备份已通过系统分享导出" }))
-                .catch(e => { if (e?.name !== "AbortError") this.#copyFsrsBackup(json); });
-            return;
+        const toast = message => this.#bus.emit("toast:show", { message });
+        if (typeof navigator.share === "function") {
+            /* 返回 true = 分享流程已结束（成功或用户取消）；false = 失败需降级 */
+            const tryShare = async shareData => {
+                try { await navigator.share(shareData); return true; }
+                catch (e) { return e?.name === "AbortError"; }
+            };
+            if (await tryShare({ files: [file], title: "FSRS 复习备份", text: name })) { toast("备份已通过系统分享导出"); return; }
+            if (await tryShare({ text: json, title: "FSRS 复习备份" })) { toast("备份已通过系统分享导出"); return; }
         }
         if (/android/i.test(navigator.userAgent)) { this.#copyFsrsBackup(json); return; }
 
@@ -2790,7 +2965,7 @@ class QuizController {
         a.click();
         a.remove();
         URL.revokeObjectURL(url);
-        this.#bus.emit("toast:show", { message: "备份已导出" });
+        toast("备份已导出");
     }
 
     /* 复制备份：WebView / file:// 下 <a download> 常被系统拦截，剪贴板是最稳的离线方案。
