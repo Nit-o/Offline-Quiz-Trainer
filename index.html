@@ -1728,26 +1728,42 @@ const renderMath = el => {
 class MarkdownParser {
     static parse(text) {
         if (!text) return "";
+        /* 代码块/行内代码先隔离为占位符，避免其内容被加粗/标题/换行规则二次改写 */
+        const held = [];
+        const hold = s => { const token = `\u0000QBT${held.length}\u0000`; held.push(s); return token; };
         return text
-            .replace(/```([\s\S]*?)```/g, (_, c) => `<figure class="code-figure"><figcaption>代码</figcaption><pre><code>${esc(c)}</code></pre></figure>`)
-            .replace(/`([^`]+)`/g, (_, c) => `<code>${esc(c)}</code>`)
+            .replace(/```([\s\S]*?)```/g, (_, c) => hold(`<figure class="code-figure"><figcaption>代码</figcaption><pre><code>${esc(c)}</code></pre></figure>`))
+            .replace(/`([^`]+)`/g, (_, c) => hold(`<code>${esc(c)}</code>`))
             .replace(/\*\*(.+?)\*\*/g, (_, t) => `<strong>${esc(t)}</strong>`)
             .replace(/\*(.+?)\*/g, (_, t) => `<em>${esc(t)}</em>`)
             .replace(/^#{1,6}\s+(.+)/gm, (_, t) => `<h3>${esc(t)}</h3>`)
-            .replace(/\n/g, "<br>");
+            .replace(/\n/g, "<br>")
+            .replace(/\u0000QBT(\d+)\u0000/g, (_, n) => held[+n]);
     }
 }
 
 /* ===== Timer ===== */
 class Timer {
-    #bus; #startTime = 0; #questionStart = 0; #accumulated = []; #currentIdx = 0; #running = false; #rafId = null; #lastTotal = 0;
+    #bus; #startTime = 0; #questionStart = 0; #accumulated = []; #currentIdx = 0; #running = false; #rafId = null; #lastTotal = 0; #lastQSec = -1; #lastTSec = -1;
     constructor(bus) { this.#bus = bus; }
-    start() { if (this.#running) return; const now = performance.now(); this.#startTime = now; this.#questionStart = now; this.#running = true; this.#tick(); }
+    start() { if (this.#running) return; this.#lastQSec = -1; this.#lastTSec = -1; const now = performance.now(); this.#startTime = now; this.#questionStart = now; this.#running = true; this.#tick(); }
     stop() { if (!this.#running) return; this.#accrue(this.#currentIdx); this.#lastTotal = performance.now() - this.#startTime; this.#running = false; if (this.#rafId) { cancelAnimationFrame(this.#rafId); this.#rafId = null; } }
     reset() { this.stop(); this.#accumulated = []; this.#startTime = 0; this.#questionStart = 0; this.#currentIdx = 0; this.#lastTotal = 0; }
     switchQuestion(from, to) { if (!this.#running || from === to) return; this.#accrue(from); this.#currentIdx = to; this.#questionStart = performance.now(); }
     #accrue(idx) { const elapsed = performance.now() - this.#questionStart; this.#accumulated[idx] = (this.#accumulated[idx] || 0) + elapsed; this.#questionStart = performance.now(); }
-    #tick() { if (!this.#running) return; const now = performance.now(); const qTime = (this.#accumulated[this.#currentIdx] || 0) + (now - this.#questionStart); this.#bus.emit("timer:tick", { questionTime: qTime, totalTime: now - this.#startTime }); this.#rafId = requestAnimationFrame(() => this.#tick()); }
+    #tick() {
+        if (!this.#running) return;
+        const now = performance.now();
+        const qTime = (this.#accumulated[this.#currentIdx] || 0) + (now - this.#questionStart);
+        const totalTime = now - this.#startTime;
+        /* 显示精度为秒：仅当秒值变化时才 emit，避免每帧（60fps）无意义地写 DOM */
+        const qSec = Math.floor(qTime / 1000), tSec = Math.floor(totalTime / 1000);
+        if (qSec !== this.#lastQSec || tSec !== this.#lastTSec) {
+            this.#lastQSec = qSec; this.#lastTSec = tSec;
+            this.#bus.emit("timer:tick", { questionTime: qTime, totalTime });
+        }
+        this.#rafId = requestAnimationFrame(() => this.#tick());
+    }
     getQuestionTime(idx) { if (idx === this.#currentIdx && this.#running) return (this.#accumulated[idx] || 0) + (performance.now() - this.#questionStart); return this.#accumulated[idx] || 0; }
     getTotalTime() { return this.#running ? performance.now() - this.#startTime : this.#lastTotal; }
 }
@@ -1769,8 +1785,10 @@ class StorageAdapter {
     static saveSettings(s) { this.#s("quiz_settings", s); }
     static getTheme() { try { return localStorage.getItem("quiz_theme"); } catch { return null; } }
     static saveTheme(t) { try { localStorage.setItem("quiz_theme", t); } catch (e) { if (typeof this.onPersistError === "function") this.onPersistError("quiz_theme", e); } }
-    static getMastered() { try { const raw = localStorage.getItem("quiz_mastered"); return raw ? JSON.parse(raw) : []; } catch { return []; } }
-    static saveMastered(m) { this.#s("quiz_mastered", m); }
+    /* 已掌握列表内存缓存：大题库下避免每次 isMastered() 都重新 JSON.parse 全表 */
+    static #masteredCache = null;
+    static getMastered() { if (this.#masteredCache) return this.#masteredCache; try { const raw = localStorage.getItem("quiz_mastered"); this.#masteredCache = raw ? JSON.parse(raw) : []; } catch { this.#masteredCache = []; } return this.#masteredCache; }
+    static saveMastered(m) { this.#masteredCache = m; this.#s("quiz_mastered", m); }
     static toggleMastered(text) { const list = this.getMastered(); const h = hashStr(text); const idx = list.indexOf(h); idx > -1 ? list.splice(idx, 1) : list.push(h); this.saveMastered(list); return idx === -1; }
     static isMastered(text) { return this.getMastered().includes(hashStr(text)); }
     /* 累计统计（数据统计面板）：练习次数 / 答题 / 正确 / 用时 + 近 30 天每日明细 + 近几次会话记录（面板可在累计/近 3 次间切换） */
@@ -2061,63 +2079,49 @@ class FsrsStore {
         }
         return { total: entries.length, due, avgStability: stCount ? stSum / stCount : 0, reps, lapses };
     }
-    /* 按卡片 last_review 统计近 N 天每日复习量：备份导入后趋势图立即适配 */
-    static dailyReviews(days = 7, now = new Date()) {
-        const counts = {};
-        const from = new Date(now.getFullYear(), now.getMonth(), now.getDate() - (days - 1)).getTime();
-        for (const c of Object.values(this.load())) {
-            if (!c.last_review) continue;
-            const d = new Date(c.last_review);
-            if (d.getTime() < from) continue;
-            const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-            counts[key] = (counts[key] ?? 0) + 1;
-        }
-        return counts;
-    }
-    /* 未来 N 天（含今天）每日到期卡数预测：过期卡并入今天；
-       今天的口径与复习队列一致——只统计此刻前已到期（due ≤ now），
-       晚于此刻但仍是今天的卡不计入今日，顺延计入后续日期 */
-    static dueForecast(days = 3, now = new Date()) {
+    /* 单次遍历汇总：stats + 近 7 天复习量 + 未来 3 天预测 + 周明细，
+       替代 4 次全表遍历（#refreshMenuData 使用，大题库下显著降低刷新成本） */
+    static snapshot(now = new Date()) {
+        const entries = Object.values(this.load());
         const dayMs = 86400000;
         const nowMs = now.getTime();
-        const starts = [];
-        for (let i = 0; i < days; i++) starts.push(new Date(now.getFullYear(), now.getMonth(), now.getDate() + i).getTime());
-        const counts = new Array(days).fill(0);
-        for (const c of Object.values(this.load())) {
-            const due = c.due;
-            if (due <= nowMs) { counts[0]++; continue; } /* 已到期 → 今日队列 */
-            for (let i = 1; i < days; i++) { /* 今日稍后到期与未来日期：按自然日归属 */
-                if (due < starts[i] + dayMs) { counts[i]++; break; }
-            }
-        }
-        return counts;
-    }
-    /* 近 N 天实际复习量（按 last_review，首次复习 reps=1 记为新增）+
-       未来 N 天预计复习量（按 due，从明天起） */
-    static weeklyDetail(days = 7, now = new Date()) {
-        const dayMs = 86400000;
-        const past = [], future = [];
-        for (let i = days - 1; i >= 0; i--) {
+        const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+        const futureStart = todayStart + dayMs;
+        const FC_DAYS = 3, W_DAYS = 7;
+        const past = [], pastByKey = new Map();
+        for (let i = W_DAYS - 1; i >= 0; i--) {
             const d = new Date(now.getFullYear(), now.getMonth(), now.getDate() - i);
-            past.push({ key: dateKey(d), label: `${d.getMonth() + 1}/${d.getDate()}`, reviews: 0, fresh: 0 });
+            const day = { key: dateKey(d), label: `${d.getMonth() + 1}/${d.getDate()}`, reviews: 0, fresh: 0 };
+            pastByKey.set(day.key, day); past.push(day);
         }
-        for (let i = 1; i <= days; i++) {
+        const future = [];
+        for (let i = 1; i <= W_DAYS; i++) {
             const d = new Date(now.getFullYear(), now.getMonth(), now.getDate() + i);
             future.push({ key: dateKey(d), label: `${d.getMonth() + 1}/${d.getDate()}`, due: 0 });
         }
-        const pastByKey = new Map(past.map(p => [p.key, p]));
-        const futureStart = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1).getTime();
-        for (const c of Object.values(this.load())) {
+        const fcStarts = [];
+        for (let i = 0; i < FC_DAYS; i++) fcStarts.push(todayStart + i * dayMs);
+        const forecast = new Array(FC_DAYS).fill(0);
+        const reviews = {};
+        let due = 0, stSum = 0, stCount = 0, reps = 0, lapses = 0;
+        for (const c of entries) {
+            if (c.due <= nowMs) due++;
+            if (c.stability > 0) { stSum += c.stability; stCount++; }
+            reps += c.reps; lapses += c.lapses;
             if (c.last_review) {
-                const day = pastByKey.get(dateKey(new Date(c.last_review)));
-                if (day) { day.reviews++; if (c.reps === 1) day.fresh++; }
+                const d = new Date(c.last_review);
+                if (d.getTime() >= todayStart - (W_DAYS - 1) * dayMs) {
+                    const key = dateKey(d);
+                    reviews[key] = (reviews[key] ?? 0) + 1;
+                    const day = pastByKey.get(key);
+                    if (day) { day.reviews++; if (c.reps === 1) day.fresh++; }
+                }
             }
-            if (c.due >= futureStart) {
-                const idx = Math.floor((c.due - futureStart) / dayMs);
-                if (idx < days) future[idx].due++;
-            }
+            if (c.due <= nowMs) forecast[0]++;
+            else for (let i = 1; i < FC_DAYS; i++) { if (c.due < fcStarts[i] + dayMs) { forecast[i]++; break; } }
+            if (c.due >= futureStart) { const idx = Math.floor((c.due - futureStart) / dayMs); if (idx < W_DAYS) future[idx].due++; }
         }
-        return { past, future };
+        return { total: entries.length, due, avgStability: stCount ? stSum / stCount : 0, reps, lapses, reviews, forecast, weekly: { past, future } };
     }
 }
 /* ===== End FSRS Engine ===== */
@@ -2139,6 +2143,9 @@ class QuestionParser {
             else if (cur && (m = line.match(RE.optDot)))  { cur.options.push({ key: m[1], text: m[2].trim() }); }
             else if (cur && (m = line.match(RE.answer)))  { cur.answer = m[1].trim(); cur.type ??= cur.answer.length > 1 ? "multiple" : "single"; }
             else if (cur && (m = line.match(RE.explain))) { cur.explanation = m[1].trim(); }
+            /* 多行题干续行（如 [Q] 换行）：选项/答案出现前的普通文本续接当前题干；
+               排除 [..] 元数据行（[J]/[P]/[I]）、标题、代码围栏与分隔线 */
+            else if (cur && !cur.options.length && !cur.answer && !line.startsWith("[") && !line.startsWith("#") && !line.startsWith("\`") && !/^[-=*_]{3,}$/.test(line)) { cur.text += " " + line; }
         }
         commit(); return questions;
     }
@@ -2227,18 +2234,21 @@ class FeedbackPanel {
 }
 
 class NavigationBar {
-    #container; #bus; #btns = [];
+    #container; #bus; #btns = []; #stateKeys = [];
     constructor(container, bus) { this.#container = container; this.#bus = bus; bus.on("nav:build", ({ total, quizState, masteredSet }) => this.#build(total, quizState, masteredSet)); bus.on("nav:updateStyles", ({ currentIdx, quizState, mode, masteredSet }) => this.#updateStyles(currentIdx, quizState, mode, masteredSet)); }
     #build(total, quizState, masteredSet = new Set()) {
         this.#container.replaceChildren();
+        /* DocumentFragment 一次性插入：大题库（上千题）避免逐按钮触发回流 */
+        const frag = document.createDocumentFragment();
         this.#btns = Array.from({ length: total }, (_, i) => {
             const btn = document.createElement("button");
             btn.className = "question-nav-btn"; btn.type = "button"; btn.textContent = i + 1;
             btn.setAttribute("aria-label", `题目 ${i + 1}`);
-            if (masteredSet.has(i)) btn.classList.add("mastered");
             btn.addEventListener("click", () => { this.#bus.emit("nav:clicked", i); this.#closeOverlay(); });
-            this.#container.appendChild(btn); return btn;
+            frag.appendChild(btn); return btn;
         });
+        this.#container.appendChild(frag);
+        this.#stateKeys = [];
         this.#updateStyles(0, quizState, "practice", masteredSet);
     }
     #closeOverlay() {
@@ -2246,14 +2256,20 @@ class NavigationBar {
         if (overlay && typeof overlay.close === "function" && overlay.open) overlay.close();
     }
     #updateStyles(currentIdx, quizState, mode, masteredSet = new Set()) {
-        this.#btns.forEach((btn, i) => {
-            btn.className = "question-nav-btn";
-            btn.classList.toggle("current", i === currentIdx);
-            btn.setAttribute("aria-current", i === currentIdx ? "true" : "false");
-            if (quizState.isAnswered(i)) btn.classList.add(quizState.isErrorAnswered(i) && mode !== "exam" ? "error-answered" : "answered");
-            if (quizState.get(i)?.marked) btn.classList.add("marked");
-            if (masteredSet.has(i)) btn.classList.add("mastered");
-        });
+        /* 增量更新：只改写状态变化的按钮，避免每次切题都重写上千个按钮的 class */
+        for (let i = 0; i < this.#btns.length; i++) {
+            const btn = this.#btns[i];
+            const isCurrent = i === currentIdx;
+            let cls = "question-nav-btn";
+            if (isCurrent) cls += " current";
+            else if (quizState.isAnswered(i)) cls += quizState.isErrorAnswered(i) && mode !== "exam" ? " error-answered" : " answered";
+            if (quizState.get(i)?.marked) cls += " marked";
+            if (masteredSet.has(i)) cls += " mastered";
+            if (cls === this.#stateKeys[i]) continue;
+            this.#stateKeys[i] = cls;
+            btn.className = cls;
+            btn.setAttribute("aria-current", isCurrent ? "true" : "false");
+        }
     }
 }
 
@@ -2313,7 +2329,7 @@ class OverviewPanel {
         if (e.mastered) e.mastered.textContent = mastered;
         if (e.reps) e.reps.textContent = fsrs.reps;
         if (e.lapses) e.lapses.textContent = fsrs.lapses;
-        if (e.avgTime) e.avgTime.textContent = stats.answered ? fmtTime(Math.round(stats.timeMs / stats.answered)) : "—";
+        if (e.avgTime) e.avgTime.textContent = s.answered ? fmtTime(Math.round(s.timeMs / s.answered)) : "—";
         /* UI 反馈：标签 / 模式胶囊 / 面板 aria 与高亮随模式切换 */
         if (e.sessionsLabel) e.sessionsLabel.textContent = useRecent ? "近 3 次练习" : "练习次数";
         if (e.answeredLabel) e.answeredLabel.textContent = useRecent ? "近 3 次答题" : "累计答题";
@@ -2489,8 +2505,7 @@ class QuizController {
             this.#bus.emit("toast:show", { message: `设置未能持久化（存储不可用或已满）`, isError: true });
             console.warn(`[Storage] persist failed for "${k}"`);
         };
-        this.#refreshFsrsStats();
-        this.#refreshOverview();
+        this.#refreshMenuData();
         this.#renderBankCache();
     }
 
@@ -2579,7 +2594,7 @@ class QuizController {
         this.#els.closeExportBtn.addEventListener("click", () => this.#els.exportPanel.classList.add("hidden"));
 
         this.#els.autoNextToggle.addEventListener("change", e => { this.#settings.autoNext = e.target.checked; StorageAdapter.saveSettings(this.#settings); });
-        this.#els.autoNextDelay.addEventListener("change", e => { this.#settings.autoDelay = +e.target.value; StorageAdapter.saveSettings(this.#settings); });
+        this.#els.autoNextDelay.addEventListener("change", e => { const v = Math.min(5, Math.max(0, +e.target.value || 0)); e.target.value = v; this.#settings.autoDelay = v; StorageAdapter.saveSettings(this.#settings); });
         this.#els.showHistoryToggle.addEventListener("change", e => { this.#settings.showHistory = e.target.checked; this.#els.historyPanel.style.display = e.target.checked ? "" : "none"; StorageAdapter.saveSettings(this.#settings); });
         this.#els.hideMasteredToggle?.addEventListener("change", e => { this.#settings.hideMastered = e.target.checked; StorageAdapter.saveSettings(this.#settings); this.#bus.emit("toast:show", { message: e.target.checked ? "已启用隐藏已掌握题目，下次加载生效" : "已禁用隐藏已掌握题目" }); });
         this.#els.autoRateToggle.addEventListener("change", e => { this.#settings.autoRate = e.target.checked; StorageAdapter.saveSettings(this.#settings); this.#els.autoRatePresetRow.style.display = e.target.checked ? "" : "none"; this.#bus.emit("toast:show", { message: e.target.checked ? "已开启自动评分" : "已关闭自动评分" }); });
@@ -2653,7 +2668,7 @@ class QuizController {
             if (delBtn) this.#removeCachedBank(delBtn.dataset.bankDel);
         });
         // 菜单打开时刷新复习数据摘要与数据统计（<details> toggle 事件）
-        this.#els.menuPanel?.addEventListener("toggle", () => { this.#refreshFsrsStats(); this.#refreshOverview(); });
+        this.#els.menuPanel?.addEventListener("toggle", () => { this.#refreshMenuData(); });
 
         this.#initModeCards(); // radiogroup pattern: roving tabindex + arrow keys + Enter/Space
         document.addEventListener("keydown", e => this.#handleKey(e));
@@ -2797,10 +2812,14 @@ class QuizController {
             this.#applyQuestions(questions, `成功加载 ${questions.length} 题${cached ? "，已缓存到本地" : ""}${errMsg ? `；${errMsg}` : ""}`);
         } catch (e) {
             this.#els.fileStatus.innerText = `加载失败：${e?.message || e}`;
+            /* 清除失败时残留的骨架屏：恢复上一份题库的渲染 */
+            if (!this.#els.quizSection.classList.contains("hidden") && this.#quizState) this.#refresh();
             this.#bus.emit("toast:show", { message: `加载失败：${e?.message || e}`, isError: true });
         } finally {
             this.#els.fileDropZone?.setAttribute("aria-busy", "false");
             this.#els.fileStatus.setAttribute("aria-busy", "false");
+            /* 清空文件选择器：同一文件可再次选择并触发 change */
+            this.#els.fileInput.value = "";
         }
     }
 
@@ -2811,6 +2830,11 @@ class QuizController {
             filtered = questions.filter(q => !StorageAdapter.isMastered(q.text));
             const removed = questions.length - filtered.length;
             if (removed) summary += `；已过滤 ${removed} 道已掌握题目`;
+        }
+        if (!filtered.length) {
+            this.#els.fileStatus.innerText = summary;
+            this.#bus.emit("toast:show", { message: "所有题目均为已掌握（可关闭「隐藏已掌握」后重新加载）", isError: true });
+            return;
         }
         this.#questions = filtered;
         this.#quizState = new QuizState(filtered);
@@ -2922,12 +2946,14 @@ class QuizController {
 
     #start() {
         if (!this.#quizState) return;
+        if (this.#fsrsActive) this.#buildFsrsQueue();
+        /* 队列为空（今日无到期卡且无新卡）：不进入空白答题区 */
+        if (!this.#questions.length) { this.#bus.emit("toast:show", { message: "今日复习已完成 🎉" }); return; }
         this.#els.modeSection.classList.add("hidden");
         this.#els.menuPanel.open = false; // <details> native
         this.#els.quizSection.classList.remove("hidden");
         this.#els.navFab?.classList.remove("hidden");
         this.#els.resultSection.classList.add("hidden");
-        if (this.#fsrsActive) this.#buildFsrsQueue();
         this.#els.totalQ.textContent = this.#questions.length;
         this.#computeMasteredSet();
         this.#timer.reset(); this.#timer.start();
@@ -2993,26 +3019,24 @@ class QuizController {
         return autoRateFor(this.#quizState.isCorrect(this.#currentIdx), this.#timer.getQuestionTime(this.#currentIdx), resolveThresholds(this.#questions[this.#currentIdx], this.#settings));
     }
 
-    /* 复习数据摘要（菜单打开时刷新） */
-    #refreshFsrsStats() {
-        const s = FsrsStore.stats();
+    /* 复习数据摘要 + 数据统计面板：单次全表遍历（FsrsStore.snapshot）产出全部汇总 */
+    #refreshMenuData() {
+        const s = FsrsStore.snapshot();
         if (this.#els.fsrsTotalCards) this.#els.fsrsTotalCards.textContent = s.total;
         if (this.#els.fsrsDueToday) this.#els.fsrsDueToday.textContent = s.due;
         if (this.#els.fsrsAvgStability) this.#els.fsrsAvgStability.textContent = s.avgStability > 0 ? `${Math.round(s.avgStability)} 天` : "—";
-    }
-
-    /* 数据统计面板刷新：累计统计 + 近 7 天卡片复习量 + 未来 3 天预测 + 周明细 + FSRS 汇总 + 已掌握数 */
-    #refreshOverview() {
         this.#bus.emit("overview:update", {
             stats: StorageAdapter.getStats(),
-            fsrs: FsrsStore.stats(),
-            reviews: FsrsStore.dailyReviews(7),
-            forecast: FsrsStore.dueForecast(3),
-            weekly: FsrsStore.weeklyDetail(7),
+            fsrs: { reps: s.reps, lapses: s.lapses },
+            reviews: s.reviews,
+            forecast: s.forecast,
+            weekly: s.weekly,
             mastered: StorageAdapter.getMastered().length,
             mode: this.#settings.statsMode,
         });
     }
+    #refreshFsrsStats() { this.#refreshMenuData(); }
+    #refreshOverview() { this.#refreshMenuData(); }
 
     /* 累计 ↔ 近 3 次切换（点击面板或模式胶囊触发），切换即持久化并刷新 */
     #toggleStatsMode() {
@@ -3060,8 +3084,7 @@ class QuizController {
     #resetFsrsData() {
         if (!confirm("确定重置全部复习数据？此操作不可恢复。")) return;
         FsrsStore.save({});
-        this.#refreshFsrsStats();
-        this.#refreshOverview();
+        this.#refreshMenuData();
         this.#updateDailyNewEstimate();
         this.#bus.emit("toast:show", { message: "复习数据已重置" });
     }
@@ -3259,7 +3282,7 @@ class QuizController {
         const fl = this.#els.fsrsImportInput?.files;
         if (!fl || !fl.length) return;
         const file = fl[0];
-        file.text().then(text => {
+        readFileText(file).then(text => {
             let cards;
             try {
                 const data = JSON.parse(text);
@@ -3276,8 +3299,7 @@ class QuizController {
             /* 覆盖现有数据属破坏性操作：先确认（与「重置数据」一致） */
             if (!confirm(`导入将覆盖现有 ${FsrsStore.count()} 张卡，共 ${count} 张卡数据，确定继续？`)) return;
             FsrsStore.save(valid);
-            this.#refreshFsrsStats();
-            this.#refreshOverview();
+            this.#refreshMenuData();
             this.#updateDailyNewEstimate();
             this.#els.fsrsImportInput.value = "";
             this.#bus.emit("toast:show", { message: `已导入 ${count} 张卡${bad ? `，跳过 ${bad} 条无效数据` : ""}` });
@@ -3320,7 +3342,6 @@ class QuizController {
         } else { this.#bus.emit("feedback:hide"); }
         this.#bus.emit("nav:updateStyles", { currentIdx: idx, quizState: this.#quizState, mode: this.#mode, masteredSet: this.#masteredSet });
         this.#updateStats();
-        this.#updateProgress();
 
         const wasJust = this.#justAnswered;
         this.#justAnswered = false;
@@ -3350,16 +3371,15 @@ class QuizController {
         this.#els.markBadge.classList.toggle("hidden", !marked);
     }
 
+    /* 单次遍历同时产出统计与进度（原为两遍 O(N) 扫描） */
     #updateStats() {
         if (!this.#quizState) return;
-        let c = 0, i = 0, u = 0;
-        this.#questions.forEach((_, idx) => { if (!this.#quizState.isAnswered(idx)) u++; else if (this.#quizState.isCorrect(idx)) c++; else i++; });
-        this.#bus.emit("stats:update", { correct: c, incorrect: i, unanswered: u });
+        const { correct, incorrect, unanswered } = this.#countStats();
+        this.#bus.emit("stats:update", { correct, incorrect, unanswered });
+        this.#bus.emit("progress:update", { answered: this.#questions.length - unanswered, total: this.#questions.length });
     }
 
-    #updateProgress() { if (!this.#quizState) return; const answered = this.#questions.filter((_, i) => this.#quizState.isAnswered(i)).length; this.#bus.emit("progress:update", { answered, total: this.#questions.length }); }
-
-    #finish() { this.#timer.stop(); if (this.#autoNextId) { clearTimeout(this.#autoNextId); this.#autoNextId = null; } this.#updateStats(); this.#saveHistory(); this.#showResults(); }
+    #finish() { this.#timer.stop(); if (this.#autoNextId) { clearTimeout(this.#autoNextId); this.#autoNextId = null; } this.#saveHistory(); this.#showResults(); }
 
     #countStats() { let c = 0, i = 0, u = 0; this.#questions.forEach((_, idx) => { if (!this.#quizState.isAnswered(idx)) u++; else if (this.#quizState.isCorrect(idx)) c++; else i++; }); return { correct: c, incorrect: i, unanswered: u }; }
 
@@ -3404,6 +3424,7 @@ class QuizController {
         this.#closeNavOverlay();
         this.#els.resultSection.classList.add("hidden");
         this.#els.menuPanel.open = true; // <details> open
+        this.#els.totalQ.textContent = this.#questions.length; // FSRS 重建队列后题数可能变化
         this.#computeMasteredSet();
         this.#bus.emit("nav:build", { total: this.#questions.length, quizState: this.#quizState, masteredSet: this.#masteredSet });
         this.#showQuestion(0);
@@ -3411,29 +3432,44 @@ class QuizController {
 
     #showWrong() {
         if (!this.#quizState) return;
-        this.#els.wrongContainer.innerHTML = '<div class="wrong-section-title">错题回顾</div>';
         const wrong = []; this.#questions.forEach((q, i) => { if (!this.#quizState.isCorrect(i)) wrong.push({ q, i }); });
-        if (!wrong.length) { this.#els.wrongContainer.innerHTML += '<div class="wrong-all-correct">✓ 全部正确！</div>'; return; }
-        const totalW = wrong.length;
-        const summary = document.createElement("p"); summary.className = "wrong-summary"; summary.textContent = `共 ${totalW} 道错题，占总题数 ${this.#questions.length} 的 ${Math.round((totalW / this.#questions.length) * 100)}%`;
-        this.#els.wrongContainer.appendChild(summary);
-        wrong.forEach(({ q, i }) => {
-            const s = this.#quizState.get(i);
-            const card = document.createElement("div"); card.className = "wrong-card";
-            const header = document.createElement("div"); header.className = "wrong-card-header"; header.innerHTML = `<span>#${i + 1}</span><span class="badge">错题</span>`; card.appendChild(header);
-            const title = document.createElement("div"); title.className = "wrong-card-title"; title.innerHTML = esc(q.text); card.appendChild(title);
-            const opts = document.createElement("div"); opts.className = "wrong-card-options"; q.options.forEach(o => { const span = document.createElement("span"); span.className = "wrong-card-option"; if (q.answer.includes(o.key)) span.classList.add("correct-answer"); span.textContent = `${o.key}. ${o.text}`; opts.appendChild(span); }); card.appendChild(opts);
-            const row = document.createElement("div"); row.className = "wrong-card-answer-row"; const us = s.selections.join(", ") || "未作答"; row.innerHTML = `<span>你的答案: <span class="wrong-card-user-ans">${esc(us)}</span></span><span>正确答案: <span class="wrong-card-correct-ans">${esc(q.answer)}</span></span>`; card.appendChild(row);
-            if (q.explanation) { const exp = document.createElement("div"); exp.className = "wrong-card-explanation"; exp.innerHTML = `<strong>解析：</strong>${MarkdownParser.parse(q.explanation)}`; card.appendChild(exp); }
-            this.#els.wrongContainer.appendChild(card);
-        });
+        /* 单次构建全部 HTML（避免 innerHTML += 的二次方拼接），结构与原 DOM 构建一致 */
+        let html = '<div class="wrong-section-title">错题回顾</div>';
+        if (!wrong.length) {
+            html += '<div class="wrong-all-correct">✓ 全部正确！</div>';
+        } else {
+            const totalW = wrong.length;
+            html += `<p class="wrong-summary">共 ${totalW} 道错题，占总题数 ${this.#questions.length} 的 ${Math.round((totalW / this.#questions.length) * 100)}%</p>`;
+            for (const { q, i } of wrong) {
+                const s = this.#quizState.get(i);
+                const us = s.selections.join(", ") || "未作答";
+                let opts = "";
+                for (const o of q.options) opts += `<span class="wrong-card-option${q.answer.includes(o.key) ? " correct-answer" : ""}">${esc(o.key)}. ${esc(o.text)}</span>`;
+                html += `<div class="wrong-card"><div class="wrong-card-header"><span>#${i + 1}</span><span class="badge">错题</span></div>`;
+                html += `<div class="wrong-card-title">${esc(q.text)}</div>`;
+                html += `<div class="wrong-card-options">${opts}</div>`;
+                html += `<div class="wrong-card-answer-row"><span>你的答案: <span class="wrong-card-user-ans">${esc(us)}</span></span><span>正确答案: <span class="wrong-card-correct-ans">${esc(q.answer)}</span></span></div>`;
+                if (q.explanation) html += `<div class="wrong-card-explanation"><strong>解析：</strong>${MarkdownParser.parse(q.explanation)}</div>`;
+                html += "</div>";
+            }
+        }
+        this.#els.wrongContainer.innerHTML = html;
         renderMath(this.#els.wrongContainer);
     }
 
     #exportWrong() {
-        if (!this.#quizState) return; const wrong = []; this.#questions.forEach((q, i) => { if (!this.#quizState.isCorrect(i)) wrong.push({ q, i }); }); if (!wrong.length) { this.#bus.emit("toast:show", { message: "没有错题", isError: true }); return; } this.#els.exportLinks.value = wrong.map(({ q, i }) => `[[题库#${i + 1}. ${esc(q.text).substring(0, 30)}]]`).join("\n"); this.#els.exportPanel.classList.remove("hidden");
+        if (!this.#quizState) return; const wrong = []; this.#questions.forEach((q, i) => { if (!this.#quizState.isCorrect(i)) wrong.push({ q, i }); }); if (!wrong.length) { this.#bus.emit("toast:show", { message: "没有错题", isError: true }); return; } this.#els.exportLinks.value = wrong.map(({ q, i }) => `[[题库#${i + 1}. ${q.text.replace(/\s+/g, " ").trim().slice(0, 30)}]]`).join("\n"); this.#els.exportPanel.classList.remove("hidden");
     }
-    async #copyExport() { try { await navigator.clipboard.writeText(this.#els.exportLinks.value); this.#bus.emit("toast:show", { message: "已复制到剪贴板" }); } catch { this.#bus.emit("toast:show", { message: "复制失败，请手动复制", isError: true }); } }
+    async #copyExport() {
+        const text = this.#els.exportLinks.value;
+        try {
+            if (navigator.clipboard?.writeText) { await navigator.clipboard.writeText(text); this.#bus.emit("toast:show", { message: "已复制到剪贴板" }); return; }
+            throw new Error("Clipboard API 不可用");
+        } catch {
+            /* WebView 降级：execCommand 选中复制（与备份复制同一兜底链） */
+            this.#fallbackCopy(text, () => this.#bus.emit("toast:show", { message: "已复制到剪贴板" }));
+        }
+    }
 
     #handleKey(e) {
         const tag = document.activeElement?.tagName;

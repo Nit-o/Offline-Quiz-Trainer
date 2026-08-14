@@ -98,7 +98,10 @@ public class NativeShare extends CordovaPlugin {
             intent.addCategory(Intent.CATEGORY_OPENABLE);
             intent.setType("application/json");
             intent.putExtra(Intent.EXTRA_TITLE, fileName);
-            cordova.startActivityForResult(intent, REQUEST_CREATE_DOCUMENT);
+            /* cordova-android 15：CordovaInterface 仅提供三参版本
+               startActivityForResult(CordovaPlugin, Intent, int)，须传入插件自身，
+               结果经 onActivityResult(requestCode, resultCode, data) 回派给本插件 */
+            cordova.startActivityForResult(this, intent, REQUEST_CREATE_DOCUMENT);
         } catch (Exception e) {
             this.saveCallback = null;
             this.saveContent = null;

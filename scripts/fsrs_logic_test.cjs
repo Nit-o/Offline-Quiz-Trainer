@@ -18,9 +18,11 @@ const html = fs.readFileSync(path.join(__dirname, "..", "index.html"), "utf8");
 const start = html.indexOf("class EventBus");
 const end = html.indexOf("/* ===== Components ===== */");
 if (start < 0 || end < 0) { console.error("[extract] 找不到提取标记"); process.exit(1); }
-const srcFile = path.join(__dirname, "..", ".tmp-fsrs", "logic_src.cjs");
-fs.writeFileSync(srcFile, html.slice(start, end) + '\nmodule.exports = { QuizState, FsrsStore, FsrsEngine, autoRateFor, AUTO_RATE_PRESETS, resolvePreset };');
-const { QuizState, FsrsStore, FsrsEngine, autoRateFor, AUTO_RATE_PRESETS, resolvePreset } = require(srcFile);
+const TMP_DIR = path.join(__dirname, "..", ".tmp-fsrs");
+fs.mkdirSync(TMP_DIR, { recursive: true });
+const srcFile = path.join(TMP_DIR, "logic_src.cjs");
+fs.writeFileSync(srcFile, html.slice(start, end) + '\nmodule.exports = { QuizState, FsrsStore, FsrsEngine, autoRateFor, AUTO_RATE_PRESETS, resolveThresholds };');
+const { QuizState, FsrsStore, FsrsEngine, autoRateFor, AUTO_RATE_PRESETS, resolveThresholds } = require(srcFile);
 
 let checks = 0;
 const ok = (label, cond) => { checks++; assert.ok(cond, `[FAIL] ${label}`); console.log(`[ok] ${label}`); };
@@ -145,11 +147,12 @@ const ok = (label, cond) => { checks++; assert.ok(cond, `[FAIL] ${label}`); cons
 
 /* ============ 6. autoRateFor 自动评分映射（标准/严格/宽松预设） ============ */
 {
-    ok("答错 → 忘记了(1)", autoRateFor(false, 3000) === 1);
-    ok("标准：答对 ≤5s → 简单(4)", autoRateFor(true, 5000) === 4);
-    ok("标准：答对 5–15s → 良好(3)", autoRateFor(true, 15000) === 3);
-    ok("标准：答对 >15s → 困难(2)", autoRateFor(true, 15001) === 2);
-    ok("标准：答对 0ms 边界 → 简单(4)", autoRateFor(true, 0) === 4);
+    const STD = { easyMs: 5000, goodMs: 15000 };
+    ok("答错 → 忘记了(1)", autoRateFor(false, 3000, STD) === 1);
+    ok("标准：答对 ≤5s → 简单(4)", autoRateFor(true, 5000, STD) === 4);
+    ok("标准：答对 5–15s → 良好(3)", autoRateFor(true, 15000, STD) === 3);
+    ok("标准：答对 >15s → 困难(2)", autoRateFor(true, 15001, STD) === 2);
+    ok("标准：答对 0ms 边界 → 简单(4)", autoRateFor(true, 0, STD) === 4);
     ok("严格：3s 内 → 简单", autoRateFor(true, 3000, AUTO_RATE_PRESETS.strict) === 4);
     ok("严格：3–10s → 良好", autoRateFor(true, 10000, AUTO_RATE_PRESETS.strict) === 3);
     ok("严格：>10s → 困难", autoRateFor(true, 10001, AUTO_RATE_PRESETS.strict) === 2);
@@ -159,17 +162,40 @@ const ok = (label, cond) => { checks++; assert.ok(cond, `[FAIL] ${label}`); cons
     ok("宽松：答错仍 → 忘记了", autoRateFor(false, 99999, AUTO_RATE_PRESETS.relaxed) === 1);
 }
 
-/* ============ 7. resolvePreset 自定义阈值解析 ============ */
+/* ============ 7. resolveThresholds 动态阈值解析（题干/题型模型 + 自定义覆盖） ============ */
 {
-    const std = resolvePreset({});
-    ok("默认 → 标准预设 5/15s", std.easyMs === 5000 && std.goodMs === 15000);
-    ok("strict 预设 3/10s", resolvePreset({ autoRatePreset: "strict" }).easyMs === 3000 && resolvePreset({ autoRatePreset: "strict" }).goodMs === 10000);
-    ok("custom 开启且含当前标准 → 自定义值", (() => { const p = resolvePreset({ autoRatePreset: "strict", autoRateCustom: true, autoRatePresets: { strict: { easySec: 2, goodSec: 9 } } }); return p.easyMs === 2000 && p.goodMs === 9000; })());
-    ok("custom 开启但无当前标准 → 预设值", resolvePreset({ autoRatePreset: "relaxed", autoRateCustom: true, autoRatePresets: { strict: { easySec: 2, goodSec: 9 } } }).easyMs === 10000);
-    ok("custom 关闭 → 预设值", resolvePreset({ autoRatePreset: "strict", autoRateCustom: false, autoRatePresets: { strict: { easySec: 2, goodSec: 9 } } }).easyMs === 3000);
-    ok("custom=true 但 presets=null → 预设值", resolvePreset({ autoRatePreset: "relaxed", autoRateCustom: true, autoRatePresets: null }).easyMs === 10000);
-    ok("非法标准名 → standard", resolvePreset({ autoRatePreset: "bogus" }).easyMs === 5000);
-    ok("settings 为 null → standard", resolvePreset(null).easyMs === 5000);
+    /* 空题干 → 单选模型：baseMs 2500 + perChar 75 × 0 字 = 2500；good = ×2.5 */
+    ok("默认 → 动态阈值 2500/6250", (() => { const r = resolveThresholds(null, {}); return r.easyMs === 2500 && r.goodMs === 6250; })());
+    ok("strict 档位缩放 0.75 → 1875/4688", (() => { const r = resolveThresholds(null, { autoRatePreset: "strict" }); return r.easyMs === 1875 && r.goodMs === 4688; })());
+    ok("relaxed 档位缩放 1.6 → 4000/10000", (() => { const r = resolveThresholds(null, { autoRatePreset: "relaxed" }); return r.easyMs === 4000 && r.goodMs === 10000; })());
+    ok("custom 开启且含当前标准 → 固定秒数", (() => { const r = resolveThresholds(null, { autoRatePreset: "strict", autoRateCustom: true, autoRatePresets: { strict: { easySec: 2, goodSec: 9 } } }); return r.easyMs === 2000 && r.goodMs === 9000; })());
+    ok("custom 开启但无当前标准 → 动态预设", (() => { const r = resolveThresholds(null, { autoRatePreset: "relaxed", autoRateCustom: true, autoRatePresets: { strict: { easySec: 2, goodSec: 9 } } }); return r.easyMs === 4000 && r.goodMs === 10000; })());
+    ok("custom 关闭 → 动态预设", (() => { const r = resolveThresholds(null, { autoRatePreset: "strict", autoRateCustom: false, autoRatePresets: { strict: { easySec: 2, goodSec: 9 } } }); return r.easyMs === 1875 && r.goodMs === 4688; })());
+    ok("presets=null → 动态预设", (() => { const r = resolveThresholds(null, { autoRatePreset: "relaxed", autoRateCustom: true, autoRatePresets: null }); return r.easyMs === 4000 && r.goodMs === 10000; })());
+    ok("非法档位名 → standard", resolveThresholds(null, { autoRatePreset: "bogus" }).easyMs === 2500);
+    ok("settings 为 null → standard 动态", (() => { const r = resolveThresholds(null, null); return r.easyMs === 2500 && r.goodMs === 6250; })());
+    ok("题干越长阈值越高", (() => { const q = { type: "single", text: "一二三四五六七八九十", options: [{ text: "一二三" }, { text: "四五" }] }; const r = resolveThresholds(q, {}); return r.easyMs > 2500; })());
+}
+
+/* ============ 8. FsrsStore.snapshot 单次遍历汇总 ============ */
+{
+    const now = new Date(2026, 0, 4, 10, 0, 0); // 2026-01-04 10:00（本地）
+    const DAY = 86400000;
+    const t = ms => now.getTime() + ms;
+    FsrsStore.save({
+        "A": { due: t(DAY), stability: 5, difficulty: 1, state: 2, reps: 2, lapses: 1, last_review: new Date(2026, 0, 3, 9, 0, 0).getTime() },
+        "B": { due: t(2 * DAY), stability: 0, difficulty: 1, state: 2, reps: 1, lapses: 0, last_review: new Date(2026, 0, 4, 9, 30, 0).getTime() },
+        "C": { due: t(-DAY), stability: 2, difficulty: 1, state: 2, reps: 3, lapses: 0, last_review: null },
+        "D": { due: t(8 * DAY), stability: 9, difficulty: 1, state: 2, reps: 4, lapses: 0, last_review: new Date(2025, 11, 27, 8, 0, 0).getTime() },
+    });
+    const s = FsrsStore.snapshot(now);
+    ok("snapshot：总数/到期/平均稳定度/reps/lapses", s.total === 4 && s.due === 1 && Math.abs(s.avgStability - 16 / 3) < 1e-9 && s.reps === 10 && s.lapses === 1);
+    ok("snapshot：近 7 天复习量（含今天）", s.reviews["2026-01-03"] === 1 && s.reviews["2026-01-04"] === 1 && s.reviews["2026-01-01"] === undefined);
+    ok("snapshot：未来 3 天预测（过期卡并入今天）", s.forecast[0] === 1 && s.forecast[1] === 1 && s.forecast[2] === 1);
+    const past = s.weekly.past, future = s.weekly.future;
+    ok("snapshot：周明细过去（新增仅 reps=1）", past.at(-1).key === "2026-01-04" && past.at(-1).reviews === 1 && past.at(-1).fresh === 1 && past.at(-2).reviews === 1);
+    ok("snapshot：周明细未来 7 天（超窗不计）", future[0].due === 1 && future[1].due === 1 && future.slice(2).every(f => f.due === 0));
+    FsrsStore.save({});
 }
 
 console.log(`\n===== 结果: ${checks}/${checks} 项通过 =====`);

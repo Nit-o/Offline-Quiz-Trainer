@@ -49,7 +49,7 @@ class El {
     setAttribute(k, v) { this.attributes[k] = String(v); }
     getAttribute(k) { return this.attributes[k] ?? null; }
     appendChild(c) { this.children.push(c); c._parent = this; return c; }
-    append(...cs) { cs.forEach(c => { this.children.push(c); c._parent = this; }); }
+    append(...cs) { cs.forEach(c => { if (c && typeof c === 'object') { this.children.push(c); c._parent = this; } }); }
     replaceChildren(...cs) { this.children = []; cs.forEach(c => { this.children.push(c); c._parent = this; }); }
     removeChild(c) { this.children = this.children.filter(x => x !== c); }
     remove() { /* noop */ }
@@ -107,15 +107,19 @@ byId.forEach(id => { els[id] = new El(); if (id === 'quizSection' || id === 'mod
 els.markBtn._sel = 'markBtn';
 els.masterBtn._sel = 'masterBtn';
 
+const keyListeners = [];
 const document = {
     getElementById: id => els[id] ?? null,
     querySelectorAll: sel => collections[sel] ?? [],
     querySelector: sel => (collections[sel] ?? [])[0] ?? null,
     createElement: tag => new El(tag),
+    createDocumentFragment: () => new El(),
+    execCommand: () => true,
     documentElement: new El('html'),
-    addEventListener() {},
+    addEventListener(ev, cb) { if (ev === 'keydown') keyListeners.push(cb); },
     body: new El('body'),
 };
+const dispatchKey = key => { const e = { key, preventDefault() {}, shiftKey: false, target: document.body }; keyListeners.forEach(cb => cb(e)); };
 const listeners = {};
 
 /* localStorage */
@@ -179,6 +183,7 @@ const flush = () => new Promise(r => setTimeout(r, 30));
     const st = els.fileStatus.innerText;
     assert(/成功加载 1143 题，已缓存到本地/.test(st), `状态文案正确: "${st}"`);
     assert(els.fileStatus.getAttribute('aria-busy') === 'false', 'aria-busy 已复位');
+    assert(els.fileInput.value === '', '导入后文件选择器已清空（可重选同一文件）');
     assert(!els.modeSection.classList.contains('hidden'), '模式选择已显示');
     assert(els.quizSection.classList.contains('hidden'), '答题区已收起');
     assert(els.bankCacheList.children.length === 1 && els.bankCacheList.children[0].className === 'bank-cache-item', '缓存列表出现 1 条记录');
@@ -308,6 +313,117 @@ const flush = () => new Promise(r => setTimeout(r, 30));
     assert(els.trendDialog.open, '「近 1 周实际 / 未来 1 周预计」弹窗已打开');
     els.trendDialog.trigger('click');
     assert(!els.trendDialog.open, '点击空白处关闭弹窗');
+
+    console.log('== 14. 多行题干续行 + 代码块内容保护 ==');
+    els.fileInput.files = [{ name: 'multi.md', text: async () => [
+        '## 一、单选题',
+        '',
+        '[Q] 心脏位于胸腔',
+        '的哪个位置？',
+        '[A] 左前方',
+        '[B] 右前方',
+        '[T] A',
+        '**解析：** 见代码：',
+        '```',
+        '# 注释不是标题',
+        '**不是加粗**',
+        '```',
+        '',
+        '### 2. 二选一',
+        'A. 甲',
+        'B. 乙',
+        '**答案： B**',
+        '**解析：** 使用 `**行内代码**` 原样。',
+    ].join('\n') }];
+    els.fileInput.trigger('change');
+    await flush();
+    assert(/成功加载 2 题/.test(els.fileStatus.innerText), `多行题干与代码块题库解析: "${els.fileStatus.innerText}"`);
+    assert(els.fileInput.value === '', '再次导入后文件选择器已清空');
+
+    console.log('== 15. MarkdownParser：代码/行内代码内容不被二次改写 ==');
+    const escSrc = html.match(/const esc = [^\n]*\n/)[0];
+    const parserClass = html.slice(html.indexOf('class MarkdownParser'), html.indexOf('/* ===== Timer'));
+    const makeParser = new Function(`${escSrc}\n${parserClass}\nreturn MarkdownParser;`);
+    const MarkdownParser = makeParser();
+    const parsed = MarkdownParser.parse('使用 `**行内代码**` 与 \n\n\`\`\`js\n# 注释不是标题\n**不是加粗**\n\`\`\`');
+    assert(parsed.includes('<code>**行内代码**</code>') && !parsed.includes('<strong>**行内代码**</strong>'), '行内代码内容不被加粗');
+    assert(parsed.includes('<pre><code>js\n# 注释不是标题\n**不是加粗**\n</code></pre>'), '代码块内容原样保留（无 <h3>/加粗/<br>）');
+    assert(!parsed.includes('<h3>'), '代码块内 # 行未被转为标题');
+
+    console.log('== 16. 答题流程：普通模式作答/导航/交卷/错题回顾/重新开始 ==');
+    els.autoNextToggle.checked = false; // 关闭自动下一题，保证断言时序
+    els.autoNextToggle.trigger('change');
+    els.fileInput.files = [{ name: 'flow.md', text: async () => [
+        '## 一、单选题',
+        '',
+        '### 1. 第一题',
+        'A. 甲',
+        'B. 乙',
+        '**答案： A**',
+        '**解析：** 解析一。',
+        '',
+        '### 2. 第二题',
+        'A. 甲',
+        'B. 乙',
+        '**答案： A**',
+    ].join('\n') }];
+    els.fileInput.trigger('change');
+    await flush();
+    els.startQuizBtn.click();
+    await flush();
+    assert(!els.quizSection.classList.contains('hidden'), '开始后答题区显示');
+    assert(String(els.totalQ.textContent) === '2', '总题数显示 2');
+    assert(els.questionContainer.innerHTML.includes('第一题'), '第 1 题题干已渲染');
+    assert(String(els.currentQ.textContent) === '1', '当前题号 1');
+
+    dispatchKey('1'); // 选 A → 正确
+    await flush();
+    assert(!els.answerFeedback.classList.contains('hidden'), '作答后反馈显示');
+    assert(els.answerFeedback.innerHTML.includes('正确'), '答对反馈');
+    assert(String(els.correctCount.textContent) === '1', '正确计数 1');
+
+    dispatchKey('ArrowRight');
+    await flush();
+    assert(String(els.currentQ.textContent) === '2', '导航到第 2 题');
+    dispatchKey('2'); // 选 B → 错误
+    await flush();
+    assert(els.answerFeedback.innerHTML.includes('错误'), '答错反馈');
+    assert(els.answerFeedback.innerHTML.includes('您的答案'), '错误时展示您的答案/正确答案');
+    assert(String(els.incorrectCount.textContent) === '1', '错误计数 1');
+
+    els.navSubmitBtn.click();
+    await flush();
+    assert(!els.resultSection.classList.contains('hidden'), '交卷后结果区显示');
+    assert(String(els.resCorrect.textContent) === '1' && String(els.resIncorrect.textContent) === '1' && String(els.resUnanswered.textContent) === '0', '结果统计 1/1/0');
+    els.reviewBtn.click();
+    assert(els.wrongContainer.innerHTML.includes('错题回顾') && els.wrongContainer.innerHTML.includes('第二题'), '错题回顾列出错题');
+
+    els.restartBtn.click();
+    await flush();
+    assert(!els.quizSection.classList.contains('hidden'), '重新开始后答题区显示');
+    assert(els.resultSection.classList.contains('hidden'), '结果区已隐藏');
+    assert(String(els.totalQ.textContent) === '2', '重新开始后总题数仍为 2');
+
+    console.log('== 17. FSRS 模式：评分 → 交卷 → 重新开始（队列重建后题数更新） ==');
+    els.fsrsEnabledToggle.checked = true;
+    els.fsrsEnabledToggle.trigger('change');
+    els.startQuizBtn.click();
+    await flush();
+    assert(!els.quizSection.classList.contains('hidden'), 'FSRS 模式开始答题');
+    assert(String(els.totalQ.textContent) === '2', 'FSRS 首次队列 2 题（全部新卡）');
+    dispatchKey('1'); // 作答
+    await flush();
+    assert(els.answerFeedback.innerHTML.includes('评分'), 'FSRS 作答后显示评分条');
+    dispatchKey('3'); // 评 Good
+    await flush();
+    assert(els.answerFeedback.innerHTML.includes('下次复习'), '评分后显示下次复习时间');
+    els.menuPanel.trigger('toggle'); // 菜单刷新 → 复习数据摘要
+    assert(String(els.fsrsTotalCards.textContent) === '1', '已写入 1 张复习卡');
+    els.navSubmitBtn.click();
+    await flush();
+    els.restartBtn.click();
+    await flush();
+    assert(String(els.totalQ.textContent) === '1', '重建队列后总题数更新为 1（仅剩新卡）');
 
     console.log(failed ? `\n${failed} 项失败` : '\n全部通过 ✓');
     process.exit(failed ? 1 : 0);
