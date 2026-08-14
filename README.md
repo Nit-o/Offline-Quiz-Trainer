@@ -11,13 +11,13 @@ An HTML renderer that reads Markdown files and converts them into a quiz.
 
 ### 使用说明
 
-通过[ts-fsrs](https://github.com/open-spaced-repetition/ts-fsrs)支持了FSRS。
+- 通过[ts-fsrs](https://github.com/open-spaced-repetition/ts-fsrs)支持了FSRS。
+
+- 通过[KaTeX](https://github.com/KaTeX/KaTeX)支持 LaTeX 公式：题目、选项与解析中的 `$...$` 行内公式、`$$...$$` 独立公式
 
 主题切换（黑夜模式）。~~你可以在床上背着舍友偷偷内卷了~~
 
 - 支持触屏：左右滑动切换题目
-
-- 支持 LaTeX 公式（KaTeX 0.16.11，本地 `vendor/katex`，完全离线）：题目、选项与解析中的 `$...$` 行内公式、`$$...$$` 独立公式
 
 - 数据统计面板（菜单 → 数据统计）：累计答题/正确率/已掌握、近 7 天答题与复习趋势、未来 3 天复习量预测、近 1 周实际 / 未来 1 周预计（复习/新增/预计颜色区分），复习数据随 FSRS 备份导入导出
 
@@ -47,6 +47,8 @@ An HTML renderer that reads Markdown files and converts them into a quiz.
 ## 最后的话
 
 因为我不是计算机专业的，所以难免会有些 bug ，还请见谅。
+
+apk由cordova打包。
 
 ## 最后的最后
 
