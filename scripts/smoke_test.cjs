@@ -242,6 +242,40 @@ const flush = () => new Promise(r => setTimeout(r, 30));
     assert(els.snackbar.textContent.includes('无法直接保存'), `Android WebView 保存提示: "${els.snackbar.textContent}"`);
     assert(!els.backupDialog.open, '保存后对话框已关闭');
 
+    console.log('== 10.5 Cordova 原生分享（NativeShare 优先于 navigator.share）==');
+    const nativeCalls = [];
+    sandbox.NativeShare = {
+        shareFile: (t, n, c, ok) => { nativeCalls.push(['shareFile', t, n, typeof c]); ok(); },
+        shareText: (t, c, ok) => { nativeCalls.push(['shareText', t, typeof c]); ok(); },
+        saveFile: (t, n, c, ok) => { nativeCalls.push(['saveFile', t, n, typeof c]); ok(); },
+    };
+    const shareCallsBefore = shareCalls.length;
+    els.exportFsrsBtn.trigger('click');
+    els.backupShareBtn.trigger('click');
+    await flush();
+    assert(nativeCalls.length === 1 && nativeCalls[0][0] === 'shareFile' && nativeCalls[0][3] === 'string', '原生优先：分享 .json 文件内容');
+    assert(els.snackbar.textContent.includes('备份已通过系统分享导出'), `原生分享成功提示: "${els.snackbar.textContent}"`);
+    assert(shareCalls.length === shareCallsBefore, '原生路径不调用 navigator.share');
+    // 原生文件分享失败 → 降级原生文本分享
+    sandbox.NativeShare.shareFile = (t, n, c, ok, err) => { nativeCalls.push(['shareFile', t, n, typeof c]); err('boom'); };
+    els.exportFsrsBtn.trigger('click');
+    els.backupShareBtn.trigger('click');
+    await flush();
+    assert(nativeCalls.length === 3 && nativeCalls[2][0] === 'shareText', '文件分享失败降级为原生文本分享');
+    // 原生保存优先于 Web 降级
+    els.exportFsrsBtn.trigger('click');
+    els.backupSaveBtn.trigger('click');
+    await flush();
+    assert(nativeCalls.length === 4 && nativeCalls[3][0] === 'saveFile', '原生保存到本地优先');
+    assert(els.snackbar.textContent.includes('备份已保存到本地'), `原生保存成功提示: "${els.snackbar.textContent}"`);
+    // 原生保存取消 → 静默
+    sandbox.NativeShare.saveFile = (t, n, c, ok, err) => { nativeCalls.push(['saveFile', t, n, typeof c]); err('cancelled'); };
+    els.exportFsrsBtn.trigger('click');
+    els.backupSaveBtn.trigger('click');
+    await flush();
+    assert(nativeCalls.length === 5 && !/失败|无法/.test(els.snackbar.textContent), '用户取消保存不提示错误');
+    delete sandbox.NativeShare;
+
     console.log('== 11. 数据统计：累计 ↔ 近 3 次切换 + 重置 ==');
     store.set('quiz_stats', JSON.stringify({
         sessions: 5, answered: 100, correct: 80, timeMs: 600000, daily: {}, recent: [

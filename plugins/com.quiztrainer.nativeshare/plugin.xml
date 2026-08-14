@@ -1,0 +1,37 @@
+<?xml version='1.0' encoding='utf-8'?>
+<!--
+    NativeShare — Android 原生分享/保存插件
+    Android System WebView 不实现 Web Share API（navigator.share），
+    因此 Cordova 打包的 Web 应用必须走原生 Intent 才能调起系统分享面板：
+      - shareFile / shareText → Intent.ACTION_SEND（系统分享，含 ACTION_SEND 目标）
+      - saveFile              → Intent.ACTION_CREATE_DOCUMENT（系统文档选择器，保存到本地）
+    文件分享通过 androidx FileProvider 提供 content:// URI（API 24+ 禁止 file:// 跨应用分享）。
+-->
+<plugin xmlns="http://apache.org/cordova/ns/plugins/1.0"
+        id="com.quiztrainer.nativeshare"
+        version="1.0.0">
+    <name>NativeShare</name>
+    <description>System share sheet (ACTION_SEND) and save-to-file (ACTION_CREATE_DOCUMENT) for Android WebView apps</description>
+    <license>Apache-2.0</license>
+
+    <js-module name="NativeShare" src="www/NativeShare.js">
+        <clobbers target="window.NativeShare" />
+    </js-module>
+
+    <platform name="android">
+        <config-file target="AndroidManifest.xml" parent="/manifest/application">
+            <provider
+                android:name="androidx.core.content.FileProvider"
+                android:authorities="${applicationId}.nativeshare.fileprovider"
+                android:exported="false"
+                android:grantUriPermissions="true">
+                <meta-data
+                    android:name="android.support.FILE_PROVIDER_PATHS"
+                    android:resource="@xml/native_share_paths" />
+            </provider>
+        </config-file>
+        <source-file src="src/android/native_share_paths.xml" target-dir="res/xml" />
+        <source-file src="src/android/NativeShare.java" target-dir="src/com/quiztrainer/nativeshare" />
+        <framework src="androidx.core:core:1.13.1" />
+    </platform>
+</plugin>

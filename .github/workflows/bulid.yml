@@ -71,6 +71,13 @@ jobs:
         working-directory: android
         run: cordova platform add android --no-interactive
 
+      # 9.5 安装原生分享插件（系统分享 ACTION_SEND / 保存到本地 ACTION_CREATE_DOCUMENT）。
+      #     Android System WebView 不实现 navigator.share，必须走原生 Intent 才能调起系统分享。
+      #     插件源码在仓库根目录 plugins/com.quiztrainer.nativeshare，本地路径安装无需联网。
+      - name: 安装原生分享插件
+        working-directory: android
+        run: cordova plugin add ../plugins/com.quiztrainer.nativeshare
+
       # 10. 开始打包 (生成的是 Debug 版，不需要签名，直接就能装手机测试)
       - name: 打包成 APK
         working-directory: android

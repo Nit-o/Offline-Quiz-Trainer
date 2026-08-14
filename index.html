@@ -3106,10 +3106,12 @@ class QuizController {
         });
     }
 
-    /* 导出备份（分享）：优先 Web Share API 调起系统分享面板（可保存到文件/网盘/微信等）。
-       不再依赖 canShare() 预检——部分 WebView 缺失该方法或对 .json 文件返回 false，
-       导致分享面板从未弹出；改为直接尝试，文件分享失败再降级文本分享（同样调起系统面板），
-       全部失败才退回复制（Cordova WebView 未实现 onDownloadStart，<a download> 会静默失败）。 */
+    /* 导出备份（分享）：
+       ① Cordova 原生插件 NativeShare（ACTION_SEND）——Android System WebView 不实现
+          navigator.share，必须走原生 Intent 才能调起系统分享面板；文件分享失败降级文本分享；
+       ② Web Share API（桌面/移动浏览器）；
+       ③ 复制剪贴板（Android WebView 无下载支持时）；④ 桌面浏览器 blob 下载。
+       不再依赖 canShare() 预检——部分 WebView 缺失该方法或对 .json 文件返回 false。 */
     async #shareFsrsBackup() {
         const data = {
             app: "Offline-Quiz-Trainer", kind: "fsrs-cards", version: 1,
@@ -3120,6 +3122,19 @@ class QuizController {
         const file = new File([json], name, { type: "application/json" });
         const toast = message => this.#bus.emit("toast:show", { message });
         this.#els.backupDialog?.close();
+        /* ① Cordova 原生分享：优先分享 .json 文件（FileProvider + ACTION_SEND），失败降级文本分享 */
+        const NS = window.NativeShare;
+        if (NS && typeof NS.shareFile === "function" && typeof NS.shareText === "function") {
+            const nativeShare = (method, ...args) => new Promise((resolve, reject) => {
+                const timer = setTimeout(() => reject(new Error("native share timeout")), 10000);
+                NS[method](...args, () => { clearTimeout(timer); resolve(); }, msg => { clearTimeout(timer); reject(new Error(msg || "native share failed")); });
+            });
+            try { await nativeShare("shareFile", "FSRS 复习备份", name, json); toast("备份已通过系统分享导出"); return; }
+            catch { /* 文件分享失败 → 文本分享 */ }
+            try { await nativeShare("shareText", "FSRS 复习备份", json); toast("备份已通过系统分享导出"); return; }
+            catch { /* 原生分享不可用 → 继续降级 */ }
+        }
+        /* ② Web Share API */
         if (typeof navigator.share === "function") {
             /* 返回 true = 分享流程已结束（成功或用户取消）；false = 失败需降级 */
             const tryShare = async shareData => {
@@ -3129,9 +3144,8 @@ class QuizController {
             if (await tryShare({ files: [file], title: "FSRS 复习备份", text: name })) { toast("备份已通过系统分享导出"); return; }
             if (await tryShare({ text: json, title: "FSRS 复习备份" })) { toast("备份已通过系统分享导出"); return; }
         }
+        /* ③ Android WebView 无原生层时：复制兜底；④ 桌面浏览器：blob 下载 */
         if (/android/i.test(navigator.userAgent)) { this.#copyFsrsBackup(json); return; }
-
-        // 桌面浏览器：常规 blob 下载
         const blob = new Blob([json], { type: "application/json" });
         const url = URL.createObjectURL(blob);
         const a = document.createElement("a");
@@ -3144,9 +3158,10 @@ class QuizController {
         toast("备份已导出");
     }
 
-    /* 导出备份（保存到本地）：优先 File System Access API 调起系统「另存为」对话框
-       （桌面 Chrome/Edge 等）；不可用时降级 <a download> 下载；
-       Cordova WebView 两者皆不支持时给出明确提示（改用分享/复制）。 */
+    /* 导出备份（保存到本地）：
+       ① Cordova 原生插件 NativeShare.saveFile（ACTION_CREATE_DOCUMENT，系统文档选择器）；
+       ② File System Access API 系统「另存为」对话框（桌面 Chrome/Edge 等）；
+       ③ <a download> 下载；Cordova WebView 无原生层时给出明确提示（改用分享/复制）。 */
     async #saveFsrsBackup() {
         const data = {
             app: "Offline-Quiz-Trainer", kind: "fsrs-cards", version: 1,
@@ -3156,6 +3171,21 @@ class QuizController {
         const name = `fsrs-backup-${new Date().toISOString().slice(0, 10)}.json`;
         const toast = message => this.#bus.emit("toast:show", { message });
         this.#els.backupDialog?.close();
+        /* ① Cordova 原生保存：ACTION_CREATE_DOCUMENT 调起系统文档选择器 */
+        const NS = window.NativeShare;
+        if (NS && typeof NS.saveFile === "function") {
+            const result = await new Promise(resolve => {
+                const timer = setTimeout(() => resolve("timeout"), 10000);
+                NS.saveFile("保存 FSRS 备份", name, json,
+                    () => { clearTimeout(timer); resolve("ok"); },
+                    msg => { clearTimeout(timer); resolve(String(msg || "")); });
+            });
+            if (result === "ok") { toast("备份已保存到本地"); return; }
+            if (/cancelled/i.test(result)) return; /* 用户在文档选择器中取消，静默 */
+            if (result === "timeout") { toast("保存超时，请重试", true); return; }
+            /* 其他错误 → 继续降级 */
+        }
+        /* ② File System Access API：系统「另存为」对话框（桌面 Chrome/Edge 等） */
         if (typeof window.showSaveFilePicker === "function") {
             try {
                 const handle = await window.showSaveFilePicker({
@@ -3172,6 +3202,7 @@ class QuizController {
                 /* 其他失败（权限等）→ 继续降级下载 */
             }
         }
+        /* ③ 降级下载 */
         const blob = new Blob([json], { type: "application/json" });
         const url = URL.createObjectURL(blob);
         const a = document.createElement("a");
