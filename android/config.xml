@@ -15,7 +15,7 @@
     <!-- 移除 cordova 模板默认添加的 INTERNET 权限，让 APK 零权限 -->
     <!-- 若以后引入联网功能（在线题库、远程图片等），删除这段即可恢复网络权限 -->
     <edit-config file="app/src/main/AndroidManifest.xml" mode="remove" target="/manifest/uses-permission[@android:name='android.permission.INTERNET']" />
-    <!-- 应用使用 oklch()/CSS Color 5，需较新 WebView；Android 8.0+ 起步 -->
-    <preference name="android-minSdkVersion" value="26" />
+    <!-- 应用使用 oklch()/CSS Color 5 与较新 Web API，需较新 WebView；Android 13 (API 33) 起步 -->
+    <preference name="android-minSdkVersion" value="33" />
     <preference name="Orientation" value="default" />
 </widget>

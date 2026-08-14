@@ -19,11 +19,11 @@ jobs:
     steps:
       # 2. 拉取你的代码
       - name: 拉取代码
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
 
       # 3. 安装 Node.js 环境 (Cordova 依赖它)
       - name: 安装 Node.js
-        uses: actions/setup-node@v5
+        uses: actions/setup-node@v7
         with:
           node-version: '24'
 
@@ -53,14 +53,18 @@ jobs:
           cp -r ../vendor www/vendor
 
       # 8. 版本号自动同步：从 git 标签（如 v1.0.1）提取版本号，写入 config.xml 和 package.json（仅打标签时执行）
+      - name: 安装 xmlstarlet
+        run: sudo apt-get install -y xmlstarlet
+
       - name: 同步版本号
         if: startsWith(github.ref, 'refs/tags/')
         working-directory: android
         run: |
           VERSION=${GITHUB_REF#refs/tags/v}
-          echo "本次打包版本号: $VERSION"
-          sed -i "s/version=\"[^\"]*\"/version=\"$VERSION\"/" config.xml
-          sed -i "s/\"version\": \"[^\"]*\"/\"version\": \"$VERSION\"/" package.json
+          # config.xml 的 <widget> 在默认命名空间 (http://www.w3.org/ns/widgets) 中，
+          xmlstarlet ed -L -N w="http://www.w3.org/ns/widgets" -u "/w:widget/@version" -v "$VERSION" config.xml
+          cat config.xml | grep -o 'version="[^"]*"' | head -1
+          npm version "$VERSION" --no-git-tag-version
 
       # 9. 添加 Android 平台 (如果报错，可能是 node_modules 没装，上面已经自动补装)
       - name: 添加 Android 平台
@@ -76,24 +80,20 @@ jobs:
       - name: 检查最终权限
         working-directory: android
         run: |
-          echo "=== 最终 AndroidManifest 中的权限 ==="
-          if grep -q 'uses-permission' platforms/android/app/src/main/AndroidManifest.xml; then
-            grep -o 'android.permission\.[A-Z_]*' platforms/android/app/src/main/AndroidManifest.xml | sort -u
-          else
-            echo "（无任何权限声明）"
-          fi
+          echo "=== 最终 AndroidManifest 权限列表 ==="
+          grep -E 'android:name="android.permission\.[A-Z_]+"' platforms/android/app/src/main/AndroidManifest.xml | sed 's/.*android:name="\([^"]*\)".*/\1/' | sort -u || echo "（无权限声明）"
 
       # 11. 将打包好的 APK 上传到网页，供你下载
       - name: 上传 APK 文件
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v7
         with:
-          name: 我的APP安装包
+          name: 安装包-${{ github.ref_name }}
           path: android/platforms/android/app/build/outputs/apk/debug/app-debug.apk
 
       # 12. 如果本次推送带 v 开头标签（如 v1.0.0），自动创建 Release 并把 APK 挂上去
       - name: 发布 GitHub Release
         if: startsWith(github.ref, 'refs/tags/')
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           files: android/platforms/android/app/build/outputs/apk/debug/app-debug.apk
           generate_release_notes: true

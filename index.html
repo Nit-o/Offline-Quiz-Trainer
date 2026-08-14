@@ -386,8 +386,8 @@
                 &:focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; }
             }
         }
-        /* FSRS 设置子菜单（内嵌 details，随 FSRS 启用开关显隐）与数据面板趋势展开区共用样式 */
-        .fsrs-submenu, .trend-details {
+        /* FSRS 设置子菜单（内嵌 details，随 FSRS 启用开关显隐） */
+        .fsrs-submenu {
             margin-block-start: var(--sp-3);
             border: var(--bw-1) solid var(--divider);
             border-radius: var(--radius);
@@ -412,6 +412,7 @@
             }
         }
         .menu-row-hint { font-size: var(--text-xs); color: var(--text-muted); flex-basis: 100%; }
+        .menu-row-hint[hidden] { display: none; }
         /* FSRS 复习数据摘要 + 管理操作（备份/导入为 JSON，纯本地） */
         .fsrs-stats {
             display: flex;
@@ -450,6 +451,50 @@
             font-variant-numeric: tabular-nums;
         }
         .stats-label { font-size: var(--text-xs); color: var(--text-muted); }
+        /* 数据统计工具栏：模式切换胶囊（累计/近3次）+ 重置按钮 */
+        .stats-toolbar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: var(--sp-2);
+            margin-block-end: var(--sp-3);
+        }
+        .stats-mode-chip {
+            display: inline-flex;
+            align-items: center;
+            gap: var(--sp-1);
+            font: 600 var(--text-xs) var(--font-sans);
+            letter-spacing: .02em;
+            color: var(--text-soft);
+            background: var(--surface-alt);
+            border: var(--bw-1) solid var(--divider);
+            border-radius: 999px;
+            padding: var(--sp-1) var(--sp-3);
+            min-height: 28px;
+            cursor: pointer;
+            user-select: none;
+            transition: color .2s var(--ease), border-color .2s var(--ease), background .2s var(--ease);
+            &::after { content: "▾"; font-size: 10px; line-height: 1; }
+            &[aria-pressed="true"] {
+                border-color: var(--accent);
+                color: var(--accent-dark);
+                background: color-mix(in oklab, var(--accent) 14%, var(--surface));
+            }
+            &:focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; }
+        }
+        /* 点击面板切换累计/近3次：整体可点 + 近3次态强调（边框/数值着色） */
+        .stats-grid {
+            cursor: pointer;
+            border-radius: var(--radius);
+            transition: box-shadow .2s var(--ease);
+            &:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+            &:active { box-shadow: 0 0 0 2px var(--primary-glow); }
+            &[aria-pressed="true"] {
+                box-shadow: 0 0 0 1px var(--accent) inset;
+                & .stats-tile { border-color: var(--accent); }
+                & .stats-value { color: var(--accent-dark); }
+            }
+        }
         .trend-chart {
             display: flex;
             align-items: stretch;
@@ -497,7 +542,9 @@
         .trend-fill.fill-new    { background: var(--accent); }
         .trend-fill.fill-due    { background: var(--text-muted); opacity: 0.5; }
         .trend-fill.fill-review.empty, .trend-fill.fill-new.empty, .trend-fill.fill-due.empty { background: var(--divider); opacity: 1; }
-        .trend-details .trend-chart { margin-block-start: var(--sp-3); }
+        /* 周明细弹窗（近 1 周实际 / 未来 1 周预计）：图表区加宽以容纳 14 根柱 */
+        #trendDialog .preset-dialog-panel { max-width: min(560px, calc(100vw - 32px)); }
+        #trendDialog .trend-chart { margin-block-start: var(--sp-2); }
         .trend-legend {
             display: flex;
             flex-wrap: wrap;
@@ -1051,6 +1098,7 @@
         }
         .preset-dialog-hint { font-size: var(--text-xs); color: var(--text-muted); margin-block-end: var(--sp-4); }
         .preset-dialog-body { display: flex; flex-direction: column; gap: var(--sp-4); }
+        .preset-dialog-body .btn { width: 100%; }
         .preset-row {
             display: flex;
             align-items: center;
@@ -1377,6 +1425,7 @@
                                     <label for="dailyNewInput">每日新卡上限</label>
                                     <input type="number" id="dailyNewInput" value="20" step="5" min="0" max="200" inputmode="numeric" aria-describedby="dailyNewHint">
                                     <span class="menu-row-hint" id="dailyNewHint">0 = 不限</span>
+                                    <span class="menu-row-hint" id="dailyNewEstimate" hidden></span>
                                 </div>
                             </div>
                         </details>
@@ -1393,28 +1442,31 @@
                         <div class="fsrs-actions">
                             <button id="resetFsrsBtn" class="btn btn-outline btn-sm">重置数据</button>
                             <button id="exportFsrsBtn" class="btn btn-outline btn-sm">导出备份</button>
-                            <button id="copyFsrsBtn" class="btn btn-outline btn-sm">复制备份</button>
                             <button id="importFsrsBtn" class="btn btn-outline btn-sm">导入备份</button>
                         </div>
                         <input type="file" id="fsrsImportInput" accept=".json,application/json" hidden>
-                        <span class="menu-row-hint" id="fsrsHint">备份/导入为 JSON 文件，仅存于本地；导入将覆盖现有数据。导出会调起系统分享，可保存到「文件」或发送到电脑；也可用「复制备份」手动保存为 .json</span>
+                        <span class="menu-row-hint" id="fsrsHint">备份/导入为 JSON 文件，仅存于本地；导入将覆盖现有数据。导出可选择「保存到本地」或「分享」（调起系统面板，可存到文件/网盘/微信等）；也可用「复制备份」手动保存为 .json</span>
                     </div>
                 </div>
                 <div class="menu-group menu-group--stats">
                     <h3 class="menu-group-title">数据统计</h3>
                     <div class="menu-group-content">
-                        <div class="stats-grid" aria-label="累计统计">
+                        <div class="stats-toolbar">
+                            <button type="button" id="statsModeBtn" class="stats-mode-chip" aria-pressed="false" aria-label="切换累计与近 3 次统计">累计</button>
+                            <button type="button" id="statsResetBtn" class="btn btn-outline btn-sm" aria-label="重置数据统计">重置统计</button>
+                        </div>
+                        <div class="stats-grid" id="statsGrid" role="button" tabindex="0" aria-pressed="false" aria-label="累计统计（点击切换近 3 次）">
                             <div class="stats-tile">
                                 <span class="stats-value" id="ovSessions">0</span>
-                                <span class="stats-label">练习次数</span>
+                                <span class="stats-label" id="ovSessionsLabel">练习次数</span>
                             </div>
                             <div class="stats-tile">
                                 <span class="stats-value" id="ovAnswered">0</span>
-                                <span class="stats-label">累计答题</span>
+                                <span class="stats-label" id="ovAnsweredLabel">累计答题</span>
                             </div>
                             <div class="stats-tile">
                                 <span class="stats-value" id="ovAccuracy">—</span>
-                                <span class="stats-label">总正确率</span>
+                                <span class="stats-label" id="ovAccuracyLabel">总正确率</span>
                             </div>
                             <div class="stats-tile">
                                 <span class="stats-value" id="ovMastered">0</span>
@@ -1427,15 +1479,7 @@
                             <span class="forecast-item">明天 <b id="fc1">0</b></span>
                             <span class="forecast-item">后天 <b id="fc2">0</b></span>
                         </div>
-                        <details class="trend-details">
-                            <summary>近 1 周实际 / 未来 1 周预计</summary>
-                            <div class="trend-chart trend-chart--wide" id="trendChartWide" role="img" aria-label="近 1 周实际复习量与未来 1 周预计复习量柱状图"></div>
-                            <div class="trend-legend" aria-hidden="true">
-                                <span><i class="legend-dot legend-review"></i>实际复习</span>
-                                <span><i class="legend-dot legend-new"></i>新增</span>
-                                <span><i class="legend-dot legend-due"></i>预计</span>
-                            </div>
-                        </details>
+                        <button type="button" id="trendDetailBtn" class="btn btn-outline btn-sm">近 1 周实际 / 未来 1 周预计</button>
                         <div class="fsrs-stats" aria-label="复习汇总">
                             <span>累计复习 <b id="ovReps">0</b></span>
                             <span>累计遗忘 <b id="ovLapses">0</b></span>
@@ -1600,6 +1644,40 @@
     </div>
 </dialog>
 
+<!-- 近 1 周实际 / 未来 1 周预计弹窗：点击空白处退出 -->
+<dialog class="preset-dialog" id="trendDialog" aria-labelledby="trendDialogTitle">
+    <div class="preset-dialog-panel">
+        <div class="preset-dialog-header">
+            <span class="preset-dialog-title" id="trendDialogTitle">近 1 周实际 / 未来 1 周预计</span>
+            <button type="button" id="trendDialogClose" class="preset-dialog-close" aria-label="关闭">×</button>
+        </div>
+        <div class="preset-dialog-body">
+            <div class="trend-chart trend-chart--wide" id="trendChartWide" role="img" aria-label="近 1 周实际复习量与未来 1 周预计复习量柱状图"></div>
+            <div class="trend-legend" aria-hidden="true">
+                <span><i class="legend-dot legend-review"></i>实际复习</span>
+                <span><i class="legend-dot legend-new"></i>新增</span>
+                <span><i class="legend-dot legend-due"></i>预计</span>
+            </div>
+        </div>
+    </div>
+</dialog>
+
+<!-- 导出备份方式选择：保存到本地（系统另存为/下载）或分享（系统分享面板） -->
+<dialog class="preset-dialog" id="backupDialog" aria-labelledby="backupDialogTitle">
+    <div class="preset-dialog-panel">
+        <div class="preset-dialog-header">
+            <span class="preset-dialog-title" id="backupDialogTitle">导出备份</span>
+            <button type="button" id="backupDialogClose" class="preset-dialog-close" aria-label="关闭">×</button>
+        </div>
+        <p class="preset-dialog-hint">备份为 JSON 文件，包含全部 FSRS 复习数据。选择导出方式：</p>
+        <div class="preset-dialog-body">
+            <button type="button" id="backupShareBtn" class="btn">分享…</button>
+            <button type="button" id="backupSaveBtn" class="btn btn-outline">保存到本地…</button>
+            <button type="button" id="copyFsrsBtn" class="btn btn-outline">复制备份</button>
+        </div>
+    </div>
+</dialog>
+
 <div class="snackbar" id="snackbar" role="status" aria-live="polite"></div>
 
 <script type="module">
@@ -1675,7 +1753,7 @@ class Timer {
 }
 
 /* ===== Storage ===== */
-const DEFAULTS = Object.freeze({ autoNext: true, autoDelay: 0.5, showHistory: true, hideMastered: false, fsrsEnabled: false, retention: 0.9, dailyNew: 20, autoRate: false, autoRatePreset: "standard", autoRateCustom: false, autoRatePresets: null });
+const DEFAULTS = Object.freeze({ autoNext: true, autoDelay: 0.5, showHistory: true, hideMastered: false, fsrsEnabled: false, retention: 0.9, dailyNew: 20, autoRate: false, autoRatePreset: "standard", autoRateCustom: false, autoRatePresets: null, statsMode: "cumulative" });
 class StorageAdapter {
     /* Storage write failures (private mode, quota) are surfaced via onPersistError
        so the UI can notify the user — never silently swallow (Nielsen error prevention). */
@@ -1695,14 +1773,18 @@ class StorageAdapter {
     static saveMastered(m) { this.#s("quiz_mastered", m); }
     static toggleMastered(text) { const list = this.getMastered(); const h = hashStr(text); const idx = list.indexOf(h); idx > -1 ? list.splice(idx, 1) : list.push(h); this.saveMastered(list); return idx === -1; }
     static isMastered(text) { return this.getMastered().includes(hashStr(text)); }
-    /* 累计统计（数据统计面板）：练习次数 / 答题 / 正确 / 用时 + 近 30 天每日明细 */
-    static getStats() { const s = this.#g("quiz_stats", null); return s && typeof s === "object" ? { sessions: 0, answered: 0, correct: 0, timeMs: 0, daily: {}, ...s } : { sessions: 0, answered: 0, correct: 0, timeMs: 0, daily: {} }; }
+    /* 累计统计（数据统计面板）：练习次数 / 答题 / 正确 / 用时 + 近 30 天每日明细 + 近几次会话记录（面板可在累计/近 3 次间切换） */
+    static getStats() { const s = this.#g("quiz_stats", null); return s && typeof s === "object" ? { sessions: 0, answered: 0, correct: 0, timeMs: 0, daily: {}, recent: [], ...s } : { sessions: 0, answered: 0, correct: 0, timeMs: 0, daily: {}, recent: [] }; }
     static saveStats(s) { this.#s("quiz_stats", s); }
     /* answered 为实际作答数（未答不计）；fsrs 会话的每日活动由卡片 last_review
-       承载（可随备份导入/导出），不重复记入 daily，避免趋势图双重计数 */
+       承载（可随备份导入/导出），不重复记入 daily，避免趋势图双重计数；
+       recent 记录每次会话明细（累计与近 3 次切换共用，仅保留最近 10 次） */
     static recordSession({ correct = 0, answered = 0, timeMs = 0, fsrs = false } = {}) {
         const s = this.getStats();
         s.sessions++; s.answered += answered; s.correct += correct; s.timeMs += timeMs;
+        s.recent = Array.isArray(s.recent) ? s.recent : [];
+        s.recent.push({ answered, correct, timeMs, at: new Date().toISOString() });
+        if (s.recent.length > 10) s.recent = s.recent.slice(-10);
         if (!fsrs) {
             const d = new Date();
             const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -1992,15 +2074,19 @@ class FsrsStore {
         }
         return counts;
     }
-    /* 未来 N 天（含今天）每日到期卡数预测：过期卡并入今天 */
+    /* 未来 N 天（含今天）每日到期卡数预测：过期卡并入今天；
+       今天的口径与复习队列一致——只统计此刻前已到期（due ≤ now），
+       晚于此刻但仍是今天的卡不计入今日，顺延计入后续日期 */
     static dueForecast(days = 3, now = new Date()) {
         const dayMs = 86400000;
+        const nowMs = now.getTime();
         const starts = [];
         for (let i = 0; i < days; i++) starts.push(new Date(now.getFullYear(), now.getMonth(), now.getDate() + i).getTime());
         const counts = new Array(days).fill(0);
         for (const c of Object.values(this.load())) {
             const due = c.due;
-            for (let i = 0; i < days; i++) {
+            if (due <= nowMs) { counts[0]++; continue; } /* 已到期 → 今日队列 */
+            for (let i = 1; i < days; i++) { /* 今日稍后到期与未来日期：按自然日归属 */
                 if (due < starts[i] + dayMs) { counts[i]++; break; }
             }
         }
@@ -2205,20 +2291,38 @@ class HistoryPanel {
     }
 }
 
-/* 数据统计面板：累计概览磁贴 + 近 7 天答题/复习趋势柱状图 + 未来 3 天预测 +
-   近 1 周实际/未来 1 周预计展开图（复习/新增/预计颜色区分）+ FSRS 复习汇总 */
+/* 数据统计面板：累计概览磁贴（可切换累计/近 3 次）+ 近 7 天答题/复习趋势柱状图 + 未来 3 天预测 +
+   近 1 周实际/未来 1 周预计弹窗图（复习/新增/预计颜色区分）+ FSRS 复习汇总 */
 class OverviewPanel {
     #els;
-    constructor(els, bus) { this.#els = els; bus.on("overview:update", ({ stats, fsrs, reviews, forecast, weekly, mastered }) => this.render(stats, fsrs, reviews, forecast, weekly, mastered)); }
-    render(stats, fsrs, reviews, forecast, weekly, mastered) {
+    constructor(els, bus) { this.#els = els; bus.on("overview:update", ({ stats, fsrs, reviews, forecast, weekly, mastered, mode }) => this.render(stats, fsrs, reviews, forecast, weekly, mastered, mode)); }
+    render(stats, fsrs, reviews, forecast, weekly, mastered, mode = "cumulative") {
         const e = this.#els;
-        if (e.sessions) e.sessions.textContent = stats.sessions;
-        if (e.answered) e.answered.textContent = stats.answered;
-        if (e.accuracy) e.accuracy.textContent = stats.answered ? `${Math.round((stats.correct / stats.answered) * 100)}%` : "—";
+        /* 近 3 次：聚合最近 3 次会话明细；否则使用累计值 */
+        const recent = Array.isArray(stats.recent) ? stats.recent.slice(-3) : [];
+        const useRecent = mode === "recent3";
+        const s = useRecent ? {
+            sessions: recent.length,
+            answered: recent.reduce((a, r) => a + (r.answered || 0), 0),
+            correct: recent.reduce((a, r) => a + (r.correct || 0), 0),
+            timeMs: recent.reduce((a, r) => a + (r.timeMs || 0), 0),
+        } : stats;
+        if (e.sessions) e.sessions.textContent = s.sessions;
+        if (e.answered) e.answered.textContent = s.answered;
+        if (e.accuracy) e.accuracy.textContent = s.answered ? `${Math.round((s.correct / s.answered) * 100)}%` : "—";
         if (e.mastered) e.mastered.textContent = mastered;
         if (e.reps) e.reps.textContent = fsrs.reps;
         if (e.lapses) e.lapses.textContent = fsrs.lapses;
         if (e.avgTime) e.avgTime.textContent = stats.answered ? fmtTime(Math.round(stats.timeMs / stats.answered)) : "—";
+        /* UI 反馈：标签 / 模式胶囊 / 面板 aria 与高亮随模式切换 */
+        if (e.sessionsLabel) e.sessionsLabel.textContent = useRecent ? "近 3 次练习" : "练习次数";
+        if (e.answeredLabel) e.answeredLabel.textContent = useRecent ? "近 3 次答题" : "累计答题";
+        if (e.accuracyLabel) e.accuracyLabel.textContent = useRecent ? "近 3 次正确率" : "总正确率";
+        if (e.modeBtn) { e.modeBtn.textContent = useRecent ? "近 3 次" : "累计"; e.modeBtn.setAttribute("aria-pressed", String(useRecent)); }
+        if (e.grid) {
+            e.grid.setAttribute("aria-pressed", String(useRecent));
+            e.grid.setAttribute("aria-label", useRecent ? "近 3 次统计（点击切换累计）" : "累计统计（点击切换近 3 次）");
+        }
         this.#renderTrend(stats.daily || {}, reviews || {});
         this.#renderForecast(forecast || []);
         this.#renderWeekly(weekly || { past: [], future: [] });
@@ -2411,6 +2515,11 @@ class QuizController {
             resetFsrsBtn: $("resetFsrsBtn"), exportFsrsBtn: $("exportFsrsBtn"), copyFsrsBtn: $("copyFsrsBtn"), importFsrsBtn: $("importFsrsBtn"), fsrsImportInput: $("fsrsImportInput"),
             fsrsTotalCards: $("fsrsTotalCards"), fsrsDueToday: $("fsrsDueToday"), fsrsAvgStability: $("fsrsAvgStability"),
             ovSessions: $("ovSessions"), ovAnswered: $("ovAnswered"), ovAccuracy: $("ovAccuracy"), ovMastered: $("ovMastered"),
+            ovSessionsLabel: $("ovSessionsLabel"), ovAnsweredLabel: $("ovAnsweredLabel"), ovAccuracyLabel: $("ovAccuracyLabel"),
+            statsModeBtn: $("statsModeBtn"), statsResetBtn: $("statsResetBtn"), statsGrid: $("statsGrid"),
+            dailyNewEstimate: $("dailyNewEstimate"),
+            trendDetailBtn: $("trendDetailBtn"), trendDialog: $("trendDialog"), trendDialogClose: $("trendDialogClose"),
+            backupDialog: $("backupDialog"), backupDialogClose: $("backupDialogClose"), backupShareBtn: $("backupShareBtn"), backupSaveBtn: $("backupSaveBtn"),
             ovReps: $("ovReps"), ovLapses: $("ovLapses"), ovAvgTime: $("ovAvgTime"), trendChart: $("trendChart"),
             forecast: [$("fc0"), $("fc1"), $("fc2")], trendChartWide: $("trendChartWide"),
             quizSection: $("quizSection"), resultSection: $("resultSection"),
@@ -2449,7 +2558,7 @@ class QuizController {
         new TimerDisplay({ cur: this.#els.curTime, total: this.#els.totalTime }, this.#bus);
         new ResultPanel({ scoreValue: this.#els.scoreValue, totalScore: this.#els.totalScore, resCorrect: this.#els.resCorrect, resIncorrect: this.#els.resIncorrect, resUnanswered: this.#els.resUnanswered, resultTotalTime: this.#els.resultTotalTime, avgTime: this.#els.avgTime, resultMsg: this.#els.resultMsg }, this.#bus);
         new HistoryPanel(this.#els.historyList, this.#bus);
-        new OverviewPanel({ sessions: this.#els.ovSessions, answered: this.#els.ovAnswered, accuracy: this.#els.ovAccuracy, mastered: this.#els.ovMastered, reps: this.#els.ovReps, lapses: this.#els.ovLapses, avgTime: this.#els.ovAvgTime, chart: this.#els.trendChart, forecast: this.#els.forecast, wideChart: this.#els.trendChartWide }, this.#bus);
+        new OverviewPanel({ sessions: this.#els.ovSessions, answered: this.#els.ovAnswered, accuracy: this.#els.ovAccuracy, mastered: this.#els.ovMastered, reps: this.#els.ovReps, lapses: this.#els.ovLapses, avgTime: this.#els.ovAvgTime, chart: this.#els.trendChart, forecast: this.#els.forecast, wideChart: this.#els.trendChartWide, sessionsLabel: this.#els.ovSessionsLabel, answeredLabel: this.#els.ovAnsweredLabel, accuracyLabel: this.#els.ovAccuracyLabel, modeBtn: this.#els.statsModeBtn, grid: this.#els.statsGrid }, this.#bus);
         new ToastComponent(this.#els.snackbar, this.#bus);
     }
 
@@ -2510,10 +2619,29 @@ class QuizController {
             e.target.value = v;
             this.#settings.dailyNew = v;
             StorageAdapter.saveSettings(this.#settings);
-            this.#bus.emit("toast:show", { message: v > 0 ? `每日新卡上限 ${v} 题` : "每日新卡不限量" });
+            const est = this.#updateDailyNewEstimate();
+            this.#bus.emit("toast:show", { message: v > 0 ? `每日新卡上限 ${v} 题${est ? ` · ${est}` : ""}` : "每日新卡不限量" });
         });
+        /* 数据统计面板：点击面板（或模式胶囊）在「累计」与「近 3 次」间切换；重置按钮清空统计 */
+        this.#els.statsGrid?.addEventListener("click", () => this.#toggleStatsMode());
+        this.#els.statsGrid?.addEventListener("keydown", e => {
+            if (e.key === "Enter" || e.key === " ") { e.preventDefault(); this.#toggleStatsMode(); }
+        });
+        this.#els.statsModeBtn?.addEventListener("click", () => this.#toggleStatsMode());
+        this.#els.statsResetBtn?.addEventListener("click", () => this.#resetStats());
+        /* 周明细弹窗：按钮打开，×/ESC/点击空白处关闭 */
+        this.#els.trendDetailBtn?.addEventListener("click", () => this.#openTrendDialog());
+        this.#els.trendDialogClose?.addEventListener("click", () => this.#els.trendDialog?.close());
+        this.#els.trendDialog?.addEventListener("click", e => { if (e.target === this.#els.trendDialog) this.#els.trendDialog.close(); });
+        /* 导出备份：先选择导出方式（分享 / 保存到本地），系统 API 失败时自动降级 */
+        this.#els.exportFsrsBtn?.addEventListener("click", () => {
+            try { this.#els.backupDialog?.showModal(); } catch { this.#shareFsrsBackup(); }
+        });
+        this.#els.backupDialogClose?.addEventListener("click", () => this.#els.backupDialog?.close());
+        this.#els.backupDialog?.addEventListener("click", e => { if (e.target === this.#els.backupDialog) this.#els.backupDialog.close(); });
+        this.#els.backupShareBtn?.addEventListener("click", () => { this.#shareFsrsBackup(); });
+        this.#els.backupSaveBtn?.addEventListener("click", () => { this.#saveFsrsBackup(); });
         this.#els.resetFsrsBtn?.addEventListener("click", () => this.#resetFsrsData());
-        this.#els.exportFsrsBtn?.addEventListener("click", () => { this.#exportFsrsBackup().catch(() => this.#copyFsrsBackup()); });
         this.#els.copyFsrsBtn?.addEventListener("click", () => this.#copyFsrsBackup());
         this.#els.importFsrsBtn?.addEventListener("click", () => this.#els.fsrsImportInput?.click());
         this.#els.fsrsImportInput?.addEventListener("change", () => this.#onImportFsrsFile());
@@ -2693,6 +2821,7 @@ class QuizController {
         this.#els.resultSection.classList.add("hidden");
         this.#els.navFab?.classList.add("hidden");
         this.#els.modeSection.classList.remove("hidden");
+        this.#updateDailyNewEstimate();
         this.#selectMode("practice");
     }
 
@@ -2845,6 +2974,7 @@ class QuizController {
         FsrsStore.upsert(q.text, nextCard);
         this.#quizState.markRated(idx, rating, nextCard.due instanceof Date ? nextCard.due : new Date(nextCard.due));
         this.#justAnswered = true;
+        this.#updateDailyNewEstimate();
         this.#refresh();
     }
 
@@ -2880,7 +3010,51 @@ class QuizController {
             forecast: FsrsStore.dueForecast(3),
             weekly: FsrsStore.weeklyDetail(7),
             mastered: StorageAdapter.getMastered().length,
+            mode: this.#settings.statsMode,
         });
+    }
+
+    /* 累计 ↔ 近 3 次切换（点击面板或模式胶囊触发），切换即持久化并刷新 */
+    #toggleStatsMode() {
+        this.#settings.statsMode = this.#settings.statsMode === "recent3" ? "cumulative" : "recent3";
+        StorageAdapter.saveSettings(this.#settings);
+        this.#refreshOverview();
+        this.#bus.emit("toast:show", { message: this.#settings.statsMode === "recent3" ? "已切换为近 3 次统计" : "已切换为累计统计" });
+    }
+
+    /* 重置数据统计（练习次数 / 累计答题 / 正确率 / 用时 / 每日明细 / 近 3 次记录） */
+    #resetStats() {
+        if (!confirm("确定重置数据统计（练习次数、累计答题、总正确率、每日明细与近 3 次记录）？此操作不可恢复。")) return;
+        StorageAdapter.saveStats({ sessions: 0, answered: 0, correct: 0, timeMs: 0, daily: {}, recent: [] });
+        this.#refreshOverview();
+        this.#bus.emit("toast:show", { message: "数据统计已重置" });
+    }
+
+    /* 周明细弹窗（近 1 周实际 / 未来 1 周预计）：类自定义评分标准弹窗，点击空白处退出 */
+    #openTrendDialog() {
+        try { this.#els.trendDialog?.showModal(); } catch { /* 旧浏览器降级：无对话框也可用 */ }
+    }
+
+    /* 每日新卡上限：非 0 时估算全部新卡的预计完成天数/日期（未学 = 无 FSRS 记录的题） */
+    #dailyNewEstimateText() {
+        const limit = this.#settings.dailyNew;
+        if (!(limit > 0) || !this.#questions.length) return null;
+        let fresh = 0;
+        for (const q of this.#questions) if (!FsrsStore.get(q.text)) fresh++;
+        if (fresh <= 0) return "所有卡片均已学习，暂无新卡";
+        const days = Math.ceil(fresh / limit);
+        const done = new Date();
+        done.setDate(done.getDate() + days);
+        return `预计 ${days} 天（约 ${done.getMonth() + 1} 月 ${done.getDate()} 日）完成全部 ${fresh} 张新卡`;
+    }
+    /* 渲染估算提示，返回估算文案（无估算时隐藏并返回 null） */
+    #updateDailyNewEstimate() {
+        const el = this.#els.dailyNewEstimate;
+        if (!el) return null;
+        const text = this.#dailyNewEstimateText();
+        el.textContent = text ?? "";
+        el.hidden = text == null;
+        return text;
     }
 
     #resetFsrsData() {
@@ -2888,6 +3062,7 @@ class QuizController {
         FsrsStore.save({});
         this.#refreshFsrsStats();
         this.#refreshOverview();
+        this.#updateDailyNewEstimate();
         this.#bus.emit("toast:show", { message: "复习数据已重置" });
     }
 
@@ -2931,11 +3106,11 @@ class QuizController {
         });
     }
 
-    /* 导出备份：优先 Web Share API 调起系统分享面板（可保存到文件/网盘/微信等）。
+    /* 导出备份（分享）：优先 Web Share API 调起系统分享面板（可保存到文件/网盘/微信等）。
        不再依赖 canShare() 预检——部分 WebView 缺失该方法或对 .json 文件返回 false，
        导致分享面板从未弹出；改为直接尝试，文件分享失败再降级文本分享（同样调起系统面板），
        全部失败才退回复制（Cordova WebView 未实现 onDownloadStart，<a download> 会静默失败）。 */
-    async #exportFsrsBackup() {
+    async #shareFsrsBackup() {
         const data = {
             app: "Offline-Quiz-Trainer", kind: "fsrs-cards", version: 1,
             exportedAt: new Date().toISOString(), cards: FsrsStore.load(),
@@ -2944,6 +3119,7 @@ class QuizController {
         const name = `fsrs-backup-${new Date().toISOString().slice(0, 10)}.json`;
         const file = new File([json], name, { type: "application/json" });
         const toast = message => this.#bus.emit("toast:show", { message });
+        this.#els.backupDialog?.close();
         if (typeof navigator.share === "function") {
             /* 返回 true = 分享流程已结束（成功或用户取消）；false = 失败需降级 */
             const tryShare = async shareData => {
@@ -2966,6 +3142,46 @@ class QuizController {
         a.remove();
         URL.revokeObjectURL(url);
         toast("备份已导出");
+    }
+
+    /* 导出备份（保存到本地）：优先 File System Access API 调起系统「另存为」对话框
+       （桌面 Chrome/Edge 等）；不可用时降级 <a download> 下载；
+       Cordova WebView 两者皆不支持时给出明确提示（改用分享/复制）。 */
+    async #saveFsrsBackup() {
+        const data = {
+            app: "Offline-Quiz-Trainer", kind: "fsrs-cards", version: 1,
+            exportedAt: new Date().toISOString(), cards: FsrsStore.load(),
+        };
+        const json = JSON.stringify(data, null, 2);
+        const name = `fsrs-backup-${new Date().toISOString().slice(0, 10)}.json`;
+        const toast = message => this.#bus.emit("toast:show", { message });
+        this.#els.backupDialog?.close();
+        if (typeof window.showSaveFilePicker === "function") {
+            try {
+                const handle = await window.showSaveFilePicker({
+                    suggestedName: name,
+                    types: [{ description: "FSRS 备份 (JSON)", accept: { "application/json": [".json"] } }],
+                });
+                const writable = await handle.createWritable();
+                await writable.write(json);
+                await writable.close();
+                toast("备份已保存到本地");
+                return;
+            } catch (e) {
+                if (e?.name === "AbortError") return; /* 用户取消保存 */
+                /* 其他失败（权限等）→ 继续降级下载 */
+            }
+        }
+        const blob = new Blob([json], { type: "application/json" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = name;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 3000);
+        toast(/android/i.test(navigator.userAgent) ? "当前 WebView 无法直接保存文件，请用「分享」或「复制备份」" : "备份已导出到下载目录");
     }
 
     /* 复制备份：WebView / file:// 下 <a download> 常被系统拦截，剪贴板是最稳的离线方案。
@@ -3031,6 +3247,7 @@ class QuizController {
             FsrsStore.save(valid);
             this.#refreshFsrsStats();
             this.#refreshOverview();
+            this.#updateDailyNewEstimate();
             this.#els.fsrsImportInput.value = "";
             this.#bus.emit("toast:show", { message: `已导入 ${count} 张卡${bad ? `，跳过 ${bad} 条无效数据` : ""}` });
         }).catch(() => this.#bus.emit("toast:show", { message: "读取备份文件失败", isError: true }));
