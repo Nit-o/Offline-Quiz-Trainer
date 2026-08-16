@@ -1,0 +1,42 @@
+ext {
+    compileSdkVersion = 36
+    minSdkVersion = 33
+    targetSdkVersion = 36
+}
+
+buildscript {
+    repositories {
+        google()
+        mavenCentral()
+    }
+    dependencies {
+        classpath 'com.android.tools.build:gradle:8.13.2'
+    }
+}
+
+apply plugin: 'com.android.library'
+
+android {
+    namespace "com.quiztrainer.savefile"
+    compileSdkVersion rootProject.hasProperty('compileSdkVersion') ? rootProject.properties['compileSdkVersion'] : 36
+    defaultConfig {
+        minSdkVersion rootProject.hasProperty('minSdkVersion') ? rootProject.properties['minSdkVersion'] : 33
+        targetSdkVersion rootProject.hasProperty('targetSdkVersion') ? rootProject.properties['targetSdkVersion'] : 36
+        versionCode 1
+        versionName "1.0.0"
+    }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_21
+        targetCompatibility JavaVersion.VERSION_21
+    }
+}
+
+repositories {
+    google()
+    mavenCentral()
+}
+
+dependencies {
+    implementation project(':capacitor-android')
+    implementation 'androidx.activity:activity:1.9.1'
+}

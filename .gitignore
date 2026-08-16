@@ -1,10 +1,10 @@
 # 本地题库数据（不入库）
 20260807.json
 
-# 依赖与打包产物（CI/本地生成，不入库）
-node_modules/
-dist/
-android/
+# 依赖与打包产物（CI/本地生成，不入库；仅忽略根目录，避免误伤 native-plugins 内同名目录）
+/node_modules/
+/dist/
+/android/
 native-plugins/save-file/dist/
 
 # 构建缓存
