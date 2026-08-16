@@ -1,0 +1,73 @@
+name: 打包 Beta APK
+
+# 打包 workflow（Beta 测试包）：
+#   - push main 分支 → 自动打包，APK 以 artifact 形式供下载测试
+#   - Actions 页面手动 Run workflow → 手动打包
+on:
+  push:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 拉取代码
+        uses: actions/checkout@v7
+
+      # pnpm 版本与本地 lockfile 一致
+      - name: 安装 pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11.21.0
+
+      - name: 安装 Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          cache: 'pnpm'
+
+      - name: 安装 Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+
+      - name: 安装依赖
+        run: pnpm install --frozen-lockfile
+
+      # 构建本地插件 com.quiztrainer.savefile 的 ESM 产物（sync:web 依赖 dist/esm）
+      - name: 构建本地插件
+        run: pnpm run build:plugin
+
+      # 生成 Capacitor webDir（dist/）：index.html + vendor/katex + 插件 ESM
+      - name: 同步网页到 dist
+        run: pnpm run sync:web
+
+      - name: 添加 Android 平台
+        run: pnpm run cap add android
+
+      # 应用平台补丁：minSdkVersion→33 + 分享目标 intent-filter + 默认切国内镜像
+      - name: 应用平台补丁
+        run: node scripts/patch-android.cjs
+
+      # cap sync 会重新生成插件 build.gradle，故其后再次 patch（幂等）
+      - name: 同步原生工程
+        run: pnpm run cap sync android && node scripts/patch-android.cjs
+
+      - name: 打包 APK
+        working-directory: android
+        run: ./gradlew assembleDebug
+
+      # 重命名区分 Beta 包
+      - name: 重命名 Beta 包
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          mkdir -p dist-apk
+          cp android/app/build/outputs/apk/debug/app-debug.apk "dist-apk/QuizTrainer-${VERSION}-beta.apk"
+
+      - name: 上传 Beta APK
+        uses: actions/upload-artifact@v7
+        with:
+          name: QuizTrainer-Beta-${{ github.ref_name }}
+          path: dist-apk/QuizTrainer-*-beta.apk

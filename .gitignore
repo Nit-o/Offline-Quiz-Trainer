@@ -1,7 +1,17 @@
 # 本地题库数据（不入库）
 20260807.json
+
 # 依赖与打包产物（CI/本地生成，不入库）
 node_modules/
 dist/
 android/
-*.lock.gradle-home/.android-home/.pnpm-store/native-plugins/save-file/dist/
+native-plugins/save-file/dist/
+
+# 构建缓存
+.gradle-home/
+.android-home/
+.pnpm-store/
+
+# lockfile（CI 依赖 pnpm-lock.yaml，仅忽略其他 .lock）
+*.lock
+!pnpm-lock.yaml

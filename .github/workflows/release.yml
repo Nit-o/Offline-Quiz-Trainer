@@ -1,0 +1,79 @@
+name: 发布 Release APK
+
+# 发布 workflow（正式版）：
+#   - 推送 v 开头标签（如 v1.0.0）→ 自动打包并发布 GitHub Release（APK 挂载到 Release）
+on:
+  push:
+    tags: [ "v*" ]
+
+permissions:
+  contents: write # 允许创建 GitHub Release
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 拉取代码
+        uses: actions/checkout@v7
+
+      - name: 安装 pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11.21.0
+
+      - name: 安装 Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          cache: 'pnpm'
+
+      - name: 安装 Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+
+      - name: 安装依赖
+        run: pnpm install --frozen-lockfile
+
+      - name: 构建本地插件
+        run: pnpm run build:plugin
+
+      - name: 同步网页到 dist
+        run: pnpm run sync:web
+
+      - name: 添加 Android 平台
+        run: pnpm run cap add android
+
+      # 版本号同步：从 tag（如 v1.0.1）提取版本写入 package.json 与
+      # android/app/build.gradle 的 versionName（须在 cap add android 之后执行）
+      - name: 同步版本号
+        run: node scripts/sync-version.cjs "${GITHUB_REF#refs/tags/v}"
+
+      - name: 应用平台补丁
+        run: node scripts/patch-android.cjs
+
+      - name: 同步原生工程
+        run: pnpm run cap sync android && node scripts/patch-android.cjs
+
+      - name: 打包 APK
+        working-directory: android
+        run: ./gradlew assembleDebug
+
+      # 重命名发布包：QuizTrainer-<版本号>.apk
+      - name: 重命名发布包
+        run: |
+          VERSION="${GITHUB_REF#refs/tags/v}"
+          mkdir -p dist-apk
+          cp android/app/build/outputs/apk/debug/app-debug.apk "dist-apk/QuizTrainer-${VERSION}.apk"
+
+      - name: 检查最终权限
+        run: |
+          echo "=== 最终 AndroidManifest 权限列表 ==="
+          grep -rhoE 'android:name="android.permission\.[A-Z_]+"' android/app/build/intermediates/merged_manifests/debug/ 2>/dev/null | sed 's/.*android:name="\([^"]*\)".*/\1/' | sort -u || echo "（无权限声明）"
+
+      - name: 发布 GitHub Release
+        uses: softprops/action-gh-release@v3
+        with:
+          files: dist-apk/QuizTrainer-*.apk
+          generate_release_notes: true
