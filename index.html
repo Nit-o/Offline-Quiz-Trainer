@@ -11,7 +11,7 @@
     <link rel="stylesheet" href="vendor/katex/katex.min.css">
     <script defer src="vendor/katex/katex.min.js"></script>
     <script defer src="vendor/katex/contrib/auto-render.min.js"></script>
-    <script src="cordova.js"></script>
+    <!-- Capacitor：无 cordova.js；原生桥由 @capacitor/core 注入（见文末 <script type="importmap"> 与「Capacitor 原生桥」） -->
     <!-- Standards baseline：
          HTML Living Standard — Last Updated 20 July 2026
          ECMAScript 2026（ES2026）· CSS Snapshot 2026（含 CSS Color 5） -->
@@ -1351,7 +1351,7 @@
                             <span class="file-drop-icon" aria-hidden="true"><svg class="icon"><use href="#icon-upload"/></svg></span>
                             <span class="file-drop-text">
                                 <span class="file-drop-title">选择或拖入 Markdown 题库</span>
-                                <span class="file-drop-hint" id="fileHint">选择后自动加载 · 支持多选 .md 文件</span>
+                                <span class="file-drop-hint" id="fileHint">选择后自动加载 · 支持多选 .md 文件 · 也可从其他应用「分享」.md 到本应用直接导入</span>
                             </span>
                         </label>
                         <div id="fileList" aria-label="已选文件列表"></div>
@@ -1681,8 +1681,56 @@
 
 <div class="snackbar" id="snackbar" role="status" aria-live="polite"></div>
 
+<!-- Capacitor ESM 运行库（无打包器方案）：importmap 把裸模块名解析到 dist/vendor/capacitor/ 下的文件。
+     产物由 scripts/sync-web.cjs 从 node_modules 拷贝生成；新增依赖时须同步更新此处与 sync-web.cjs。
+     Android System WebView（API 33 起）与桌面 Chromium 均支持 importmap。 -->
+<script type="importmap">
+{
+    "imports": {
+        "@capacitor/core": "./vendor/capacitor/core/index.js",
+        "@capacitor/share": "./vendor/capacitor/share/index.js",
+        "@capacitor/filesystem": "./vendor/capacitor/filesystem/index.js",
+        "@capacitor/synapse": "./vendor/capacitor/synapse.mjs",
+        "@capgo/capacitor-share-target": "./vendor/capacitor/share-target/index.js",
+        "com.quiztrainer.savefile": "./vendor/capacitor/save-file/index.js"
+    }
+}
+</script>
+
 <script type="module">
 'use strict';
+
+/* ===== Capacitor 原生桥（打包环境，容错加载） =====
+   与 v0.2.1 的 window.NativeShare 同模式：原生能力经 globalThis.CapacitorBridge 检测，
+   import 失败（如浏览器 file:// 直开、无原生层）时自动降级为 Web 功能，绝不影响页面主逻辑。
+   ready: Promise —— 主逻辑可 await 后再注册原生监听（如 share-target）。 */
+globalThis.CapacitorBridge = {
+    isNative: () => false,
+    Share: null, Filesystem: null, Directory: null, Encoding: null,
+    CapacitorShareTarget: null, SaveFile: null,
+    ready: Promise.resolve(),
+};
+(async () => {
+    /* file:// 直开（无原生层 + 浏览器 CORS 限制 ESM）：静默跳过，主逻辑走 Web 降级，与 v0.2.1 一致 */
+    if (location.protocol === "file:") return;
+    try {
+        const [{ Capacitor }, { Share }, { Filesystem, Directory, Encoding }, { CapacitorShareTarget }, { SaveFile }] =
+            await Promise.all([
+                import("@capacitor/core"),
+                import("@capacitor/share"),
+                import("@capacitor/filesystem"),
+                import("@capgo/capacitor-share-target"),
+                import("com.quiztrainer.savefile"),
+            ]);
+        Object.assign(globalThis.CapacitorBridge, {
+            isNative: () => !!(Capacitor && Capacitor.isNativePlatform && Capacitor.isNativePlatform()),
+            Share, Filesystem, Directory, Encoding, CapacitorShareTarget, SaveFile,
+        });
+    } catch (e) {
+        console.warn("[CapacitorBridge] 原生桥加载失败，使用 Web 降级模式:", e?.message || e);
+    }
+})();
+/* ===== Capacitor 原生桥 End ===== */
 
 /* ===== EventBus ===== */
 class EventBus {
@@ -2500,6 +2548,7 @@ class QuizController {
         this.#initComponents();
         this.#bindEvents();
         this.#applySettings();
+        this.#initShareTarget(); /* 接收外部「分享」的 .md 题库（Capacitor 原生） */
         new ThemeManager(this.#els.themeOptions, this.#bus);
         // Surface localStorage persistence failures (Nielsen error prevention).
         StorageAdapter.onPersistError = (k, _e) => {
@@ -3131,8 +3180,8 @@ class QuizController {
     }
 
     /* 导出备份（分享）：
-       ① Cordova 原生插件 NativeShare（ACTION_SEND）——Android System WebView 不实现
-          navigator.share，必须走原生 Intent 才能调起系统分享面板；文件分享失败降级文本分享；
+       ① Capacitor 原生 @capacitor/share（备份写入缓存目录 → FileProvider content:// → 系统分享面板，
+          Android System WebView 不实现 navigator.share，必须走原生 Intent）；
        ② Web Share API（桌面/移动浏览器）；
        ③ 复制剪贴板（Android WebView 无下载支持时）；④ 桌面浏览器 blob 下载。
        不再依赖 canShare() 预检——部分 WebView 缺失该方法或对 .json 文件返回 false。 */
@@ -3146,17 +3195,22 @@ class QuizController {
         const file = new File([json], name, { type: "application/json" });
         const toast = message => this.#bus.emit("toast:show", { message });
         this.#els.backupDialog?.close();
-        /* ① Cordova 原生分享：优先分享 .json 文件（FileProvider + ACTION_SEND），失败降级文本分享 */
-        const NS = window.NativeShare;
-        if (NS && typeof NS.shareFile === "function" && typeof NS.shareText === "function") {
-            const nativeShare = (method, ...args) => new Promise((resolve, reject) => {
-                const timer = setTimeout(() => reject(new Error("native share timeout")), 10000);
-                NS[method](...args, () => { clearTimeout(timer); resolve(); }, msg => { clearTimeout(timer); reject(new Error(msg || "native share failed")); });
-            });
-            try { await nativeShare("shareFile", "FSRS 复习备份", name, json); toast("备份已通过系统分享导出"); return; }
-            catch { /* 文件分享失败 → 文本分享 */ }
-            try { await nativeShare("shareText", "FSRS 复习备份", json); toast("备份已通过系统分享导出"); return; }
-            catch { /* 原生分享不可用 → 继续降级 */ }
+        await CapacitorBridge.ready; /* 桥异步加载：等就绪后按原生能力分流 */
+        /* ① Capacitor 原生分享：优先分享 .json 文件（@capacitor/share + FileProvider），失败降级文本分享 */
+        if (CapacitorBridge.isNative() && CapacitorBridge.Filesystem && CapacitorBridge.Share) {
+            const { Directory, Encoding } = CapacitorBridge;
+            const rel = `backups/${name}`;
+            const tryShare = async opts => {
+                try { await CapacitorBridge.Share.share(opts); return true; }
+                catch (e) { return /cancel/i.test(e?.message || ""); } /* 用户取消分享视为结束 */
+            };
+            try {
+                await CapacitorBridge.Filesystem.writeFile({ path: rel, data: json, directory: Directory.Cache, encoding: Encoding.UTF8 });
+                const { uri } = await CapacitorBridge.Filesystem.getUri({ path: rel, directory: Directory.Cache });
+                if (await tryShare({ title: "FSRS 复习备份", dialogTitle: "分享备份", files: [uri] })) { toast("备份已通过系统分享导出"); return; }
+            } catch { /* 文件分享失败 → 文本分享 */ }
+            if (await tryShare({ title: "FSRS 复习备份", dialogTitle: "分享备份", text: json })) { toast("备份已通过系统分享导出"); return; }
+            /* 原生分享不可用/被取消 → 继续降级 */
         }
         /* ② Web Share API */
         if (typeof navigator.share === "function") {
@@ -3183,9 +3237,9 @@ class QuizController {
     }
 
     /* 导出备份（保存到本地）：
-       ① Cordova 原生插件 NativeShare.saveFile（ACTION_CREATE_DOCUMENT，系统文档选择器）；
+       ① 本地插件 SaveFile（ACTION_CREATE_DOCUMENT，系统文档选择器）；
        ② File System Access API 系统「另存为」对话框（桌面 Chrome/Edge 等）；
-       ③ <a download> 下载；Cordova WebView 无原生层时给出明确提示（改用分享/复制）。 */
+       ③ <a download> 下载；WebView 无原生层时给出明确提示（改用分享/复制）。 */
     async #saveFsrsBackup() {
         const data = {
             app: "Offline-Quiz-Trainer", kind: "fsrs-cards", version: 1,
@@ -3195,14 +3249,14 @@ class QuizController {
         const name = `fsrs-backup-${new Date().toISOString().slice(0, 10)}.json`;
         const toast = message => this.#bus.emit("toast:show", { message });
         this.#els.backupDialog?.close();
-        /* ① Cordova 原生保存：ACTION_CREATE_DOCUMENT 调起系统文档选择器 */
-        const NS = window.NativeShare;
-        if (NS && typeof NS.saveFile === "function") {
+        await CapacitorBridge.ready; /* 桥异步加载：等就绪后按原生能力分流 */
+        /* ① Capacitor 原生保存：本地插件 SaveFile（ACTION_CREATE_DOCUMENT 调起系统文档选择器） */
+        if (CapacitorBridge.isNative() && CapacitorBridge.SaveFile) {
             const result = await new Promise(resolve => {
-                const timer = setTimeout(() => resolve("timeout"), 10000);
-                NS.saveFile("保存 FSRS 备份", name, json,
-                    () => { clearTimeout(timer); resolve("ok"); },
-                    msg => { clearTimeout(timer); resolve(String(msg || "")); });
+                const timer = setTimeout(() => resolve("timeout"), 15000);
+                CapacitorBridge.SaveFile.saveFile({ title: "保存 FSRS 备份", fileName: name, content: json })
+                    .then(() => { clearTimeout(timer); resolve("ok"); })
+                    .catch(err => { clearTimeout(timer); resolve(String(err?.message || "")); });
             });
             if (result === "ok") { toast("备份已保存到本地"); return; }
             if (/cancelled/i.test(result)) return; /* 用户在文档选择器中取消，静默 */
@@ -3237,6 +3291,53 @@ class QuizController {
         a.remove();
         setTimeout(() => URL.revokeObjectURL(url), 3000);
         toast(/android/i.test(navigator.userAgent) ? "当前 WebView 无法直接保存文件，请用「分享」或「复制备份」" : "备份已导出到下载目录");
+    }
+
+    /* ===== 接收分享（@capgo/capacitor-share-target）=====
+       本应用注册为系统分享目标：可从微信/文件管理等应用把 .md 题库（或文本）直接
+       「分享」进本应用并自动导入（复用 #load 的文件导入管线：解析 → 缓存 → 应用）。
+       插件在冷启动（应用被杀后收到分享）时保留事件，待本监听注册后补发。 */
+    #initShareTarget() {
+        /* 桥为异步加载：等 ready 后再注册监听（非原生环境 ready 立即 resolve 且 isNative()=false） */
+        CapacitorBridge.ready.then(() => {
+            const cst = CapacitorBridge.CapacitorShareTarget;
+            if (!CapacitorBridge.isNative() || !cst?.addListener) return;
+            cst.addListener("shareReceived", evt => this.#onSharedContent(evt))
+                .catch(err => console.error("[CapacitorBridge] share-target 监听注册失败:", err));
+        });
+    }
+
+    /* 处理接收到的分享：文件（插件已复制到应用缓存，经 Filesystem.readFile 读取）
+       与纯文本统一转为 File 交给 #load；非文本/不可读内容给出明确提示。 */
+    async #onSharedContent(evt) {
+        const files = [];
+        const isTextish = f => {
+            const mime = String(f?.mimeType || "").toLowerCase();
+            const fname = String(f?.name || "").toLowerCase();
+            return /^(text\/|application\/json)/.test(mime) || /\.(md|markdown|txt|json)$/.test(fname);
+        };
+        const decodeBase64Utf8 = b64 => {
+            const bin = atob(b64);
+            const bytes = new Uint8Array(bin.length);
+            for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+            return new TextDecoder("utf-8").decode(bytes);
+        };
+        for (const f of evt?.files || []) {
+            try {
+                if (!isTextish(f)) continue; /* 图片等非文本分享直接跳过 */
+                const res = await CapacitorBridge.Filesystem.readFile({ path: f.uri });
+                const text = decodeBase64Utf8(res.data);
+                files.push(new File([text], f.name || `分享文件-${Date.now()}.md`, { type: f.mimeType || "text/markdown" }));
+            } catch (e) { console.error("[CapacitorBridge] 读取分享文件失败:", e); }
+        }
+        for (const t of evt?.texts || []) {
+            files.push(new File([String(t)], `分享文本-${new Date().toISOString().slice(0, 10)}.md`, { type: "text/markdown" }));
+        }
+        if (!files.length) {
+            this.#bus.emit("toast:show", { message: "分享内容不是可导入的题库（支持 .md/.txt/.json 文本）", isError: true });
+            return;
+        }
+        await this.#load(files);
     }
 
     /* 复制备份：WebView / file:// 下 <a download> 常被系统拦截，剪贴板是最稳的离线方案。

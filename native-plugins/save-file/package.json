@@ -1,0 +1,32 @@
+{
+  "name": "com.quiztrainer.savefile",
+  "version": "1.0.0",
+  "description": "本地 Capacitor 插件：ACTION_CREATE_DOCUMENT 调起系统文档选择器保存文件",
+  "main": "dist/esm/index.js",
+  "types": "dist/esm/index.d.ts",
+  "files": [
+    "dist/",
+    "android/"
+  ],
+  "scripts": {
+    "build": "tsc"
+  },
+  "keywords": [
+    "capacitor",
+    "plugin",
+    "native"
+  ],
+  "license": "MIT",
+  "capacitor": {
+    "android": {
+      "src": "android"
+    }
+  },
+  "peerDependencies": {
+    "@capacitor/core": ">=8.0.0"
+  },
+  "devDependencies": {
+    "@capacitor/core": "^8.5.0",
+    "typescript": "^5.6.0"
+  }
+}

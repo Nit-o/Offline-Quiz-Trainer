@@ -1,5 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<paths xmlns:android="http://schemas.android.com/apk/res/android">
-    <!-- 分享文件写入应用 cacheDir/nativeshare/，与 NativeShare.java 的 CACHE_SUBDIR 保持一致 -->
-    <cache-path name="nativeshare" path="nativeshare/" />
-</paths>

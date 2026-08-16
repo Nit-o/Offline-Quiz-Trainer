@@ -6,7 +6,20 @@ const fs = require('fs');
 const vm = require('vm');
 
 const html = fs.readFileSync('index.html', 'utf8');
-const src = html.match(/<script type="module">([\s\S]*?)<\/script>/)[1];
+let src = html.match(/<script type="module">([\s\S]*?)<\/script>/)[1];
+/* 替换「Capacitor 原生桥」为可注入桩：
+   - isNative() 恒为 true，但 Share/Filesystem/SaveFile 默认全空 → 走 Web 降级链；
+   - CapacitorShareTarget 捕获回调，供「接收分享」测试触发；
+   - 测试可随时改写 sandbox.CapacitorBridge（分享/保存/接收均运行时读取该对象）。 */
+src = src.replace(/\/\* ===== Capacitor 原生桥（打包环境） ===== \*\/[\s\S]*?\/\* ===== Capacitor 原生桥 End ===== \*\//,
+`globalThis.CapacitorBridge = {
+    isNative: () => true,
+    Share: null, Filesystem: null, Directory: {}, Encoding: {}, SaveFile: null,
+    CapacitorShareTarget: {
+        _cb: null,
+        addListener(ev, cb) { this._cb = cb; return Promise.resolve({ remove() {} }); },
+    },
+};`);
 const md = fs.readFileSync('doc/B类题库_origin.md', 'utf8');
 
 /* ---------- Element stub ---------- */
@@ -158,6 +171,9 @@ const sandbox = {
     FileReader: class { readAsText() {} },
     Blob: class { constructor(parts, opts) { this._parts = parts; this.type = opts?.type; } },
     URL: { createObjectURL: () => 'blob:fake', revokeObjectURL: () => {} },
+    /* 接收分享（#onSharedContent）用：base64 → 二进制串 → TextDecoder 还原 UTF-8 */
+    atob: b64 => Buffer.from(b64, 'base64').toString('latin1'),
+    TextDecoder: class { decode(bytes) { return Buffer.from(bytes).toString('utf8'); } },
     window: {},
     console, setTimeout, clearTimeout, setInterval, clearInterval, Date, Math, JSON, Array, Object, String, Number, Map, Set, Promise, Error, RegExp, isNaN, parseInt, parseFloat,
 };
@@ -247,39 +263,84 @@ const flush = () => new Promise(r => setTimeout(r, 30));
     assert(els.snackbar.textContent.includes('无法直接保存'), `Android WebView 保存提示: "${els.snackbar.textContent}"`);
     assert(!els.backupDialog.open, '保存后对话框已关闭');
 
-    console.log('== 10.5 Cordova 原生分享（NativeShare 优先于 navigator.share）==');
+    console.log('== 10.5 Capacitor 原生分享/保存（优先于 navigator.share）==');
     const nativeCalls = [];
-    sandbox.NativeShare = {
-        shareFile: (t, n, c, ok) => { nativeCalls.push(['shareFile', t, n, typeof c]); ok(); },
-        shareText: (t, c, ok) => { nativeCalls.push(['shareText', t, typeof c]); ok(); },
-        saveFile: (t, n, c, ok) => { nativeCalls.push(['saveFile', t, n, typeof c]); ok(); },
+    const bridge = sandbox.CapacitorBridge;
+    bridge.Directory = { Cache: 'CACHE' };
+    bridge.Encoding = { UTF8: 'utf8' };
+    bridge.Share = {
+        share: async opts => { nativeCalls.push(['share', opts.files ? 'file' : 'text']); },
+    };
+    bridge.Filesystem = {
+        writeFile: async opts => { nativeCalls.push(['writeFile', opts.path, opts.directory === bridge.Directory.Cache, opts.encoding === bridge.Encoding.UTF8]); return {}; },
+        getUri: async opts => ({ uri: `file:///cache/${opts.path}` }),
+    };
+    bridge.SaveFile = {
+        saveFile: async opts => { nativeCalls.push(['saveFile', opts.fileName, typeof opts.content]); },
     };
     const shareCallsBefore = shareCalls.length;
     els.exportFsrsBtn.trigger('click');
     els.backupShareBtn.trigger('click');
     await flush();
-    assert(nativeCalls.length === 1 && nativeCalls[0][0] === 'shareFile' && nativeCalls[0][3] === 'string', '原生优先：分享 .json 文件内容');
+    assert(nativeCalls[0]?.[0] === 'writeFile' && nativeCalls[0][2] === true && nativeCalls[0][3] === true, '原生优先：备份写入缓存目录（Cache + UTF8）');
+    assert(nativeCalls[1]?.[0] === 'share' && nativeCalls[1][1] === 'file', '原生优先：分享 .json 文件（FileProvider）');
     assert(els.snackbar.textContent.includes('备份已通过系统分享导出'), `原生分享成功提示: "${els.snackbar.textContent}"`);
     assert(shareCalls.length === shareCallsBefore, '原生路径不调用 navigator.share');
     // 原生文件分享失败 → 降级原生文本分享
-    sandbox.NativeShare.shareFile = (t, n, c, ok, err) => { nativeCalls.push(['shareFile', t, n, typeof c]); err('boom'); };
+    bridge.Share.share = async opts => { if (opts.files) throw new Error('boom'); nativeCalls.push(['share', 'text']); };
     els.exportFsrsBtn.trigger('click');
     els.backupShareBtn.trigger('click');
     await flush();
-    assert(nativeCalls.length === 3 && nativeCalls[2][0] === 'shareText', '文件分享失败降级为原生文本分享');
+    assert(nativeCalls.at(-1)?.[0] === 'share' && nativeCalls.at(-1)[1] === 'text', '文件分享失败降级为原生文本分享');
+    // 原生分享被用户取消 → 视为完成，不降级不报错
+    bridge.Share.share = async () => { throw new Error('Share canceled'); };
+    els.exportFsrsBtn.trigger('click');
+    els.backupShareBtn.trigger('click');
+    await flush();
+    assert(els.snackbar.textContent.includes('备份已通过系统分享导出'), '用户取消分享视为完成，不降级');
     // 原生保存优先于 Web 降级
+    bridge.Share.share = async opts => { nativeCalls.push(['share', opts.files ? 'file' : 'text']); };
     els.exportFsrsBtn.trigger('click');
     els.backupSaveBtn.trigger('click');
     await flush();
-    assert(nativeCalls.length === 4 && nativeCalls[3][0] === 'saveFile', '原生保存到本地优先');
+    assert(nativeCalls.at(-1)?.[0] === 'saveFile' && nativeCalls.at(-1)[2] === 'string', '原生保存到本地优先');
     assert(els.snackbar.textContent.includes('备份已保存到本地'), `原生保存成功提示: "${els.snackbar.textContent}"`);
     // 原生保存取消 → 静默
-    sandbox.NativeShare.saveFile = (t, n, c, ok, err) => { nativeCalls.push(['saveFile', t, n, typeof c]); err('cancelled'); };
+    bridge.SaveFile.saveFile = async () => { throw new Error('cancelled'); };
     els.exportFsrsBtn.trigger('click');
     els.backupSaveBtn.trigger('click');
     await flush();
-    assert(nativeCalls.length === 5 && !/失败|无法/.test(els.snackbar.textContent), '用户取消保存不提示错误');
-    delete sandbox.NativeShare;
+    assert(!/失败|无法/.test(els.snackbar.textContent), '用户取消保存不提示错误');
+
+    console.log('== 10.6 接收分享（share-target）：外部 .md 文件 / 文本自动导入 ==');
+    const shareTarget = bridge.CapacitorShareTarget;
+    assert(typeof shareTarget._cb === 'function', 'share-target 监听已在初始化时注册');
+    bridge.Filesystem = {
+        readFile: async opts => {
+            nativeCalls.push(['readFile', opts.path]);
+            const mdText = '## 一、单选题\n\n### 1. 来自分享的题\nA. 甲\nB. 乙\n**答案： A**\n';
+            return { data: Buffer.from(mdText, 'utf8').toString('base64') };
+        },
+    };
+    shareTarget._cb({ title: '测试', texts: [], files: [{ name: '来自分享.md', mimeType: 'text/markdown', uri: '/data/user/0/com.quiztrainer.app/cache/shared_files/来自分享.md' }] });
+    await flush();
+    assert(/成功加载 1 题/.test(els.fileStatus.innerText), `分享 .md 文件自动导入: "${els.fileStatus.innerText}"`);
+    // 纯文本分享
+    shareTarget._cb({ title: '', texts: ['## 一、单选题\n\n### 1. 文本分享题\nA. 甲\nB. 乙\n**答案： A**\n'], files: [] });
+    await flush();
+    assert(/成功加载 1 题/.test(els.fileStatus.innerText), '分享文本自动导入');
+    // 非文本内容 → 明确提示
+    bridge.Filesystem.readFile = async () => { throw new Error('denied'); };
+    shareTarget._cb({ title: '', texts: [], files: [{ name: '图.png', mimeType: 'image/png', uri: '/x.png' }] });
+    await flush();
+    assert(els.snackbar.textContent.includes('不是可导入的题库'), `非文本分享给出提示: "${els.snackbar.textContent}"`);
+    // 复位桥桩，避免影响后续用例
+    bridge.Share = null; bridge.Filesystem = null; bridge.SaveFile = null; bridge.Directory = {}; bridge.Encoding = {};
+    // 恢复主题库（10.6 导入的是 1 题小样本，后续用例按 1143 题主题库假设）
+    els.fileInput.files = [{ name: 'B类题库_origin.md', text: async () => md }];
+    els.fileInput.trigger('change');
+    await flush();
+    assert(/成功加载 1143 题/.test(els.fileStatus.innerText), '恢复 1143 题主题库');
 
     console.log('== 11. 数据统计：累计 ↔ 近 3 次切换 + 重置 ==');
     store.set('quiz_stats', JSON.stringify({

@@ -1,0 +1,11 @@
+{
+  "appId": "com.quiztrainer.app",
+  "appName": "Offline-Quiz-Trainer",
+  "webDir": "dist",
+  "android": {
+    "allowMixedContent": false
+  },
+  "server": {
+    "androidScheme": "https"
+  }
+}

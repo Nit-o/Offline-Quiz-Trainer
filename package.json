@@ -1,0 +1,24 @@
+{
+  "name": "offline-quiz-trainer",
+  "version": "0.1.0",
+  "private": true,
+  "description": "离线业余无线电题库训练器（Capacitor Android 打包）",
+  "scripts": {
+    "sync:web": "node scripts/sync-web.cjs",
+    "cap": "cap",
+    "build:plugin": "tsc -p native-plugins/save-file/tsconfig.json"
+  },
+  "dependencies": {
+    "@capacitor/core": "^8.5.0",
+    "@capacitor/filesystem": "^8.1.2",
+    "@capacitor/share": "^8.0.1",
+    "@capacitor/synapse": "^1.0.4",
+    "@capgo/capacitor-share-target": "^8.0.46",
+    "com.quiztrainer.savefile": "file:native-plugins/save-file"
+  },
+  "devDependencies": {
+    "@capacitor/android": "^8.5.0",
+    "@capacitor/cli": "^8.5.0",
+    "typescript": "^7.0.2"
+  }
+}

@@ -1,2 +1,7 @@
+# 本地题库数据（不入库）
 20260807.json
-.tmp-fsrs/
+# 依赖与打包产物（CI/本地生成，不入库）
+node_modules/
+dist/
+android/
+*.lock.gradle-home/.android-home/.pnpm-store/native-plugins/save-file/dist/
