@@ -1713,22 +1713,33 @@ globalThis.CapacitorBridge = {
 (async () => {
     /* file:// 直开（无原生层 + 浏览器 CORS 限制 ESM）：静默跳过，主逻辑走 Web 降级，与 v0.2.1 一致 */
     if (location.protocol === "file:") return;
-    try {
-        const [{ Capacitor }, { Share }, { Filesystem, Directory, Encoding }, { CapacitorShareTarget }, { SaveFile }] =
-            await Promise.all([
-                import("@capacitor/core"),
-                import("@capacitor/share"),
-                import("@capacitor/filesystem"),
-                import("@capgo/capacitor-share-target"),
-                import("com.quiztrainer.savefile"),
-            ]);
-        Object.assign(globalThis.CapacitorBridge, {
-            isNative: () => !!(Capacitor && Capacitor.isNativePlatform && Capacitor.isNativePlatform()),
-            Share, Filesystem, Directory, Encoding, CapacitorShareTarget, SaveFile,
-        });
-    } catch (e) {
-        console.warn("[CapacitorBridge] 原生桥加载失败，使用 Web 降级模式:", e?.message || e);
-    }
+    /* ready 必须绑定真实的加载 Promise：若保持初始的 Promise.resolve()，
+       主逻辑的 await/ready.then 会在桥就绪前立即执行 —— #initShareTarget 会因
+       isNative()=false 直接 return，shareReceived 监听永不注册（APK 接收分享失效），
+       分享/保存也会在启动初期误走 Web 降级链。
+       先同步挂载 ready（模块脚本内本 IIFE 先于 new QuizController() 执行，
+       赋值必然发生在任何 ready.then 之前），再 await，任何时序下 ready 都代表
+       “桥已加载（或已失败降级）”。 */
+    const load = (async () => {
+        try {
+            const [{ Capacitor }, { Share }, { Filesystem, Directory, Encoding }, { CapacitorShareTarget }, { SaveFile }] =
+                await Promise.all([
+                    import("@capacitor/core"),
+                    import("@capacitor/share"),
+                    import("@capacitor/filesystem"),
+                    import("@capgo/capacitor-share-target"),
+                    import("com.quiztrainer.savefile"),
+                ]);
+            Object.assign(globalThis.CapacitorBridge, {
+                isNative: () => !!(Capacitor && Capacitor.isNativePlatform && Capacitor.isNativePlatform()),
+                Share, Filesystem, Directory, Encoding, CapacitorShareTarget, SaveFile,
+            });
+        } catch (e) {
+            console.warn("[CapacitorBridge] 原生桥加载失败，使用 Web 降级模式:", e?.message || e);
+        }
+    })();
+    globalThis.CapacitorBridge.ready = load;
+    await load;
 })();
 /* ===== Capacitor 原生桥 End ===== */
 

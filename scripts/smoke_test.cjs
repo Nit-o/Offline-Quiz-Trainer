@@ -10,15 +10,21 @@ let src = html.match(/<script type="module">([\s\S]*?)<\/script>/)[1];
 /* 替换「Capacitor 原生桥」为可注入桩：
    - isNative() 恒为 true，但 Share/Filesystem/SaveFile 默认全空 → 走 Web 降级链；
    - CapacitorShareTarget 捕获回调，供「接收分享」测试触发；
+   - ready 用可手动 resolve 的 deferred：验证主逻辑“先等桥就绪、再注册 shareReceived
+     监听”的时序（回归：ready 曾恒为已 resolved，导致监听在桥加载完成前被跳过，
+     接收分享在 APK 中永久失效）；
    - 测试可随时改写 sandbox.CapacitorBridge（分享/保存/接收均运行时读取该对象）。 */
-src = src.replace(/\/\* ===== Capacitor 原生桥（打包环境） ===== \*\/[\s\S]*?\/\* ===== Capacitor 原生桥 End ===== \*\//,
-`globalThis.CapacitorBridge = {
+src = src.replace(/\/\* ===== Capacitor 原生桥[\s\S]*?\/\* ===== Capacitor 原生桥 End ===== \*\//,
+`globalThis.__bridgeReady = {};
+globalThis.__bridgeReady.promise = new Promise(r => { globalThis.__bridgeReady.resolve = r; });
+globalThis.CapacitorBridge = {
     isNative: () => true,
     Share: null, Filesystem: null, Directory: {}, Encoding: {}, SaveFile: null,
     CapacitorShareTarget: {
         _cb: null,
         addListener(ev, cb) { this._cb = cb; return Promise.resolve({ remove() {} }); },
     },
+    ready: globalThis.__bridgeReady.promise,
 };`);
 const md = fs.readFileSync('doc/B类题库_origin.md', 'utf8');
 
@@ -191,6 +197,12 @@ const flush = () => new Promise(r => setTimeout(r, 30));
     console.log('== 1. 初始化 ==');
     assert(els.fileStatus.innerText === '', '初始化后无加载文案');
     assert(els.bankCacheList.children.length === 1 && els.bankCacheList.children[0].className === 'bank-cache-empty', '缓存列表显示空状态');
+    /* 回归：ready 必须等桥加载完成后再注册 shareReceived 监听（曾因 ready 恒为已 resolved，
+       监听在桥就绪前被 isNative()=false 跳过 → APK 接收分享失效） */
+    assert(typeof sandbox.CapacitorBridge.CapacitorShareTarget._cb !== 'function', '桥未就绪时不注册 shareReceived 监听');
+    sandbox.__bridgeReady.resolve(); /* 桥就绪 */
+    await flush();
+    assert(typeof sandbox.CapacitorBridge.CapacitorShareTarget._cb === 'function', '桥就绪后注册 shareReceived 监听');
 
     console.log('== 2. 文件导入（解析 + 自动缓存）==');
     els.fileInput.files = [{ name: 'B类题库_origin.md', text: async () => md }];

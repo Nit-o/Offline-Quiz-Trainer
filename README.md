@@ -47,9 +47,6 @@ An HTML renderer that reads Markdown files and converts them into a quiz.
 ├── native-plugins/save-file/   # 本地 Capacitor 插件（com.quiztrainer.savefile：系统文档选择器保存）
 ├── capacitor.config.json       # Capacitor 配置（appId / webDir: dist）
 ├── package.json                # 依赖与脚本（pnpm）
-├── android/                    # Android 原生工程（cap add android 生成，不入库）
-├── dist/                       # Capacitor webDir 构建产物（sync:web 生成，不入库）
-└── 20260807.json               # 本地 FSRS 备份数据（不入库）
 ```
 
 ## 打包 Android APK
