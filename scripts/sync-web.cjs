@@ -44,8 +44,21 @@ const entries = [
     ['@capgo/capacitor-share-target', null, 'share-target'],
     ['com.quiztrainer.savefile', null, 'save-file'],
 ];
+/* 本地插件（package.json 里 file: 协议）解析到仓库原目录：
+   pnpm 会把 file: 依赖复制进 node_modules/.pnpm 虚拟存储且不随源码更新，
+   构建产物 dist/esm 是 build:plugin 现场生成的，必须从原目录读取（CI 同理） */
+const localDeps = (() => {
+    const map = {};
+    try {
+        const pkgJson = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8'));
+        for (const [k, v] of Object.entries(pkgJson.dependencies || {})) {
+            if (typeof v === 'string' && v.startsWith('file:')) map[k] = path.resolve(ROOT, v.slice(5));
+        }
+    } catch { /* 读取失败则全部走 node_modules */ }
+    return map;
+})();
 for (const [pkg, file, dst] of entries) {
-    const srcDir = path.join(NM, pkg);
+    const srcDir = localDeps[pkg] || path.join(NM, pkg);
     if (!exists(srcDir)) fail(`缺少依赖 ${pkg}，请先执行 npm install`);
     if (file) {
         if (!exists(path.join(srcDir, file))) fail(`${pkg} 缺少 ${file}`);
