@@ -55,16 +55,47 @@ jobs:
       - name: 同步原生工程
         run: pnpm run cap sync android && node scripts/patch-android.cjs
 
-      - name: 打包 APK
+      # Beta 与正式版使用同一把 release 密钥签名：否则用户无法从 Beta 直接覆盖升级到正式版
+      # （Android 要求同包名 APK 签名一致）。Secrets 缺失时保持未签名（仅用于本地/临时测试）。
+      - name: 还原签名密钥
+        env:
+          KS_B64: ${{ secrets.ANDROID_KEYSTORE_B64 }}
+        run: |
+          if [ -z "$KS_B64" ]; then
+            echo "::warning::缺少 secrets.ANDROID_KEYSTORE_B64，Beta 包将未签名（无法覆盖安装正式版）"
+            exit 0
+          fi
+          echo "$KS_B64" | base64 -d > "$RUNNER_TEMP/release.keystore"
+          {
+            echo "ANDROID_KEYSTORE_PATH=$RUNNER_TEMP/release.keystore"
+            echo "ANDROID_KEYSTORE_PASSWORD=${{ secrets.ANDROID_KEYSTORE_PASSWORD }}"
+            echo "ANDROID_KEY_ALIAS=${{ secrets.ANDROID_KEY_ALIAS }}"
+            echo "ANDROID_KEY_PASSWORD=${{ secrets.ANDROID_KEY_PASSWORD }}"
+          } >> "$GITHUB_ENV"
+
+      # release 变体：与正式版同一构建路径，避免「Beta 是 debug 包」的差异
+      - name: 打包 APK（release）
         working-directory: android
-        run: ./gradlew assembleDebug
+        run: ./gradlew assembleRelease
+
+      - name: 产物门禁
+        run: |
+          APK=android/app/build/outputs/apk/release/app-release.apk
+          APKSIGNER="$ANDROID_HOME/build-tools/$(ls "$ANDROID_HOME/build-tools" | sort -V | tail -1)/apksigner"
+          if "$APKSIGNER" verify --print-certs "$APK" > "$RUNNER_TEMP/signing.txt" 2>/dev/null; then
+            cat "$RUNNER_TEMP/signing.txt"
+            node scripts/verify-apk.cjs "$APK" "$RUNNER_TEMP/signing.txt"
+          else
+            echo "::warning::Beta 包未签名，跳过签名校验"
+            node scripts/verify-apk.cjs "$APK"
+          fi
 
       # 重命名区分 Beta 包
       - name: 重命名 Beta 包
         run: |
           VERSION=$(node -p "require('./package.json').version")
           mkdir -p dist-apk
-          cp android/app/build/outputs/apk/debug/app-debug.apk "dist-apk/QuizTrainer-${VERSION}-beta.apk"
+          cp android/app/build/outputs/apk/release/app-release.apk "dist-apk/QuizTrainer-${VERSION}-beta.apk"
 
       - name: 上传 Beta APK
         uses: actions/upload-artifact@v7

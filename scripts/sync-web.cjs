@@ -29,6 +29,29 @@ cp(path.join(ROOT, 'index.html'), path.join(DIST, 'index.html'));
 if (!exists(path.join(ROOT, 'vendor', 'katex'))) fail('缺少 vendor/katex（KaTeX 离线渲染资源）');
 cpDir(path.join(ROOT, 'vendor', 'katex'), path.join(DIST, 'vendor', 'katex'));
 
+/* 1.5 KaTeX 白名单：index.html 只加载 min 版，未压缩源码（katex.js / katex.mjs /
+   katex.css / katex-swap.css 等）约 1.3MB 纯属包体浪费 → 按白名单剔除；
+   必需文件缺失则构建失败，不静默降级。 */
+const katexDist = path.join(DIST, 'vendor', 'katex');
+const KATEX_KEEP = new Set(['katex.min.css', 'katex.min.js', 'LICENSE', 'README.md', 'fonts', 'contrib']);
+const KATEX_CONTRIB_KEEP = new Set(['auto-render.min.js']);
+const contribDir = path.join(katexDist, 'contrib');
+if (exists(contribDir)) {
+    for (const f of fs.readdirSync(contribDir)) {
+        if (!KATEX_CONTRIB_KEEP.has(f)) rmrf(path.join(contribDir, f));
+    }
+}
+let katexRemoved = 0;
+for (const f of fs.readdirSync(katexDist)) {
+    if (KATEX_KEEP.has(f)) continue;
+    rmrf(path.join(katexDist, f));
+    katexRemoved++;
+}
+for (const rel of ['katex.min.css', 'katex.min.js', path.join('contrib', 'auto-render.min.js')]) {
+    if (!exists(path.join(katexDist, rel))) fail(`vendor/katex 缺少 ${rel}（KaTeX 资源不完整）`);
+}
+console.log(`[sync-web] KaTeX 白名单：保留 min 版 + 字体，剔除 ${katexRemoved} 个未引用文件`);
+
 /* 2. Capacitor ESM 运行库（importmap 键 → 文件）：
      "@capacitor/core"                → core/index.js（dist/index.js，单文件自包含 ESM）
      "@capacitor/share"               → share/index.js（dist/esm/*，含相对动态 import ./web）

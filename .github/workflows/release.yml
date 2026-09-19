@@ -56,21 +56,55 @@ jobs:
       - name: 同步原生工程
         run: pnpm run cap sync android && node scripts/patch-android.cjs
 
-      - name: 打包 APK
+      # 签名凭据（GitHub Secrets）：
+      #   ANDROID_KEYSTORE_B64 — release.keystore 的 base64（`base64 -w0 release.keystore`）
+      #   ANDROID_KEYSTORE_PASSWORD / ANDROID_KEY_ALIAS / ANDROID_KEY_PASSWORD
+      - name: 校验签名凭据
+        env:
+          KS_B64: ${{ secrets.ANDROID_KEYSTORE_B64 }}
+        run: |
+          if [ -z "$KS_B64" ]; then
+            echo "::error::缺少 secrets.ANDROID_KEYSTORE_B64 —— 正式包必须用 release 签名，拒绝产出未签名包"
+            exit 1
+          fi
+
+      - name: 还原签名密钥
+        env:
+          KS_B64: ${{ secrets.ANDROID_KEYSTORE_B64 }}
+        run: |
+          echo "$KS_B64" | base64 -d > "$RUNNER_TEMP/release.keystore"
+          {
+            echo "ANDROID_KEYSTORE_PATH=$RUNNER_TEMP/release.keystore"
+            echo "ANDROID_KEYSTORE_PASSWORD=${{ secrets.ANDROID_KEYSTORE_PASSWORD }}"
+            echo "ANDROID_KEY_ALIAS=${{ secrets.ANDROID_KEY_ALIAS }}"
+            echo "ANDROID_KEY_PASSWORD=${{ secrets.ANDROID_KEY_PASSWORD }}"
+          } >> "$GITHUB_ENV"
+
+      # release 变体：R8 混淆 + shrinkResources + release 签名（见 android/app/build.gradle）
+      - name: 打包 APK（release）
         working-directory: android
-        run: ./gradlew assembleDebug
+        run: ./gradlew assembleRelease
+
+      # 产物门禁：必须是 release 构建（无 debuggable）、无敏感权限、非 debug 签名
+      - name: 产物门禁
+        run: |
+          APK=android/app/build/outputs/apk/release/app-release.apk
+          APKSIGNER="$ANDROID_HOME/build-tools/$(ls "$ANDROID_HOME/build-tools" | sort -V | tail -1)/apksigner"
+          "$APKSIGNER" verify --print-certs "$APK" > "$RUNNER_TEMP/signing.txt"
+          cat "$RUNNER_TEMP/signing.txt"
+          node scripts/verify-apk.cjs "$APK" "$RUNNER_TEMP/signing.txt"
 
       # 重命名发布包：QuizTrainer-<版本号>.apk
       - name: 重命名发布包
         run: |
           VERSION="${GITHUB_REF#refs/tags/v}"
           mkdir -p dist-apk
-          cp android/app/build/outputs/apk/debug/app-debug.apk "dist-apk/QuizTrainer-${VERSION}.apk"
+          cp android/app/build/outputs/apk/release/app-release.apk "dist-apk/QuizTrainer-${VERSION}.apk"
 
       - name: 检查最终权限
         run: |
           echo "=== 最终 AndroidManifest 权限列表 ==="
-          grep -rhoE 'android:name="android.permission\.[A-Z_]+"' android/app/build/intermediates/merged_manifests/debug/ 2>/dev/null | sed 's/.*android:name="\([^"]*\)".*/\1/' | sort -u || echo "（无权限声明）"
+          grep -rhoE 'android:name="android.permission\.[A-Z_]+"' android/app/build/intermediates/merged_manifests/release/ 2>/dev/null | sed 's/.*android:name="\([^"]*\)".*/\1/' | sort -u || echo "（无权限声明）"
 
       - name: 发布 GitHub Release
         uses: softprops/action-gh-release@v3

@@ -57,16 +57,52 @@ An HTML renderer that reads Markdown files and converts them into a quiz.
 pnpm install                                  # 安装依赖（npmmirror 镜像）
 pnpm run sync:web                             # 生成 dist/（index.html + vendor + 插件 ESM，自动补全原生 ESM 扩展名）
 pnpm run cap add android                      # 生成 android/ 原生工程（首次）
-node scripts/patch-android.cjs                # 应用平台补丁（minSdk=33 / 分享目标 / 国内镜像 / build-tools 兜底）
+node scripts/patch-android.cjs                # 应用平台补丁（minSdk=33 / 分享目标 / 签名+R8 / 国内镜像 / build-tools 兜底）
 pnpm run cap sync android                     # 同步 web 资源与插件
 node scripts/patch-android.cjs                # sync 会重生成插件工程，再跑一次补丁（幂等）
 
 cd android
 $env:JAVA_HOME = "D:\JDK\jdk-21.0.2"        # 示例；按本机 JDK 21 路径设置
-.gradlew.bat assembleDebug                   # 产物：android/app/build/outputs/apk/debug/app-debug.apk
+./gradlew assembleRelease                    # 产物：android/app/build/outputs/apk/release/app-release.apk
 ```
 
 > 镜像：patch-android.cjs 默认将 Gradle 发行包切腾讯镜像、Maven 切阿里云/腾讯镜像；外网正常可设 `CAP_MIRRORS=off` 用官方源。
+
+### 正式包签名
+
+`assembleRelease` 开启 R8 混淆 + 资源压缩，并读取以下环境变量做正式签名（未提供时只产出**未签名**包，绝不会退化成 debug 签名）：
+
+| 环境变量 | 说明 |
+|---|---|
+| `ANDROID_KEYSTORE_PATH` | keystore 文件路径 |
+| `ANDROID_KEYSTORE_PASSWORD` | keystore 口令 |
+| `ANDROID_KEY_ALIAS` | 密钥别名 |
+| `ANDROID_KEY_PASSWORD` | 密钥口令 |
+
+本地打包示例：
+
+```powershell
+$env:ANDROID_KEYSTORE_PATH = "D:\keys\release.keystore"
+$env:ANDROID_KEYSTORE_PASSWORD = "***"
+$env:ANDROID_KEY_ALIAS = "quiztrainer"
+$env:ANDROID_KEY_PASSWORD = "***"
+```
+
+发布到 GitHub Release（推送 `v*` 标签）需在仓库 Secrets 中配置：
+`ANDROID_KEYSTORE_B64`（`base64 -w0 release.keystore` 的结果）、`ANDROID_KEYSTORE_PASSWORD`、`ANDROID_KEY_ALIAS`、`ANDROID_KEY_PASSWORD`。
+缺失 `ANDROID_KEYSTORE_B64` 时发布流程会直接失败——正式包必须签名。
+
+`versionCode` 由 `sync-version.cjs` 自动写入（默认取当前时间戳，递增；可用 `CAP_VERSION_CODE` 覆盖），
+`versionName` 取自标签。发布前会自动执行产物门禁：校验 APK **不含 `android:debuggable`**、**未引入敏感权限**、
+**不是 debug 签名**（`node scripts/verify-apk.cjs <apk> [apksigner 报告]`，可本地手动运行）。
+
+## 测试
+
+```powershell
+node scripts/smoke_test.cjs        # DOM 桩冒烟测试：导入/缓存/分享降级/答题/FSRS 全链路
+node scripts/fsrs_logic_test.cjs   # FSRS 调度逻辑与统计口径
+node scripts/fsrs_compare.cjs      # 与 ts-fsrs 对拍（需联网安装 ts-fsrs）
+```
 
 ## Web 环境说明
 

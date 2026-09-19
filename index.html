@@ -7,7 +7,12 @@
     <meta name="theme-color" content="#f0ebe3" media="(prefers-color-scheme: light)">
     <meta name="theme-color" content="#181a20" media="(prefers-color-scheme: dark)">
     <title>Offline-Quiz-Trainer</title>
-    <!-- KaTeX 0.16.11（本地 vendor/katex，完全离线渲染 $...$ / $$...$$ 数学公式；MIT License） -->
+    <!-- CSP（纵深防御）：全部资源均为本地同源，禁掉 object/base/表单与一切外部连接。
+         blob: 仅用于「导出备份」的 URL.createObjectURL 下载路径（不发起网络请求）。
+         本页是单文件内联架构，故 script/style 必须保留 'unsafe-inline'（内联 <style> 与内联 module script）；
+         将来把 CSS/JS 外提为文件后，应改为 'self' + nonce。font-src 覆盖 KaTeX 的 60 个 woff2。 -->
+    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data: blob:; connect-src 'self'; base-uri 'none'; form-action 'none'; object-src 'none'">
+    <!-- KaTeX 0.18.4（本地 vendor/katex，完全离线渲染 $...$ / $$...$$ 数学公式；MIT License） -->
     <link rel="stylesheet" href="vendor/katex/katex.min.css">
     <script defer src="vendor/katex/katex.min.js"></script>
     <script defer src="vendor/katex/contrib/auto-render.min.js"></script>
@@ -491,7 +496,6 @@
             &:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
             &:active { box-shadow: 0 0 0 2px var(--primary-glow); }
             &[aria-pressed="true"] {
-                box-shadow: 0 0 0 1px var(--accent) inset;
                 & .stats-tile { border-color: var(--accent); }
                 & .stats-value { color: var(--accent-dark); }
             }
@@ -2099,14 +2103,23 @@ class FsrsStore {
         catch { this.#cache = {}; }
         return this.#cache;
     }
+    /* 返回是否真正落盘。失败时同步回滚内存缓存，保证「内存态 == 已持久化态」，
+        避免调用方/UI 以为已保存而重启后丢失（配额耗尽、隐私模式）。 */
     static save(map) {
-        this.#cache = map;
-        try { localStorage.setItem(this.KEY, JSON.stringify(map)); }
-        catch (e) { if (typeof StorageAdapter.onPersistError === "function") StorageAdapter.onPersistError(this.KEY, e); }
+        const prev = this.#cache;
+        try {
+            localStorage.setItem(this.KEY, JSON.stringify(map));
+            this.#cache = map;
+            return true;
+        } catch (e) {
+            this.#cache = prev;
+            if (typeof StorageAdapter.onPersistError === "function") StorageAdapter.onPersistError(this.KEY, e);
+            return false;
+        }
     }
     static get(text) { return this.load()[text] ?? null; }
     static upsert(text, card) {
-        const map = this.load();
+        const map = { ...this.load() };
         map[text] = {
             due: card.due instanceof Date ? card.due.getTime() : card.due,
             stability: card.stability, difficulty: card.difficulty,
@@ -2115,7 +2128,7 @@ class FsrsStore {
             state: card.state,
             last_review: card.last_review ? (card.last_review instanceof Date ? card.last_review.getTime() : card.last_review) : null,
         };
-        this.save(map);
+        if (!this.save(map)) throw new Error("STORAGE_FULL");
         return map[text];
     }
     /* 删除题库中已不存在的卡片记录，返回删除数量（孤儿卡清理） */
@@ -3058,7 +3071,14 @@ class QuizController {
         let card = FsrsStore.get(q.text);
         if (!card) card = this.#fsrsEngine.createEmptyCard(now);
         const nextCard = this.#fsrsEngine.next(card, now, rating);
-        FsrsStore.upsert(q.text, nextCard);
+        /* 写盘失败（配额耗尽/隐私模式）：不标记已评分、不显示「下次复习」，
+            明确告知本次未保存，让用户可重试或先导出备份清理缓存 */
+        try {
+            FsrsStore.upsert(q.text, nextCard);
+        } catch {
+            this.#bus.emit("toast:show", { message: "存储空间不足，本次评分未保存：请先导出备份或清理缓存题库", isError: true });
+            return;
+        }
         this.#quizState.markRated(idx, rating, nextCard.due instanceof Date ? nextCard.due : new Date(nextCard.due));
         this.#justAnswered = true;
         this.#updateDailyNewEstimate();
@@ -3144,7 +3164,10 @@ class QuizController {
 
     #resetFsrsData() {
         if (!confirm("确定重置全部复习数据？此操作不可恢复。")) return;
-        FsrsStore.save({});
+        if (!FsrsStore.save({})) {
+            this.#bus.emit("toast:show", { message: "存储空间异常，重置失败", isError: true });
+            return;
+        }
         this.#refreshMenuData();
         this.#updateDailyNewEstimate();
         this.#bus.emit("toast:show", { message: "复习数据已重置" });
@@ -3352,7 +3375,7 @@ class QuizController {
     }
 
     /* 复制备份：WebView / file:// 下 <a download> 常被系统拦截，剪贴板是最稳的离线方案。
-       降级链：Clipboard API → execCommand("copy") → 新窗口展示全文手动复制 */
+       降级链：Clipboard API → execCommand("copy") → 触发 .json 下载（与备份导出同一手法） */
     #copyFsrsBackup(json = null) {
         const text = json ?? JSON.stringify({
             app: "Offline-Quiz-Trainer", kind: "fsrs-cards", version: 1,
@@ -3373,21 +3396,23 @@ class QuizController {
         ta.style.opacity = "0";
         document.body.appendChild(ta);
         ta.select();
+        let copied = false;
+        try { copied = document.execCommand("copy"); } catch { copied = false; }
+        finally { document.body.removeChild(ta); }
+        if (copied) { ok(); return; }
+        /* 终极备选：直接把文本当 .json 下载（不依赖弹窗，适配 WebView 禁用 window.open 的场景） */
         try {
-            if (document.execCommand("copy")) ok();
-            else throw new Error("execCommand copy failed");
+            const url = URL.createObjectURL(new Blob([text], { type: "application/json" }));
+            const a = document.createElement("a");
+            a.href = url;
+            a.download = `fsrs-backup-${new Date().toISOString().slice(0, 10)}.json`;
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            setTimeout(() => URL.revokeObjectURL(url), 3000);
+            this.#bus.emit("toast:show", { message: "备份已导出为 .json 文件" });
         } catch {
-            // 终极备选：新窗口展示全文（WebView 可能同时禁用弹窗，此时给出明确提示）
-            const win = window.open("", "_blank", "noopener");
-            if (win) {
-                win.document.write(`<pre style="white-space:pre-wrap;word-break:break-all">${esc(text)}</pre><p>请手动复制以上内容，保存为 .json 文件</p>`);
-                win.document.close();
-                this.#bus.emit("toast:show", { message: "已打开备份内容窗口，请手动复制保存" });
-            } else {
-                this.#bus.emit("toast:show", { message: "无法自动复制或下载，请更换浏览器环境后重试", isError: true });
-            }
-        } finally {
-            document.body.removeChild(ta);
+            this.#bus.emit("toast:show", { message: "无法自动复制或下载，请更换浏览器环境后重试", isError: true });
         }
     }
 
@@ -3411,7 +3436,10 @@ class QuizController {
             if (!count) { this.#bus.emit("toast:show", { message: "备份中无有效卡片", isError: true }); return; }
             /* 覆盖现有数据属破坏性操作：先确认（与「重置数据」一致） */
             if (!confirm(`导入将覆盖现有 ${FsrsStore.count()} 张卡，共 ${count} 张卡数据，确定继续？`)) return;
-            FsrsStore.save(valid);
+            if (!FsrsStore.save(valid)) {
+                this.#bus.emit("toast:show", { message: "存储空间不足，导入未生效（原数据保持不变）", isError: true });
+                return;
+            }
             this.#refreshMenuData();
             this.#updateDailyNewEstimate();
             this.#els.fsrsImportInput.value = "";
