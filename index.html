@@ -1819,18 +1819,46 @@ class MarkdownParser {
 
 /* ===== Timer ===== */
 class Timer {
-    #bus; #startTime = 0; #questionStart = 0; #accumulated = []; #currentIdx = 0; #running = false; #rafId = null; #lastTotal = 0; #lastQSec = -1; #lastTSec = -1;
+    #bus; #startTime = 0; #questionStart = 0; #accumulated = []; #currentIdx = 0; #running = false; #rafId = null; #lastTotal = 0; #lastQSec = -1; #lastTSec = -1; #pauseStartedAt = 0; #pausedTotal = 0;
     constructor(bus) { this.#bus = bus; }
     start() { if (this.#running) return; this.#lastQSec = -1; this.#lastTSec = -1; const now = performance.now(); this.#startTime = now; this.#questionStart = now; this.#running = true; this.#tick(); }
-    stop() { if (!this.#running) return; this.#accrue(this.#currentIdx); this.#lastTotal = performance.now() - this.#startTime; this.#running = false; if (this.#rafId) { cancelAnimationFrame(this.#rafId); this.#rafId = null; } }
-    reset() { this.stop(); this.#accumulated = []; this.#startTime = 0; this.#questionStart = 0; this.#currentIdx = 0; this.#lastTotal = 0; }
+    stop() { if (!this.#running) return; this.#accrue(this.#currentIdx); this.#lastTotal = this.#elapsed(); this.#running = false; if (this.#rafId) { cancelAnimationFrame(this.#rafId); this.#rafId = null; } }
+    reset() { this.stop(); this.#accumulated = []; this.#startTime = 0; this.#questionStart = 0; this.#currentIdx = 0; this.#lastTotal = 0; this.#pauseStartedAt = 0; this.#pausedTotal = 0; }
+    /* 切后台（锁屏/切应用）时暂停：rAF 在后台不再回调，但壁钟仍在走；不停表会把
+       「在微信里查资料」的时间算成答题时间。暂停时长累加进 #pausedTotal，
+       计时口径统一为「前台运行时长的累计」（见 #elapsed）。 */
+    pause() {
+        if (!this.#running) return;
+        this.#pauseStartedAt = performance.now();
+        this.#accrue(this.#currentIdx);        /* 结算当前题已用时间 */
+        this.#running = false;
+        if (this.#rafId) { cancelAnimationFrame(this.#rafId); this.#rafId = null; }
+    }
+    resume() {
+        if (this.#running || !this.#pauseStartedAt) return;
+        /* 两件事必须同时做，缺一不可：
+           ① 暂停时长记入 #pausedTotal —— 总用时口径只减这一段（不要改 #startTime，
+              否则与 rAF 累计时钟叠加会把暂停时长算两次，恢复后总用时变负）；
+           ② #questionStart 重置为当前时刻 —— 单题用时是「片段累加」，#accrue 在 pause 时
+              已把片段结算到暂停时刻，若此处不重设基准，恢复后 now - #questionStart
+              会把整段后台时长算进当前题（实测 60000ms）。 */
+        this.#pausedTotal += performance.now() - this.#pauseStartedAt;
+        this.#pauseStartedAt = 0;
+        this.#questionStart = performance.now();
+        this.#running = true;
+        this.#tick();
+    }
+    /* 前台累计时长（不含暂停）：总用时/单题用时的唯一口径 */
+    #elapsed(now = performance.now()) {
+        return now - this.#startTime - this.#pausedTotal - (this.#pauseStartedAt ? now - this.#pauseStartedAt : 0);
+    }
     switchQuestion(from, to) { if (!this.#running || from === to) return; this.#accrue(from); this.#currentIdx = to; this.#questionStart = performance.now(); }
     #accrue(idx) { const elapsed = performance.now() - this.#questionStart; this.#accumulated[idx] = (this.#accumulated[idx] || 0) + elapsed; this.#questionStart = performance.now(); }
     #tick() {
         if (!this.#running) return;
         const now = performance.now();
         const qTime = (this.#accumulated[this.#currentIdx] || 0) + (now - this.#questionStart);
-        const totalTime = now - this.#startTime;
+        const totalTime = this.#elapsed(now);
         /* 显示精度为秒：仅当秒值变化时才 emit，避免每帧（60fps）无意义地写 DOM */
         const qSec = Math.floor(qTime / 1000), tSec = Math.floor(totalTime / 1000);
         if (qSec !== this.#lastQSec || tSec !== this.#lastTSec) {
@@ -1839,8 +1867,16 @@ class Timer {
         }
         this.#rafId = requestAnimationFrame(() => this.#tick());
     }
+    /* 单题用时：暂停期间冻结（#questionStart 在 pause 时已结算，#accrue 未推进），
+       故仅在计时运行中才累加当前片段；暂停中直接返回已结算值，避免把后台时长算进来。 */
     getQuestionTime(idx) { if (idx === this.#currentIdx && this.#running) return (this.#accumulated[idx] || 0) + (performance.now() - this.#questionStart); return this.#accumulated[idx] || 0; }
-    getTotalTime() { return this.#running ? performance.now() - this.#startTime : this.#lastTotal; }
+    /* 总用时：运行中取前台累计；暂停中取「暂停时刻的前台累计」；
+       仅未开始/已 stop 时才回落到 #lastTotal（否则暂停期间会瞬间显示 00:00）。 */
+    getTotalTime() {
+        if (this.#running) return this.#elapsed();
+        if (this.#pauseStartedAt) return this.#pauseStartedAt - this.#startTime - this.#pausedTotal;
+        return this.#lastTotal;
+    }
 }
 
 /* ===== Storage ===== */
@@ -2688,6 +2724,7 @@ class QuizController {
         this.#applySettings();
         this.#initShareTarget(); /* 接收外部「分享」的 .md 题库（Capacitor 原生） */
         this.#initBackButton();  /* Android 物理返回键：按层关闭，避免误退出应用 */
+        this.#initAppLifecycle();/* 前后台切换：暂停/恢复计时，避免后台时长计入用时 */
         new ThemeManager(this.#els.themeOptions, this.#bus);
         // Surface localStorage persistence failures (Nielsen error prevention).
         StorageAdapter.onPersistError = (k, _e) => {
@@ -3419,17 +3456,23 @@ class QuizController {
         const toast = (message, isError = false) => this.#bus.emit("toast:show", { message, isError });
         this.#els.backupDialog?.close();
         await CapacitorBridge.ready; /* 桥异步加载：等就绪后按原生能力分流 */
-        /* ① Capacitor 原生保存：本地插件 SaveFile（ACTION_CREATE_DOCUMENT 调起系统文档选择器） */
+        /* ① Capacitor 原生保存：本地插件 SaveFile（ACTION_CREATE_DOCUMENT 调起系统文档选择器）
+           契约以 SaveFilePlugin.java 为准：成功 resolve {success:true}（旧版无返回值），
+           用户取消 resolve {success:false, cancelled:true}（取消不是错误，故用 resolve 而非 reject）。
+           这里按返回结构判定，不再用字符串匹配 —— 原实现丢了返回值，只对 "ok"/"cancelled" 比对，
+           实际永远落进降级链。已移除 15s 计时器：文档选择器停留时长由用户决定，
+           超时判定会在文件其实已保存的情况下误报「保存超时」。 */
         if (CapacitorBridge.isNative() && CapacitorBridge.SaveFile) {
-            const result = await new Promise(resolve => {
-                const timer = setTimeout(() => resolve("timeout"), 15000);
-                CapacitorBridge.SaveFile.saveFile({ title: "保存 FSRS 备份", fileName: name, content: json })
-                    .then(() => { clearTimeout(timer); resolve("ok"); })
-                    .catch(err => { clearTimeout(timer); resolve(String(err?.message || "")); });
-            });
-            if (result === "ok") { toast("备份已保存到本地"); return; }
-            if (/cancelled/i.test(result)) return; /* 用户在文档选择器中取消，静默 */
-            if (result === "timeout") { toast("保存超时，请重试", true); return; }            /* 其他错误 → 继续降级 */
+            try {
+                const result = await CapacitorBridge.SaveFile.saveFile({ title: "保存 FSRS 备份", fileName: name, content: json });
+                if (result && result.success === false && result.cancelled) return; /* 用户取消保存：静默 */
+                if (result && result.success === false) throw new Error("save failed"); /* 原生失败 → 降级 */
+                toast("备份已保存到本地"); /* success:true，或旧版插件无返回值（视为已落盘） */
+                return;
+            } catch (e) {
+                if (/cancel/i.test(e?.message || "")) return; /* reject 式取消（防御性保留） */
+                /* 其他错误 → 继续降级 */
+            }
         }
         /* ② File System Access API：系统「另存为」对话框（桌面 Chrome/Edge 等） */
         if (typeof window.showSaveFilePicker === "function") {
@@ -3476,9 +3519,14 @@ class QuizController {
     }
 
     /* 处理接收到的分享：文件（插件已复制到应用缓存，经 Filesystem.readFile 读取）
-       与纯文本统一转为 File 交给 #load；非文本/不可读内容给出明确提示。 */
+       与纯文本统一转为 File 交给 #load；非文本/不可读内容给出明确提示。
+       插件每次都把分享文件复制到 cacheDir/shared_files/（同名会静默覆盖），读完必须删除，
+       否则缓存只增不减；同时在读取前用 stat 卡住大小，避免超大文本经 base64 解码时 OOM。 */
     async #onSharedContent(evt) {
+        const MAX_SHARE_BYTES = 2 * 1024 * 1024; /* 题库 md 正常 < 500KB；2MB 足够且不会撑爆 JS 堆 */
         const files = [];
+        const toDelete = [];
+        let explained = false; /* 已给出「过大/读取失败」等具体原因时，不再用通用提示覆盖它 */
         const isTextish = f => {
             const mime = String(f?.mimeType || "").toLowerCase();
             const fname = String(f?.name || "").toLowerCase();
@@ -3490,19 +3538,39 @@ class QuizController {
             for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
             return new TextDecoder("utf-8").decode(bytes);
         };
+        const fs = CapacitorBridge.Filesystem;
         for (const f of evt?.files || []) {
             try {
                 if (!isTextish(f)) continue; /* 图片等非文本分享直接跳过 */
-                const res = await CapacitorBridge.Filesystem.readFile({ path: f.uri });
+                /* ① 先探大小：超大文件读进内存会同时存在 base64 串、字节数组、File 三份副本 */
+                let size = 0;
+                if (fs?.stat) {
+                    try { size = (await fs.stat({ path: f.uri }))?.size ?? 0; } catch { size = 0; }
+                }
+                if (size > MAX_SHARE_BYTES) {
+                    explained = true;
+                    this.#bus.emit("toast:show", { message: `分享的文件过大（${(size / 1048576).toFixed(1)}MB），仅支持 2MB 以内的题库`, isError: true });
+                    continue;
+                }
+                const res = await fs.readFile({ path: f.uri });
                 const text = decodeBase64Utf8(res.data);
                 files.push(new File([text], f.name || `分享文件-${Date.now()}.md`, { type: f.mimeType || "text/markdown" }));
-            } catch (e) { console.error("[CapacitorBridge] 读取分享文件失败:", e); }
+            } catch (e) {
+                explained = true;
+                console.error("[CapacitorBridge] 读取分享文件失败:", e);
+                this.#bus.emit("toast:show", { message: `分享的文件无法读取（${f.name || "未命名"}）`, isError: true });
+            }
+            finally { toDelete.push(f.uri); } /* ② 成功/失败/跳过都清理插件复制到 cache 的副本 */
+        }
+        /* 清理失败不影响导入：缓存目录由系统在空间紧张时回收，这里只是不让它无界增长 */
+        if (fs?.deleteFile) {
+            await Promise.all(toDelete.map(path => fs.deleteFile({ path }).catch(() => {})));
         }
         for (const t of evt?.texts || []) {
             files.push(new File([String(t)], `分享文本-${new Date().toISOString().slice(0, 10)}.md`, { type: "text/markdown" }));
         }
         if (!files.length) {
-            this.#bus.emit("toast:show", { message: "分享内容不是可导入的题库（支持 .md/.txt/.json 文本）", isError: true });
+            if (!explained) this.#bus.emit("toast:show", { message: "分享内容不是可导入的题库（支持 .md/.txt/.json 文本）", isError: true });
             return;
         }
         await this.#load(files);
@@ -3534,6 +3602,23 @@ class QuizController {
                 }
                 App.minimizeApp?.();
             }).catch(err => console.error("[CapacitorBridge] 返回键监听注册失败:", err));
+        });
+    }
+
+    /* ===== 前后台切换（@capacitor/app）=====
+       切后台/锁屏时 rAF 不再回调，但壁钟仍在走；若不停表，「总用时/平均每题」会把
+       在微信里查资料的时间算成答题时间。inactive 时 pause（结算当前题），
+       回前台 resume（暂停时长记入 #pausedTotal 并在计时口径中扣除，见 Timer.resume）。
+       Web / 未安装 @capacitor/app 时 App 为 null，静默跳过。 */
+    #initAppLifecycle() {
+        CapacitorBridge.ready.then(() => {
+            const App = CapacitorBridge.App;
+            if (!CapacitorBridge.isNative() || !App?.addListener) return;
+            App.addListener("appStateChange", ({ isActive }) => {
+                if (!isActive) { this.#timer.pause(); return; }
+                /* 仅在有进行中的练习时恢复，避免回前台把「已结束/未开始」的计时重新拉起 */
+                if (this.#quizState && !this.#els.quizSection.classList.contains("hidden")) this.#timer.resume();
+            }).catch(err => console.error("[CapacitorBridge] 生命周期监听注册失败:", err));
         });
     }
 

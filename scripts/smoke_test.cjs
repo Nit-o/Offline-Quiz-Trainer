@@ -204,6 +204,112 @@ const flush = () => new Promise(r => setTimeout(r, 30));
     await flush();
     assert(typeof sandbox.CapacitorBridge.CapacitorShareTarget._cb === 'function', '桥就绪后注册 shareReceived 监听');
 
+    /* ---------- 原生调用专项回归（见「原生调用完成度专项评价」） ---------- */
+    const flushRounds = async n => { for (let i = 0; i < n; i++) await flush(); };
+    const installBridge = stub => Object.assign(sandbox.CapacitorBridge, {
+        Share: null, Filesystem: null, SaveFile: null, App: null,
+        Directory: {}, Encoding: {},
+    }, stub);
+
+    console.log('== 1.1 原生保存契约：{success:true} → 成功；{success:false,cancelled:true} → 静默不降级 ==');
+    const saveCalls = [];
+    let saveImpl = async () => ({ success: true });
+    installBridge({ SaveFile: { saveFile: async opts => { saveCalls.push(opts); return saveImpl(opts); } } });
+    els.exportFsrsBtn.trigger('click');
+    els.backupSaveBtn.trigger('click');
+    await flushRounds(2);
+    assert(saveCalls.length === 1, '调起一次原生保存');
+    assert(els.snackbar.textContent.includes('备份已保存到本地'), `{success:true} 成功提示: "${els.snackbar.textContent}"`);
+    /* 回归：返回 {success:true}（非旧实现的 "ok" 字符串）必须判定为成功并 return，
+       否则会继续走 ② File System Access / ③ <a download> 降级链（重复保存） */
+    saveImpl = async () => ({ success: false, cancelled: true });
+    const saveCountBefore = saveCalls.length;
+    els.exportFsrsBtn.trigger('click');
+    els.backupSaveBtn.trigger('click');
+    await flushRounds(2);
+    assert(saveCalls.length === saveCountBefore + 1, '取消路径仍调用原生保存');
+    assert(!/失败|无法|超时/.test(els.snackbar.textContent), `用户取消保存不提示错误: "${els.snackbar.textContent}"`);
+    /* 回归：旧实现用 "timeout" 字符串判定超时并提示「保存超时，请重试」。
+       现已改为按返回结构判定，且不再有 15s 计时器 —— 取消后 15s 内不应出现超时提示。 */
+    assert(!/保存超时/.test(els.snackbar.textContent), '取消后不出现「保存超时，请重试」假失败提示');
+
+    console.log('== 1.2 分享导入：读取后清理缓存、超大文件拒收绕过 readFile ==');
+    const shareCb = sandbox.CapacitorBridge.CapacitorShareTarget._cb;
+    const mdOne = '## 一、单选题\n\n### 1. 分享题\nA. 甲\nB. 乙\n**答案： A**\n';
+    const shareOps = [];
+    let statImpl = async () => ({ size: 1024 });
+    let readImpl = async () => ({ data: Buffer.from(mdOne, 'utf8').toString('base64') });
+    installBridge({
+        Filesystem: {
+            stat: async opts => { shareOps.push(['stat', opts.path]); return statImpl(opts); },
+            readFile: async opts => { shareOps.push(['read', opts.path]); return readImpl(opts); },
+            deleteFile: async opts => { shareOps.push(['delete', opts.path]); },
+        },
+    });
+    shareCb({ title: '', texts: [], files: [{ name: '来自分享.md', mimeType: 'text/markdown', uri: '/cache/shared_files/来自分享.md' }] });
+    await flushRounds(3);
+    assert(/成功加载 1 题/.test(els.fileStatus.innerText), `分享文件导入: "${els.fileStatus.innerText}"`);
+    /* 回归：插件每次都把分享文件复制到 cacheDir/shared_files（同名静默覆盖），
+       不删除会让缓存只增不减 */
+    assert(
+        shareOps.some(o => o[0] === 'read') && shareOps.some(o => o[0] === 'delete' && o[1] === '/cache/shared_files/来自分享.md'),
+        '读取后删除插件复制的缓存副本（shareOps: ' + JSON.stringify(shareOps) + '）'
+    );
+    /* 回归：大文件必须在 stat 阶段拒绝，绝不进入 readFile（base64 解码会同时持有三份副本） */
+    shareOps.length = 0;
+    statImpl = async () => ({ size: 5 * 1024 * 1024 });
+    shareCb({ title: '', texts: [], files: [{ name: '超大题库.md', mimeType: 'text/markdown', uri: '/cache/shared_files/超大题库.md' }] });
+    await flushRounds(3);
+    assert(!shareOps.some(o => o[0] === 'read'), '超大文件不进入 readFile（避免 OOM）');
+    assert(/过大/.test(els.snackbar.textContent), `超大文件给出明确提示: "${els.snackbar.textContent}"`);
+    assert(shareOps.some(o => o[0] === 'delete'), '被拒收的文件同样清理缓存副本');
+    /* 回归：读取失败也要清理（否则损坏/无权限文件会在缓存里永久堆积） */
+    shareOps.length = 0;
+    statImpl = async () => ({ size: 1024 });
+    readImpl = async () => { throw new Error('denied'); };
+    shareCb({ title: '', texts: [], files: [{ name: '读不了.md', mimeType: 'text/markdown', uri: '/cache/shared_files/读不了.md' }] });
+    await flushRounds(3);
+    assert(shareOps.some(o => o[0] === 'delete' && o[1] === '/cache/shared_files/读不了.md'), '读取失败也清理缓存副本');
+
+    console.log('== 1.3 前后台切换：Timer.pause/resume 用时口径 ==');
+    /* 独立构造 Timer（纯逻辑，无 DOM）。注入的 performance/rAF 必须以形参形式在类作用域内
+       遮蔽全局：只写 new Function('performance', …) 却不引用该形参时不会遮蔽，
+       模块内 performance.now() 仍走真实时钟（这会让假时钟断言失真）。 */
+    const timerSrc = html.slice(html.indexOf('class Timer {'), html.indexOf('/* ===== Storage'))
+        .replace(/\bperformance\.now\(\)/g, '__perf.now()')
+        .replace(/\brequestAnimationFrame\(/g, '__raf(')
+        .replace(/\bcancelAnimationFrame\(/g, '__caf(');
+    let fakeNow = 1000;
+    const Timer = new Function('__perf', '__raf', '__caf', `${timerSrc}\nreturn Timer;`)(
+        { now: () => fakeNow }, () => 1, () => {});
+    const t = new Timer({ emit() {} });
+    /* 时间线必须单调递增（performance.now() 语义）：假时钟若回退，断言本身就无意义 */
+    t.start();                            /* t=1_000 */
+    fakeNow = 6_000;                      /* 前台已答 5s */
+    t.pause();                            /* 切后台 */
+    fakeNow = 60_000;                     /* 后台停留 54s */
+    assert(t.getTotalTime() === 5_000, `暂停期间不计入总用时: ${t.getTotalTime()}ms（期望 5000）`);
+    assert(t.getQuestionTime(0) === 5_000, `暂停期间单题用时冻结: ${t.getQuestionTime(0)}ms（期望 5000）`);
+    t.resume();                           /* 回前台 */
+    assert(t.getTotalTime() === 5_000, `恢复瞬间总用时仍为 5000ms: ${t.getTotalTime()}ms`);
+    fakeNow = 61_000;                     /* 前台再走 1s */
+    assert(t.getTotalTime() === 6_000, `恢复后继续累计: ${t.getTotalTime()}ms（期望 6000）`);
+    assert(t.getQuestionTime(0) === 6_000, `单题用时同样排除暂停: ${t.getQuestionTime(0)}ms`);
+    t.stop();
+    assert(t.getTotalTime() === 6_000, `stop() 后仍为前台累计: ${t.getTotalTime()}ms（期望 6000）`);
+    /* 复位：本节把 1 题小样本写进了题库缓存，后面各节都假设缓存为空/单条，
+       故清掉本节产生的缓存与桥桩（Section 2 会重新导入 1143 题主题库）。
+       只重建列表 DOM，不触发文件导入，避免干扰 fileStatus/fileInput 的既有断言。 */
+    [...store.keys()].filter(k => k.startsWith('quiz_bank_')).forEach(k => store.delete(k));
+    sandbox.CapacitorBridge.Filesystem = null;
+    sandbox.CapacitorBridge.Share = null;
+    sandbox.CapacitorBridge.SaveFile = null;
+    {
+        const empty = new El('p');
+        empty.className = 'bank-cache-empty';
+        els.bankCacheList.replaceChildren(empty);
+    }
+
     console.log('== 2. 文件导入（解析 + 自动缓存）==');
     els.fileInput.files = [{ name: 'B类题库_origin.md', text: async () => md }];
     els.fileInput.trigger('change');
