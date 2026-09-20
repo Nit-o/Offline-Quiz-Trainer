@@ -80,14 +80,22 @@ jobs:
 
       - name: 产物门禁
         run: |
-          APK=android/app/build/outputs/apk/release/app-release.apk
-          APKSIGNER="$ANDROID_HOME/build-tools/$(ls "$ANDROID_HOME/build-tools" | sort -V | tail -1)/apksigner"
-          if "$APKSIGNER" verify --print-certs "$APK" > "$RUNNER_TEMP/signing.txt" 2>/dev/null; then
+          DIR=android/app/build/outputs/apk/release
+          SIGNED="$DIR/app-release.apk"
+          UNSIGNED="$DIR/app-release-unsigned.apk"
+          if [ -f "$SIGNED" ]; then
+            APK="$SIGNED"
+            APKSIGNER="$ANDROID_HOME/build-tools/$(ls "$ANDROID_HOME/build-tools" | sort -V | tail -1)/apksigner"
+            "$APKSIGNER" verify --print-certs "$APK" > "$RUNNER_TEMP/signing.txt"
             cat "$RUNNER_TEMP/signing.txt"
             node scripts/verify-apk.cjs "$APK" "$RUNNER_TEMP/signing.txt"
+          elif [ -f "$UNSIGNED" ]; then
+            echo "::warning::Beta 包未签名（缺 ANDROID_KEYSTORE_B64）—— 仅可临时测试，无法覆盖安装正式版"
+            node scripts/verify-apk.cjs "$UNSIGNED"
           else
-            echo "::warning::Beta 包未签名，跳过签名校验"
-            node scripts/verify-apk.cjs "$APK"
+            echo "::error::未找到任何 release APK（构建产物路径可能变化）"
+            ls -la "$DIR" || true
+            exit 1
           fi
 
       # 重命名区分 Beta 包
