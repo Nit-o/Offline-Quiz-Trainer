@@ -12,6 +12,10 @@ native-plugins/save-file/dist/
 .android-home/
 .pnpm-store/
 
+# 临时产物：脚本抽取/测试生成的中间文件
+.tmp-lint/
+.tmp-fsrs/
+
 # lockfile（CI 依赖 pnpm-lock.yaml，仅忽略其他 .lock）
 *.lock
 !pnpm-lock.yaml

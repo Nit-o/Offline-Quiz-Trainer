@@ -67,6 +67,15 @@ $env:JAVA_HOME = "D:\JDK\jdk-21.0.2"        # 示例；按本机 JDK 21 路径�
 ```
 
 > 镜像：patch-android.cjs 默认将 Gradle 发行包切腾讯镜像、Maven 切阿里云/腾讯镜像；外网正常可设 `CAP_MIRRORS=off` 用官方源。
+>
+> build-tools：正常情况下由 AGP 自动解析（`CAP_BUILD_TOOLS` 未设且本机装有 35.x 时不做任何固定）。
+> 离线/本机 SDK 缺默认版本时，补丁会把本机已安装的最高版本写入 `android/gradle.properties` 的
+> `buildToolsVersion`，再由根 `build.gradle` 的 `subprojects` 块下发到各模块——
+> 不再改写 `node_modules` 内插件的 `build.gradle`（那会被 `pnpm install` 覆盖，且结果依赖执行机器）。
+> 指定版本：`$env:CAP_BUILD_TOOLS = "36.0.0"`。
+>
+> 可选增强：`pnpm add @capacitor/app` 后重新 `pnpm run sync:web && pnpm run cap sync android`
+> 即启用 Android 返回键分层处理；未安装时该功能自动降级，不影响其他原生能力。
 
 ### 正式包签名
 
@@ -96,12 +105,26 @@ $env:ANDROID_KEY_PASSWORD = "***"
 `versionName` 取自标签。发布前会自动执行产物门禁：校验 APK **不含 `android:debuggable`**、**未引入敏感权限**、
 **不是 debug 签名**（`node scripts/verify-apk.cjs <apk> [apksigner 报告]`，可本地手动运行）。
 
-## 测试
+## 测试与静态检查
 
 ```powershell
-node scripts/smoke_test.cjs        # DOM 桩冒烟测试：导入/缓存/分享降级/答题/FSRS 全链路
-node scripts/fsrs_logic_test.cjs   # FSRS 调度逻辑与统计口径
+pnpm test                          # = smoke_test + fsrs_logic_test（CI 应以此为准）
+pnpm run typecheck                 # 抽出内联 JS → tsc --checkJs 类型检查
+pnpm run test:web                  # DOM 桩冒烟测试：导入/缓存/分享降级/答题/FSRS 全链路
+pnpm run test:fsrs                 # FSRS 调度逻辑与统计口径
 node scripts/fsrs_compare.cjs      # 与 ts-fsrs 对拍（需联网安装 ts-fsrs）
+```
+
+类型检查说明：`index.html` 的 JS 是内联的（单文件应用），`npm run typecheck` 会先用
+`scripts/extract-inline-js.cjs` 抽到 `.tmp-lint/`（已 gitignore），再按根 `tsconfig.json`
+以 `checkJs` 检查；`types/globals.d.ts` 补齐 `CapacitorBridge`、KaTeX `renderMathInElement`、
+File System Access API 等环境声明，使检查聚焦真实缺陷。当前**零错误**，新增代码请保持。
+
+ESLint：配置见 `eslint.config.mjs`（需先 `pnpm add -D eslint globals`，离线环境装不上）：
+
+```powershell
+pnpm run extract:js
+npx eslint .tmp-lint/inline-module.mjs
 ```
 
 ## Web 环境说明
@@ -109,7 +132,8 @@ node scripts/fsrs_compare.cjs      # 与 ts-fsrs 对拍（需联网安装 ts-fsr
 - **浏览器直开（file:// 或任意静态托管）**：页面主逻辑（题库导入/训练/主题/KaTeX/FSRS）完整可用；
   Capacitor 原生桥按环境自动降级（与 Cordova 时代的 `window.NativeShare` 检测模式一致），原生分享/保存功能自动隐藏。
 - **APK（Android WebView，https://localhost）**：额外启用原生能力 —— 系统分享导出备份、系统文档选择器保存、
-  接收其他应用「分享」的 .md/.txt/.json 题库直接导入。
+  接收其他应用「分享」的 .md/.txt/.json 题库直接导入。返回键按层回退（关闭弹窗 → 收起导出面板 →
+  练习中二次确认后返回模式选择 → 最小化），需要安装可选依赖 `@capacitor/app`；未安装时保持系统默认行为。
 
 ## 也许会有帮助的链接
 
@@ -131,4 +155,4 @@ node scripts/fsrs_compare.cjs      # 与 ts-fsrs 对拍（需联网安装 ts-fsr
 ## 最后的最后
 
 搁置
-- FsrsStore.prune
+- （暂无）

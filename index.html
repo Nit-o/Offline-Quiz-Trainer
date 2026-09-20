@@ -12,7 +12,8 @@
          本页是单文件内联架构，故 script/style 必须保留 'unsafe-inline'（内联 <style> 与内联 module script）；
          将来把 CSS/JS 外提为文件后，应改为 'self' + nonce。font-src 覆盖 KaTeX 的 60 个 woff2。 -->
     <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data: blob:; connect-src 'self'; base-uri 'none'; form-action 'none'; object-src 'none'">
-    <!-- KaTeX 0.18.4（本地 vendor/katex，完全离线渲染 $...$ / $$...$$ 数学公式；MIT License） -->
+    <!-- KaTeX __KATEX_VERSION__（本地 vendor/katex，完全离线渲染 $...$ / $$...$$ 数学公式；MIT License）
+         版本号由 vendor/katex/VERSION 单一来源提供，构建时由 scripts/sync-web.cjs 注入 -->
     <link rel="stylesheet" href="vendor/katex/katex.min.css">
     <script defer src="vendor/katex/katex.min.js"></script>
     <script defer src="vendor/katex/contrib/auto-render.min.js"></script>
@@ -1711,7 +1712,7 @@
 globalThis.CapacitorBridge = {
     isNative: () => false,
     Share: null, Filesystem: null, Directory: null, Encoding: null,
-    CapacitorShareTarget: null, SaveFile: null,
+    CapacitorShareTarget: null, SaveFile: null, App: null,
     ready: Promise.resolve(),
 };
 (async () => {
@@ -1740,6 +1741,16 @@ globalThis.CapacitorBridge = {
             });
         } catch (e) {
             console.warn("[CapacitorBridge] 原生桥加载失败，使用 Web 降级模式:", e?.message || e);
+        }
+        /* @capacitor/app 为可选增强（返回键）。单独 import：未安装/未同步时只有返回键
+           降级为系统默认行为，不影响上面的必需插件；无需 importmap 条目也能安全失败。
+           specifier 走变量是为了让未安装该包时 tsc --checkJs 不报「找不到模块」。 */
+        const appPkg = "@capacitor/app";
+        try {
+            const { App } = await import(appPkg);
+            globalThis.CapacitorBridge.App = App ?? null;
+        } catch (e) {
+            console.warn("[CapacitorBridge] @capacitor/app 不可用（返回键处理降级）:", e?.message || e);
         }
     })();
     globalThis.CapacitorBridge.ready = load;
@@ -2044,7 +2055,6 @@ class FsrsEngine {
             ? dateDiffInDays(c.last_review, now) : 0;
         const base = { ...c, last_review: now, elapsed_days: elapsed, reps: c.reps + 1 };
         if (c.state === FSRS_STATE.New) base.scheduled_days = 0;
-        const r = c.state !== FSRS_STATE.New ? this.forgettingCurve(elapsed, c.stability) : undefined;
         const again = this.#nextDS(base, elapsed, FSRS_RATING.Again);
         const hard = this.#nextDS(base, elapsed, FSRS_RATING.Hard);
         const good = this.#nextDS(base, elapsed, FSRS_RATING.Good);
@@ -2205,8 +2215,28 @@ class QuestionParser {
     parseMarkdown(text, fileName = "") {
         const questions = []; let section = null, cur = null;
         const detectType = s => { s = s.toLowerCase(); if (s.includes("单选") || s.includes("a1") || s.includes("a2")) return "single"; if (s.includes("多选") || s.includes("x1") || s.includes("x2")) return "multiple"; if (s.includes("判断")) return "judgment"; return null; };
-        const commit = () => { if (!cur) return; if (cur.options.length && cur.answer) { cur.type ??= cur.answer.length > 1 ? "multiple" : section ?? "single"; questions.push(cur); } else if (!cur.answer) { this.errors.push({ file: fileName, line: cur.text.slice(0, 30), reason: "缺少答案" }); } else { this.errors.push({ file: fileName, line: cur.text.slice(0, 30), reason: "缺少选项" }); } cur = null; };
-        const RE = { heading: /^#+\s*(?:[一二三四五六七八九十]+、\s*)?(单选题|多选题|判断题|A[12]型题|X[12]型题)/i, secBreak: /^#+\s+[一二三四五六七八九十]+、/, qStart: /^(?:### \d+[.．]\s*|\[Q\]\s*)(.*)/, optBr: /^\[([A-E])\]\s*(.*)/, optDot: /^([A-E])[.．、]\s*(.*)/, answer: /^(?:\[T\]|\*\*答案[：:]\s*)[*\s]*(.*?)[*\s]*$/, /* 兼容 `**答案： A**`（答案在星号内）与 `**答案：** A`（星号后）两种写法 */ explain: /^\*\*解析[：:]\s*\*\*\s*(.*)/ };
+        const commit = () => {
+            if (!cur) return;
+            if (cur.options.length && cur.answer) {
+                cur.type ??= cur.answer.length > 1 ? "multiple" : section ?? "single";
+                questions.push(cur);
+            } else if (!cur.answer) {
+                this.errors.push({ file: fileName, line: cur.text.slice(0, 30), reason: "缺少答案" });
+            } else {
+                this.errors.push({ file: fileName, line: cur.text.slice(0, 30), reason: "缺少选项" });
+            }
+            cur = null;
+        };
+        const RE = {
+            heading: /^#+\s*(?:[一二三四五六七八九十]+、\s*)?(单选题|多选题|判断题|A[12]型题|X[12]型题)/i,
+            secBreak: /^#+\s+[一二三四五六七八九十]+、/,
+            qStart: /^(?:### \d+[.．]\s*|\[Q\]\s*)(.*)/,
+            optBr: /^\[([A-E])\]\s*(.*)/,
+            optDot: /^([A-E])[.．、]\s*(.*)/,
+            /* 兼容 `**答案： A**`（答案在星号内）与 `**答案：** A`（星号后）两种写法 */
+            answer: /^(?:\[T\]|\*\*答案[：:]\s*)[*\s]*(.*?)[*\s]*$/,
+            explain: /^\*\*解析[：:]\s*\*\*\s*(.*)/,
+        };
         for (const raw of text.split(/\r?\n/)) {
             const line = raw.trim(); if (!line) continue; let m;
             if      (m = line.match(RE.heading))  { commit(); section = detectType(m[1]) ?? section; }
@@ -2222,7 +2252,21 @@ class QuestionParser {
         }
         commit(); return questions;
     }
-    async loadFiles(files) { this.errors = []; const all = []; for (const file of files) { try { const text = await readFileText(file); const qs = this.parseMarkdown(text, file.name); if (!qs.length) this.errors.push({ file: file.name, error: "无有效题目" }); all.push(...qs); } catch (e) { this.errors.push({ file: file.name, error: e.message }); } } return { questions: all, errors: this.errors }; }
+    async loadFiles(files) {
+        this.errors = [];
+        const all = [];
+        for (const file of files) {
+            try {
+                const text = await readFileText(file);
+                const qs = this.parseMarkdown(text, file.name);
+                if (!qs.length) this.errors.push({ file: file.name, error: "无有效题目" });
+                all.push(...qs);
+            } catch (e) {
+                this.errors.push({ file: file.name, error: e.message });
+            }
+        }
+        return { questions: all, errors: this.errors };
+    }
 }
 
 /* ===== Quiz State ===== */
@@ -2248,10 +2292,21 @@ class QuizState {
 
 class OptionRenderer {
     #container; #bus;
-    constructor(container, bus) { this.#container = container; this.#bus = bus; bus.on("question:render", ({ question, state }) => this.#render(question, state)); bus.on("feedback:show", ({ question, state }) => this.#applyFeedback(question, state)); bus.on("fsrs:awaitRating", ({ question, state }) => this.#applyFeedback(question, state)); bus.on("fsrs:rated", ({ question, state }) => this.#applyFeedback(question, state)); bus.on("feedback:hide", () => this.#clearFeedback()); }
+    constructor(container, bus) {
+        this.#container = container; this.#bus = bus;
+        bus.on("question:render", ({ question, state }) => this.#render(question, state));
+        bus.on("feedback:show", ({ question, state }) => this.#applyFeedback(question, state));
+        bus.on("fsrs:awaitRating", ({ question, state }) => this.#applyFeedback(question, state));
+        bus.on("fsrs:rated", ({ question, state }) => this.#applyFeedback(question, state));
+        bus.on("feedback:hide", () => this.#clearFeedback());
+    }
     #render(q, state) {
         let html = `<div class="question-title">${esc(q.text)}${q.type === "multiple" ? ' <small>(多选)</small>' : q.type === "judgment" ? ' <small>(判断)</small>' : ""}</div><div class="options">`;
-        q.options.forEach(opt => { const sel = state.selections.includes(opt.key); const dis = q.type === "multiple" && state.submitted; html += `<button type="button" class="option${sel ? " selected" : ""}${dis ? " disabled" : ""}" data-key="${esc(opt.key)}"${dis ? " disabled" : ""} aria-pressed="${sel}"><span>${esc(opt.key)}. ${esc(opt.text)}</span></button>`; });
+        q.options.forEach(opt => {
+            const sel = state.selections.includes(opt.key);
+            const dis = q.type === "multiple" && state.submitted;
+            html += `<button type="button" class="option${sel ? " selected" : ""}${dis ? " disabled" : ""}" data-key="${esc(opt.key)}"${dis ? " disabled" : ""} aria-pressed="${sel}"><span>${esc(opt.key)}. ${esc(opt.text)}</span></button>`;
+        });
         html += "</div>";
         if (q.type === "multiple" && !state.submitted) html += `<div class="multi-submit-bar"><button id="multiSubmitBtn" class="btn btn-sm" ${state.selections.length ? "" : "disabled"} aria-label="提交多选题答案">提交答案</button></div>`;
         this.#container.innerHTML = html;
@@ -2260,13 +2315,27 @@ class OptionRenderer {
         this.#container.querySelectorAll(".option:not(.disabled)").forEach(el => { el.addEventListener("click", () => this.#bus.emit("option:clicked", { key: el.dataset.key, isMulti: q.type === "multiple" })); });
         const mb = this.#container.querySelector("#multiSubmitBtn"); if (mb) mb.addEventListener("click", () => this.#bus.emit("multi:submit"));
     }
-    #applyFeedback(q, state) { this.#container.querySelectorAll(".option").forEach(el => { el.classList.remove("correct", "incorrect"); if (q.answer.includes(el.dataset.key)) el.classList.add("correct"); else if (state.selections.includes(el.dataset.key)) el.classList.add("incorrect"); el.classList.add("disabled"); el.disabled = true; }); }
+    #applyFeedback(q, state) {
+        this.#container.querySelectorAll(".option").forEach(el => {
+            el.classList.remove("correct", "incorrect");
+            if (q.answer.includes(el.dataset.key)) el.classList.add("correct");
+            else if (state.selections.includes(el.dataset.key)) el.classList.add("incorrect");
+            el.classList.add("disabled");
+            el.disabled = true;
+        });
+    }
     #clearFeedback() { this.#container.querySelectorAll(".option").forEach(el => { el.classList.remove("correct", "incorrect", "disabled"); el.disabled = false; }); }
 }
 
 class FeedbackPanel {
     #container; #bus;
-    constructor(container, bus) { this.#container = container; this.#bus = bus; bus.on("feedback:show", ({ question, state, correct }) => this.show(question, state, correct)); bus.on("feedback:hide", () => this.hide()); bus.on("fsrs:awaitRating", ({ question, state, correct, preselected }) => this.showRatingBar(question, state, correct, preselected)); bus.on("fsrs:rated", ({ question, state, correct, rating, timeSpent }) => this.showRated(question, state, correct, rating, timeSpent)); }
+    constructor(container, bus) {
+        this.#container = container; this.#bus = bus;
+        bus.on("feedback:show", ({ question, state, correct }) => this.show(question, state, correct));
+        bus.on("feedback:hide", () => this.hide());
+        bus.on("fsrs:awaitRating", ({ question, state, correct, preselected }) => this.showRatingBar(question, state, correct, preselected));
+        bus.on("fsrs:rated", ({ question, state, correct, rating, timeSpent }) => this.showRated(question, state, correct, rating, timeSpent));
+    }
     static RATING_NAMES = ["", "忘记了", "困难", "良好", "简单"];
     #icon(correct) { return correct ? '<svg class="icon-sm" aria-hidden="true"><use href="#icon-check"/></svg>' : '<svg class="icon-sm" aria-hidden="true"><use href="#icon-cross"/></svg>'; }
     #answerRow(q, state) { const us = state.selections.join(", ") || "未作答"; return `<div>您的答案: ${esc(us)}</div><div>正确答案: ${esc(q.answer)}</div>`; }
@@ -2308,14 +2377,18 @@ class FeedbackPanel {
 
 class NavigationBar {
     #container; #bus; #btns = []; #stateKeys = [];
-    constructor(container, bus) { this.#container = container; this.#bus = bus; bus.on("nav:build", ({ total, quizState, masteredSet }) => this.#build(total, quizState, masteredSet)); bus.on("nav:updateStyles", ({ currentIdx, quizState, mode, masteredSet }) => this.#updateStyles(currentIdx, quizState, mode, masteredSet)); }
+    constructor(container, bus) {
+        this.#container = container; this.#bus = bus;
+        bus.on("nav:build", ({ total, quizState, masteredSet }) => this.#build(total, quizState, masteredSet));
+        bus.on("nav:updateStyles", ({ currentIdx, quizState, mode, masteredSet }) => this.#updateStyles(currentIdx, quizState, mode, masteredSet));
+    }
     #build(total, quizState, masteredSet = new Set()) {
         this.#container.replaceChildren();
         /* DocumentFragment 一次性插入：大题库（上千题）避免逐按钮触发回流 */
         const frag = document.createDocumentFragment();
         this.#btns = Array.from({ length: total }, (_, i) => {
             const btn = document.createElement("button");
-            btn.className = "question-nav-btn"; btn.type = "button"; btn.textContent = i + 1;
+            btn.className = "question-nav-btn"; btn.setAttribute("type", "button"); btn.textContent = String(i + 1);
             btn.setAttribute("aria-label", `题目 ${i + 1}`);
             btn.addEventListener("click", () => { this.#bus.emit("nav:clicked", i); this.#closeOverlay(); });
             frag.appendChild(btn); return btn;
@@ -2325,9 +2398,11 @@ class NavigationBar {
         this.#updateStyles(0, quizState, "practice", masteredSet);
     }
     #closeOverlay() {
-        const overlay = document.getElementById("navOverlay");
-        if (overlay && typeof overlay.close === "function" && overlay.open) overlay.close();
+        /* #navOverlay 是页面里固定的 <dialog>（见 HTML），按 HTMLDialogElement 使用即可 */
+        const overlay = /** @type {HTMLDialogElement | null} */ (document.getElementById("navOverlay"));
+        if (overlay?.open) overlay.close();
     }
+
     #updateStyles(currentIdx, quizState, mode, masteredSet = new Set()) {
         /* 增量更新：只改写状态变化的按钮，避免每次切题都重写上千个按钮的 class */
         for (let i = 0; i < this.#btns.length; i++) {
@@ -2347,25 +2422,64 @@ class NavigationBar {
 }
 
 class ProgressBarComponent {
-    #el; constructor(el, bus) { this.#el = el; bus.on("progress:update", ({ answered, total }) => { const pct = total > 0 ? (answered / total) * 100 : 0; this.#el.style.width = `${pct}%`; const bar = this.#el.closest(".progress"); if (bar) { bar.setAttribute("aria-valuenow", String(Math.round(pct))); bar.setAttribute("aria-valuetext", `${answered}/${total} 题已完成`); } }); }
+    #el;
+    constructor(el, bus) {
+        this.#el = el;
+        bus.on("progress:update", ({ answered, total }) => {
+            const pct = total > 0 ? (answered / total) * 100 : 0;
+            this.#el.style.width = `${pct}%`;
+            const bar = this.#el.closest(".progress");
+            if (bar) {
+                bar.setAttribute("aria-valuenow", String(Math.round(pct)));
+                bar.setAttribute("aria-valuetext", `${answered}/${total} 题已完成`);
+            }
+        });
+    }
 }
 
 class StatsPanel {
-    #els; constructor(els, bus) { this.#els = els; bus.on("stats:update", ({ correct, incorrect, unanswered }) => { if (this.#els.correct) this.#els.correct.textContent = correct; if (this.#els.incorrect) this.#els.incorrect.textContent = incorrect; if (this.#els.unanswered) this.#els.unanswered.textContent = unanswered; }); }
+    #els;
+    constructor(els, bus) {
+        this.#els = els;
+        bus.on("stats:update", ({ correct, incorrect, unanswered }) => {
+            if (this.#els.correct) this.#els.correct.textContent = correct;
+            if (this.#els.incorrect) this.#els.incorrect.textContent = incorrect;
+            if (this.#els.unanswered) this.#els.unanswered.textContent = unanswered;
+        });
+    }
 }
 
 class TimerDisplay {
-    #els; constructor(els, bus) { this.#els = els; bus.on("timer:tick", ({ questionTime, totalTime }) => { if (this.#els.cur) this.#els.cur.textContent = fmtTime(questionTime); if (this.#els.total) this.#els.total.textContent = fmtTime(totalTime); }); }
+    #els;
+    constructor(els, bus) {
+        this.#els = els;
+        bus.on("timer:tick", ({ questionTime, totalTime }) => {
+            if (this.#els.cur) this.#els.cur.textContent = fmtTime(questionTime);
+            if (this.#els.total) this.#els.total.textContent = fmtTime(totalTime);
+        });
+    }
 }
 
 class ResultPanel {
     #els; constructor(els, bus) { this.#els = els; bus.on("result:show", data => this.show(data)); }
-    show({ correct, incorrect, unanswered, total, totalTime, mode }) { const avg = (total - unanswered) > 0 ? totalTime / (total - unanswered) : 0; const pct = total > 0 ? (correct / total) * 100 : 0; if (this.#els.scoreValue) this.#els.scoreValue.textContent = correct; if (this.#els.totalScore) this.#els.totalScore.textContent = total; if (this.#els.resCorrect) this.#els.resCorrect.textContent = correct; if (this.#els.resIncorrect) this.#els.resIncorrect.textContent = incorrect; if (this.#els.resUnanswered) this.#els.resUnanswered.textContent = unanswered; if (this.#els.resultTotalTime) this.#els.resultTotalTime.textContent = fmtTime(totalTime); if (this.#els.avgTime) this.#els.avgTime.textContent = fmtTime(avg); if (this.#els.resultMsg) this.#els.resultMsg.textContent = pct >= 90 ? "优秀！" : pct >= 70 ? "良好" : "继续加油"; }
+    show({ correct, incorrect, unanswered, total, totalTime, mode }) {
+        const avg = (total - unanswered) > 0 ? totalTime / (total - unanswered) : 0;
+        const pct = total > 0 ? (correct / total) * 100 : 0;
+        const set = (el, v) => { if (el) el.textContent = v; };
+        set(this.#els.scoreValue, correct);
+        set(this.#els.totalScore, total);
+        set(this.#els.resCorrect, correct);
+        set(this.#els.resIncorrect, incorrect);
+        set(this.#els.resUnanswered, unanswered);
+        set(this.#els.resultTotalTime, fmtTime(totalTime));
+        set(this.#els.avgTime, fmtTime(avg));
+        set(this.#els.resultMsg, pct >= 90 ? "优秀！" : pct >= 70 ? "良好" : "继续加油");
+    }
 }
 
 class HistoryPanel {
-    #container; #bus; #history;
-    constructor(container, bus) { this.#container = container; this.#bus = bus; this.#history = StorageAdapter.getHistory(); bus.on("history:updated", h => { this.#history = h; this.render(); }); this.render(); }
+    #container; #history;
+    constructor(container, bus) { this.#container = container; this.#history = StorageAdapter.getHistory(); bus.on("history:updated", h => { this.#history = h; this.render(); }); this.render(); }
     render() {
         this.#container.replaceChildren();
         this.#history.forEach(e => {
@@ -2573,6 +2687,7 @@ class QuizController {
         this.#bindEvents();
         this.#applySettings();
         this.#initShareTarget(); /* 接收外部「分享」的 .md 题库（Capacitor 原生） */
+        this.#initBackButton();  /* Android 物理返回键：按层关闭，避免误退出应用 */
         new ThemeManager(this.#els.themeOptions, this.#bus);
         // Surface localStorage persistence failures (Nielsen error prevention).
         StorageAdapter.onPersistError = (k, _e) => {
@@ -2645,9 +2760,21 @@ class QuizController {
         new ProgressBarComponent(this.#els.progressBar, this.#bus);
         new StatsPanel({ correct: this.#els.correctCount, incorrect: this.#els.incorrectCount, unanswered: this.#els.unansweredCount }, this.#bus);
         new TimerDisplay({ cur: this.#els.curTime, total: this.#els.totalTime }, this.#bus);
-        new ResultPanel({ scoreValue: this.#els.scoreValue, totalScore: this.#els.totalScore, resCorrect: this.#els.resCorrect, resIncorrect: this.#els.resIncorrect, resUnanswered: this.#els.resUnanswered, resultTotalTime: this.#els.resultTotalTime, avgTime: this.#els.avgTime, resultMsg: this.#els.resultMsg }, this.#bus);
+        new ResultPanel({
+            scoreValue: this.#els.scoreValue, totalScore: this.#els.totalScore,
+            resCorrect: this.#els.resCorrect, resIncorrect: this.#els.resIncorrect,
+            resUnanswered: this.#els.resUnanswered, resultTotalTime: this.#els.resultTotalTime,
+            avgTime: this.#els.avgTime, resultMsg: this.#els.resultMsg,
+        }, this.#bus);
         new HistoryPanel(this.#els.historyList, this.#bus);
-        new OverviewPanel({ sessions: this.#els.ovSessions, answered: this.#els.ovAnswered, accuracy: this.#els.ovAccuracy, mastered: this.#els.ovMastered, reps: this.#els.ovReps, lapses: this.#els.ovLapses, avgTime: this.#els.ovAvgTime, chart: this.#els.trendChart, forecast: this.#els.forecast, wideChart: this.#els.trendChartWide, sessionsLabel: this.#els.ovSessionsLabel, answeredLabel: this.#els.ovAnsweredLabel, accuracyLabel: this.#els.ovAccuracyLabel, modeBtn: this.#els.statsModeBtn, grid: this.#els.statsGrid }, this.#bus);
+        new OverviewPanel({
+            sessions: this.#els.ovSessions, answered: this.#els.ovAnswered, accuracy: this.#els.ovAccuracy,
+            mastered: this.#els.ovMastered, reps: this.#els.ovReps, lapses: this.#els.ovLapses,
+            avgTime: this.#els.ovAvgTime, chart: this.#els.trendChart, forecast: this.#els.forecast,
+            wideChart: this.#els.trendChartWide, sessionsLabel: this.#els.ovSessionsLabel,
+            answeredLabel: this.#els.ovAnsweredLabel, accuracyLabel: this.#els.ovAccuracyLabel,
+            modeBtn: this.#els.statsModeBtn, grid: this.#els.statsGrid,
+        }, this.#bus);
         new ToastComponent(this.#els.snackbar, this.#bus);
     }
 
@@ -2671,7 +2798,12 @@ class QuizController {
         this.#els.autoNextDelay.addEventListener("change", e => { const v = Math.min(5, Math.max(0, +e.target.value || 0)); e.target.value = v; this.#settings.autoDelay = v; StorageAdapter.saveSettings(this.#settings); });
         this.#els.showHistoryToggle.addEventListener("change", e => { this.#settings.showHistory = e.target.checked; this.#els.historyPanel.style.display = e.target.checked ? "" : "none"; StorageAdapter.saveSettings(this.#settings); });
         this.#els.hideMasteredToggle?.addEventListener("change", e => { this.#settings.hideMastered = e.target.checked; StorageAdapter.saveSettings(this.#settings); this.#bus.emit("toast:show", { message: e.target.checked ? "已启用隐藏已掌握题目，下次加载生效" : "已禁用隐藏已掌握题目" }); });
-        this.#els.autoRateToggle.addEventListener("change", e => { this.#settings.autoRate = e.target.checked; StorageAdapter.saveSettings(this.#settings); this.#els.autoRatePresetRow.style.display = e.target.checked ? "" : "none"; this.#bus.emit("toast:show", { message: e.target.checked ? "已开启自动评分" : "已关闭自动评分" }); });
+        this.#els.autoRateToggle.addEventListener("change", e => {
+            this.#settings.autoRate = e.target.checked;
+            StorageAdapter.saveSettings(this.#settings);
+            this.#els.autoRatePresetRow.style.display = e.target.checked ? "" : "none";
+            this.#bus.emit("toast:show", { message: e.target.checked ? "已开启自动评分" : "已关闭自动评分" });
+        });
         this.#els.autoRatePresetSelect.addEventListener("change", e => { this.#settings.autoRatePreset = e.target.value; StorageAdapter.saveSettings(this.#settings); this.#bus.emit("toast:show", { message: `自动评分标准：${e.target.options[e.target.selectedIndex].text}` }); });
         // 自定义阈值开关：勾选即启用并弹出编辑对话框；取消勾选恢复预设
         this.#els.autoRateCustomToggle.addEventListener("change", e => {
@@ -2914,6 +3046,9 @@ class QuizController {
         this.#quizState = new QuizState(filtered);
         this.#currentIdx = 0;
         this.#computeMasteredSet();
+        /* 清理题库中已不存在的复习卡（换题库后旧卡会白占 localStorage 配额） */
+        const prunedCards = FsrsStore.prune(filtered.map(q => q.text));
+        if (prunedCards > 0) summary += `；已清理 ${prunedCards} 张失效复习卡`;
         this.#els.fileStatus.innerText = summary;
         this.#els.quizSection.classList.add("hidden");
         this.#els.resultSection.classList.add("hidden");
@@ -3116,7 +3251,6 @@ class QuizController {
             mode: this.#settings.statsMode,
         });
     }
-    #refreshFsrsStats() { this.#refreshMenuData(); }
     #refreshOverview() { this.#refreshMenuData(); }
 
     /* 累计 ↔ 近 3 次切换（点击面板或模式胶囊触发），切换即持久化并刷新 */
@@ -3281,7 +3415,8 @@ class QuizController {
         };
         const json = JSON.stringify(data, null, 2);
         const name = `fsrs-backup-${new Date().toISOString().slice(0, 10)}.json`;
-        const toast = message => this.#bus.emit("toast:show", { message });
+        /* toast(msg, isError)：超时分支按错误样式提示（此前第二个实参被忽略，实际显示为普通提示） */
+        const toast = (message, isError = false) => this.#bus.emit("toast:show", { message, isError });
         this.#els.backupDialog?.close();
         await CapacitorBridge.ready; /* 桥异步加载：等就绪后按原生能力分流 */
         /* ① Capacitor 原生保存：本地插件 SaveFile（ACTION_CREATE_DOCUMENT 调起系统文档选择器） */
@@ -3294,8 +3429,7 @@ class QuizController {
             });
             if (result === "ok") { toast("备份已保存到本地"); return; }
             if (/cancelled/i.test(result)) return; /* 用户在文档选择器中取消，静默 */
-            if (result === "timeout") { toast("保存超时，请重试", true); return; }
-            /* 其他错误 → 继续降级 */
+            if (result === "timeout") { toast("保存超时，请重试", true); return; }            /* 其他错误 → 继续降级 */
         }
         /* ② File System Access API：系统「另存为」对话框（桌面 Chrome/Edge 等） */
         if (typeof window.showSaveFilePicker === "function") {
@@ -3372,6 +3506,35 @@ class QuizController {
             return;
         }
         await this.#load(files);
+    }
+
+    /* ===== Android 物理返回键（@capacitor/app）=====
+       系统对话框（<dialog>）自带 ESC 但收不到返回键，若不拦截会直接退出/最小化应用。
+       按层回退：对话框 → 导出面板 → 收到「继续答题？」确认 → 答题区 → 最小化（不杀进程、
+       不丢进度）。Web / 未安装 @capacitor/app 时 App 为 null，静默跳过（保持系统默认行为）。 */
+    #initBackButton() {
+        CapacitorBridge.ready.then(() => {
+            const App = CapacitorBridge.App;
+            if (!CapacitorBridge.isNative() || !App?.addListener) return;
+            App.addListener("backButton", () => {
+                const dialog = /** @type {HTMLDialogElement | null} */ (document.querySelector("dialog[open]"));
+                if (dialog) { dialog.close(); return; }
+                if (!this.#els.exportPanel.classList.contains("hidden")) {
+                    this.#els.exportPanel.classList.add("hidden");
+                    return;
+                }
+                if (!this.#els.quizSection.classList.contains("hidden") && this.#quizState) {
+                    if (confirm("返回将结束本次练习，已作答的记录会保留。确定返回吗？")) {
+                        this.#timer.stop();
+                        this.#els.quizSection.classList.add("hidden");
+                        this.#els.navFab?.classList.add("hidden"); /* 与 #finish/#restart 一致，避免悬浮导航残留 */
+                        this.#els.modeSection.classList.remove("hidden");
+                    }
+                    return;
+                }
+                App.minimizeApp?.();
+            }).catch(err => console.error("[CapacitorBridge] 返回键监听注册失败:", err));
+        });
     }
 
     /* 复制备份：WebView / file:// 下 <a download> 常被系统拦截，剪贴板是最稳的离线方案。
@@ -3599,7 +3762,17 @@ class QuizController {
     }
 
     #exportWrong() {
-        if (!this.#quizState) return; const wrong = []; this.#questions.forEach((q, i) => { if (!this.#quizState.isCorrect(i)) wrong.push({ q, i }); }); if (!wrong.length) { this.#bus.emit("toast:show", { message: "没有错题", isError: true }); return; } this.#els.exportLinks.value = wrong.map(({ q, i }) => `[[题库#${i + 1}. ${q.text.replace(/\s+/g, " ").trim().slice(0, 30)}]]`).join("\n"); this.#els.exportPanel.classList.remove("hidden");
+        if (!this.#quizState) return;
+        const wrong = [];
+        this.#questions.forEach((q, i) => { if (!this.#quizState.isCorrect(i)) wrong.push({ q, i }); });
+        if (!wrong.length) {
+            this.#bus.emit("toast:show", { message: "没有错题", isError: true });
+            return;
+        }
+        this.#els.exportLinks.value = wrong
+            .map(({ q, i }) => `[[题库#${i + 1}. ${q.text.replace(/\s+/g, " ").trim().slice(0, 30)}]]`)
+            .join("\n");
+        this.#els.exportPanel.classList.remove("hidden");
     }
     async #copyExport() {
         const text = this.#els.exportLinks.value;
@@ -3613,9 +3786,10 @@ class QuizController {
     }
 
     #handleKey(e) {
-        const tag = document.activeElement?.tagName;
+        const active = /** @type {HTMLElement | null} */ (document.activeElement);
+        const tag = active?.tagName;
         // 按钮/链接保留原生键盘激活，避免全局 Enter 逻辑与按钮 click 双重触发
-        if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || tag === "BUTTON" || tag === "A" || document.activeElement?.isContentEditable) return;
+        if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || tag === "BUTTON" || tag === "A" || active?.isContentEditable) return;
         if (!this.#quizState) return;
         const q = this.#questions[this.#currentIdx];
         if (e.key >= "1" && e.key <= "5") {
@@ -3650,8 +3824,31 @@ class QuizController {
         const THRESHOLD = 60, VRATIO = 1.2;
         const clear = () => { swiping = false; zone.classList.remove("swiping"); li?.classList.remove("active", "reach"); ri?.classList.remove("active", "reach"); wrap?.classList.remove("sliding-left", "sliding-right"); };
         zone.addEventListener("touchstart", e => { if (!this.#quizState) return; const t = e.changedTouches[0]; startX = t.clientX; startY = t.clientY; swiping = false; }, { passive: true });
-        zone.addEventListener("touchmove", e => { if (!this.#quizState) return; const t = e.changedTouches[0]; const dx = t.clientX - startX, dy = t.clientY - startY; const ax = Math.abs(dx), ay = Math.abs(dy); if (!swiping && ax > 20 && ax > ay * VRATIO) { swiping = true; zone.classList.add("swiping"); } if (swiping) { e.preventDefault(); if (dx < 0) { wrap?.classList.remove("sliding-right"); wrap?.classList.add("sliding-left"); ri?.classList.add("active"); li?.classList.remove("active", "reach"); if (ax >= THRESHOLD) ri?.classList.add("reach"); } else { wrap?.classList.remove("sliding-left"); wrap?.classList.add("sliding-right"); li?.classList.add("active"); ri?.classList.remove("active", "reach"); if (ax >= THRESHOLD) li?.classList.add("reach"); } } }, { passive: false });
-        zone.addEventListener("touchend", e => { if (!this.#quizState || !swiping) { clear(); return; } const t = e.changedTouches[0]; const ax = Math.abs(t.clientX - startX); if (ax >= THRESHOLD) { if (t.clientX - startX < 0) { if (this.#currentIdx < this.#questions.length - 1) this.#navigate(1); } else { if (this.#currentIdx > 0) this.#navigate(-1); } } clear(); }, { passive: true });
+        zone.addEventListener("touchmove", e => {
+            if (!this.#quizState) return;
+            const t = e.changedTouches[0];
+            const dx = t.clientX - startX, dy = t.clientY - startY;
+            const ax = Math.abs(dx), ay = Math.abs(dy);
+            if (!swiping && ax > 20 && ax > ay * VRATIO) { swiping = true; zone.classList.add("swiping"); }
+            if (!swiping) return;
+            e.preventDefault();
+            const goingLeft = dx < 0;
+            wrap?.classList.remove(goingLeft ? "sliding-right" : "sliding-left");
+            wrap?.classList.add(goingLeft ? "sliding-left" : "sliding-right");
+            const near = goingLeft ? ri : li, far = goingLeft ? li : ri;
+            near?.classList.add("active");
+            far?.classList.remove("active", "reach");
+            if (ax >= THRESHOLD) near?.classList.add("reach");
+        }, { passive: false });
+        zone.addEventListener("touchend", e => {
+            if (!this.#quizState || !swiping) { clear(); return; }
+            const dx = e.changedTouches[0].clientX - startX;
+            if (Math.abs(dx) >= THRESHOLD) {
+                if (dx < 0 && this.#currentIdx < this.#questions.length - 1) this.#navigate(1);
+                else if (dx > 0 && this.#currentIdx > 0) this.#navigate(-1);
+            }
+            clear();
+        }, { passive: true });
         zone.addEventListener("touchcancel", clear, { passive: true });
     }
 }

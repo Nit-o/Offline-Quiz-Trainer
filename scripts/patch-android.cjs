@@ -170,35 +170,102 @@ const patchProguard = () => {
     console.log('[patch-android] 已追加 Capacitor/插件 proguard 保留规则');
 };
 
-/* 本机 SDK 缺 AGP 默认 build-tools 且无法联网自动下载 → 固定为已安装的最高版本 */
+/* build-tools 版本固定（离线兜底，确定性）：
+   旧做法会把 buildToolsVersion 写进 node_modules 下各插件的 build.gradle —— pnpm install 后即失效、
+   且结果取决于执行补丁的那台机器。现在改为：把版本写进 android/gradle.properties，
+   由根 build.gradle 的 subprojects 块统一施加（Gradle 自身确定性执行），不再触碰 node_modules。 */
+const BUILD_TOOLS_MARK = '// patch-android: build-tools';
+
+const readInstalledBuildTools = sdkRoot => {
+    try {
+        return fs.readdirSync(path.join(sdkRoot, 'build-tools'))
+            .filter(d => /^\d+\.\d+\.\d+$/.test(d))
+            .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+    } catch { return []; }
+};
+
 const patchBuildTools = () => {
     const sdkRoot = process.env.ANDROID_HOME || process.env.ANDROID_SDK_ROOT;
-    if (!sdkRoot) { console.log('[patch-android] 未设置 ANDROID_HOME/ANDROID_SDK_ROOT，跳过 build-tools 兜底'); return; }
-    let installed = [];
-    try { installed = fs.readdirSync(path.join(sdkRoot, 'build-tools')).filter(d => /^\d+\.\d+\.\d+$/.test(d)); } catch { /* SDK 缺失 */ }
-    if (!installed.length) { console.log('[patch-android] 未找到 Android SDK build-tools，跳过 build-tools 兜底'); return; }
-    if (installed.some(v => v.startsWith('35.'))) { console.log('[patch-android] build-tools 35.x 已安装，无需兜底'); return; }
-    const chosen = installed.sort((a, b) => a.localeCompare(b, undefined, { numeric: true })).at(-1);
-    const gradleFiles = [
+    /* 优先显式指定；否则仅在本机装了非 35.x 的 build-tools 时才固定（正常情况下 AGP 会自行下载所需版本） */
+    let chosen = process.env.CAP_BUILD_TOOLS || '';
+    if (!chosen) {
+        if (!sdkRoot) { console.log('[patch-android] 未设置 ANDROID_HOME/ANDROID_SDK_ROOT，跳过 build-tools 固定'); return; }
+        const installed = readInstalledBuildTools(sdkRoot);
+        if (!installed.length) { console.log('[patch-android] 本机无 build-tools，跳过固定（交由 AGP 解析）'); return; }
+        if (installed.some(v => v.startsWith('35.'))) { console.log('[patch-android] build-tools 35.x 已安装，无需固定'); return; }
+        chosen = installed[installed.length - 1];
+    }
+    if (!/^\d+\.\d+\.\d+$/.test(chosen)) {
+        console.error(`[patch-android] build-tools 版本非法：${chosen}`);
+        process.exit(1);
+    }
+
+    /* 1. 写入 gradle.properties（Gradle 会以 -P 优先级读取同名的 project property） */
+    const propsFile = path.join(ROOT, 'android', 'gradle.properties');
+    if (!fs.existsSync(propsFile)) { console.error('[patch-android] 未找到 android/gradle.properties'); process.exit(1); }
+    let props = fs.readFileSync(propsFile, 'utf8');
+    if (!/^\s*buildToolsVersion\s*=/m.test(props)) {
+        props = props.trimEnd() + `\n\n# patch-android: build-tools 固定（离线/本机 SDK 兜底；删除此行即恢复 AGP 自动解析）\nbuildToolsVersion=${chosen}\n`;
+        fs.writeFileSync(propsFile, props);
+        console.log(`[patch-android] gradle.properties: buildToolsVersion=${chosen}`);
+    } else {
+        console.log('[patch-android] gradle.properties 已固定 buildToolsVersion，跳过');
+    }
+
+    /* 2. 根 build.gradle 的 subprojects 块，把该值施加到所有 Android 子模块 */
+    const rootFile = path.join(ROOT, 'android', 'build.gradle');
+    if (!fs.existsSync(rootFile)) { console.error('[patch-android] 未找到 android/build.gradle'); process.exit(1); }
+    let root = fs.readFileSync(rootFile, 'utf8');
+    if (root.includes(BUILD_TOOLS_MARK)) {
+        console.log('[patch-android] build-tools 固定已注入根 build.gradle，跳过');
+    } else {
+        const block = `${BUILD_TOOLS_MARK}
+// 把 gradle.properties 中的 buildToolsVersion 施加到所有 Android 子模块：
+// 不再改写 node_modules 内插件的 build.gradle（pnpm install 会覆盖，且结果依赖执行机器）。
+// 优先读取本机已安装的最高版本，找不到则交由 AGP 解析。
+def pinnedBuildTools = project.findProperty('buildToolsVersion')
+if (!pinnedBuildTools) {
+    def sdkDir = System.getenv('ANDROID_HOME') ?: System.getenv('ANDROID_SDK_ROOT')
+    def btRoot = sdkDir ? new File(sdkDir, 'build-tools') : null
+    if (btRoot?.isDirectory()) {
+        pinnedBuildTools = (btRoot.list() ?: [])
+            .findAll { it ==~ /\\d+\\.\\d+\\.\\d+/ }
+            .sort { a, b -> a.tokenize('.').collect { it as int } <=> b.tokenize('.').collect { it as int } }
+            .last()
+    }
+}
+if (pinnedBuildTools) {
+    subprojects { subproject ->
+        subproject.afterEvaluate {
+            if (subproject.plugins.hasPlugin('com.android.library') || subproject.plugins.hasPlugin('com.android.application')) {
+                subproject.android.buildToolsVersion = pinnedBuildTools
+            }
+        }
+    }
+}
+`;
+        root = root.replace(/(^|\n)task clean\(type: Delete\) \{/, `$1${block}\ntask clean(type: Delete) {`);
+        if (!root.includes(BUILD_TOOLS_MARK)) {
+            console.error('[patch-android] 未能在根 build.gradle 中定位 task clean 锚点');
+            process.exit(1);
+        }
+        fs.writeFileSync(rootFile, root);
+        console.log('[patch-android] 已注入根 build.gradle 的 build-tools 统一下发逻辑');
+    }
+
+    /* 3. 清理历史遗留：模块内写死的 buildToolsVersion 会让兜底失效 */
+    for (const gf of [
         path.join(ROOT, 'android', 'app', 'build.gradle'),
         path.join(ROOT, 'android', 'capacitor-cordova-android-plugins', 'build.gradle'),
-        path.join(ROOT, 'node_modules', '@capacitor', 'android', 'capacitor', 'build.gradle'),
-        path.join(ROOT, 'node_modules', '@capgo', 'capacitor-share-target', 'android', 'build.gradle'),
-        path.join(ROOT, 'node_modules', '@capacitor', 'share', 'android', 'build.gradle'),
-        path.join(ROOT, 'node_modules', '@capacitor', 'filesystem', 'android', 'build.gradle'),
-        path.join(ROOT, 'native-plugins', 'save-file', 'android', 'build.gradle'),
-    ];
-    let patched = 0;
-    for (const gf of gradleFiles) {
+    ]) {
         if (!fs.existsSync(gf)) continue;
-        let c = fs.readFileSync(gf, 'utf8');
-        if (/buildToolsVersion\s*=\s*"\d+\.\d+\.\d+"/.test(c)) continue;
-        if (!/android \{\s*\r?\n/.test(c)) continue;
-        c = c.replace(/android \{\s*\r?\n/, `android {\n    buildToolsVersion = "${chosen}"\n`);
-        fs.writeFileSync(gf, c);
-        patched++;
+        const c = fs.readFileSync(gf, 'utf8');
+        const cleaned = c.replace(/^\s*buildToolsVersion\s*=\s*"[^"]*"\r?\n/m, '');
+        if (cleaned !== c) {
+            fs.writeFileSync(gf, cleaned);
+            console.log(`[patch-android] 已移除模块内写死的 buildToolsVersion：${path.relative(ROOT, gf)}`);
+        }
     }
-    console.log(`[patch-android] 本机 SDK 缺 build-tools 35.x，已将 ${patched} 个模块的 buildToolsVersion 固定为 ${chosen}`);
 };
 
 (async () => {

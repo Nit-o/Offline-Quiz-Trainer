@@ -1,0 +1,20 @@
+# 统一换行：仓库内一律 LF，检出时由 core.autocrlf 决定工作区形式。
+# 避免同一文件在不同工具（编辑器 / 脚本 / CI）下产生纯换行符噪音 diff。
+* text=auto eol=lf
+
+# 二进制：不做换行转换
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.webp binary
+*.gif binary
+*.ico binary
+*.woff binary
+*.woff2 binary
+*.ttf binary
+*.otf binary
+*.keystore binary
+*.jks binary
+*.apk binary
+*.jar binary
+*.zip binary

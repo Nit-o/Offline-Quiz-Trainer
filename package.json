@@ -6,7 +6,12 @@
   "scripts": {
     "sync:web": "node scripts/sync-web.cjs",
     "cap": "cap",
-    "build:plugin": "tsc -p native-plugins/save-file/tsconfig.json"
+    "build:plugin": "tsc -p native-plugins/save-file/tsconfig.json",
+    "extract:js": "node scripts/extract-inline-js.cjs",
+    "typecheck": "node scripts/extract-inline-js.cjs && tsc -p tsconfig.json",
+    "test:web": "node scripts/smoke_test.cjs",
+    "test:fsrs": "node scripts/fsrs_logic_test.cjs",
+    "test": "node scripts/smoke_test.cjs && node scripts/fsrs_logic_test.cjs"
   },
   "dependencies": {
     "@capacitor/core": "^8.5.0",

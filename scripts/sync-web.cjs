@@ -33,7 +33,7 @@ cpDir(path.join(ROOT, 'vendor', 'katex'), path.join(DIST, 'vendor', 'katex'));
    katex.css / katex-swap.css 等）约 1.3MB 纯属包体浪费 → 按白名单剔除；
    必需文件缺失则构建失败，不静默降级。 */
 const katexDist = path.join(DIST, 'vendor', 'katex');
-const KATEX_KEEP = new Set(['katex.min.css', 'katex.min.js', 'LICENSE', 'README.md', 'fonts', 'contrib']);
+const KATEX_KEEP = new Set(['katex.min.css', 'katex.min.js', 'LICENSE', 'README.md', 'VERSION', 'fonts', 'contrib']);
 const KATEX_CONTRIB_KEEP = new Set(['auto-render.min.js']);
 const contribDir = path.join(katexDist, 'contrib');
 if (exists(contribDir)) {
@@ -51,6 +51,19 @@ for (const rel of ['katex.min.css', 'katex.min.js', path.join('contrib', 'auto-r
     if (!exists(path.join(katexDist, rel))) fail(`vendor/katex 缺少 ${rel}（KaTeX 资源不完整）`);
 }
 console.log(`[sync-web] KaTeX 白名单：保留 min 版 + 字体，剔除 ${katexRemoved} 个未引用文件`);
+
+/* 1.6 KaTeX 版本号单一来源：vendor/katex/VERSION → 注入 dist/index.html 的 __KATEX_VERSION__。
+   仓库里的 index.html 保持占位符（避免手工维护的版本注释与实际 vendor 漂移）。 */
+const KATEX_VERSION_FILE = path.join(ROOT, 'vendor', 'katex', 'VERSION');
+if (!exists(KATEX_VERSION_FILE)) fail('缺少 vendor/katex/VERSION（KaTeX 版本号单一来源）');
+const katexVersion = fs.readFileSync(KATEX_VERSION_FILE, 'utf8').trim();
+if (!/^\d+\.\d+\.\d+/.test(katexVersion)) fail(`vendor/katex/VERSION 内容非法：${katexVersion}`);
+const distHtmlPath = path.join(DIST, 'index.html');
+let distHtml = fs.readFileSync(distHtmlPath, 'utf8');
+if (!distHtml.includes('__KATEX_VERSION__')) fail('index.html 缺少 __KATEX_VERSION__ 占位符');
+distHtml = distHtml.split('__KATEX_VERSION__').join(katexVersion);
+fs.writeFileSync(distHtmlPath, distHtml);
+console.log(`[sync-web] KaTeX 版本注入：${katexVersion}`);
 
 /* 2. Capacitor ESM 运行库（importmap 键 → 文件）：
      "@capacitor/core"                → core/index.js（dist/index.js，单文件自包含 ESM）
