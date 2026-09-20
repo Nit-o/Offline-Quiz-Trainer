@@ -1,12 +1,25 @@
 name: 打包 Beta APK
 
-# 打包 workflow（Beta 测试包）：
-#   - push main 分支 → 自动打包，APK 以 artifact 形式供下载测试
-#   - Actions 页面手动 Run workflow → 手动打包
+# Beta 测试包：push main 自动构建，或 Actions 页手动触发。
+# 发布正式版见 release.yml（推 v* 标签）。
 on:
   push:
     branches: [ "main" ]
+    # 纯文档改动不触发构建，省 CI 额度
+    paths-ignore:
+      - 'doc/**'
+      - '**.md'
+      - 'LICENSE'
+      - '.gitignore'
   workflow_dispatch:
+
+# 同一分支连续推送时取消旧任务，避免排队堆积
+concurrency:
+  group: beta-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
 
 jobs:
   build:
@@ -15,7 +28,6 @@ jobs:
       - name: 拉取代码
         uses: actions/checkout@v7
 
-      # pnpm 版本与本地 lockfile 一致
       - name: 安装 pnpm
         uses: pnpm/action-setup@v5
         with:
@@ -33,80 +45,29 @@ jobs:
           distribution: 'temurin'
           java-version: '21'
 
-      - name: 安装依赖
-        run: pnpm install --frozen-lockfile
+      # 构建链路全部收敛在复合 action 内；APK 路径由 action 统一解析为 outputs.apk
+      - name: 构建 Android 包
+        id: build
+        uses: ./.github/actions/android-release
+        with:
+          version-code: ${{ github.run_number }}
+          keystore-b64: ${{ secrets.ANDROID_KEYSTORE_B64 }}
+          keystore-password: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          key-alias: ${{ secrets.ANDROID_KEY_ALIAS }}
+          key-password: ${{ secrets.ANDROID_KEY_PASSWORD }}
 
-      # 构建本地插件 com.quiztrainer.savefile 的 ESM 产物（sync:web 依赖 dist/esm）
-      - name: 构建本地插件
-        run: pnpm run build:plugin
-
-      # 生成 Capacitor webDir（dist/）：index.html + vendor/katex + 插件 ESM
-      - name: 同步网页到 dist
-        run: pnpm run sync:web
-
-      - name: 添加 Android 平台
-        run: pnpm run cap add android
-
-      # 应用平台补丁：minSdkVersion→33 + 分享目标 intent-filter + 默认切国内镜像
-      - name: 应用平台补丁
-        run: node scripts/patch-android.cjs
-
-      # cap sync 会重新生成插件 build.gradle，故其后再次 patch（幂等）
-      - name: 同步原生工程
-        run: pnpm run cap sync android && node scripts/patch-android.cjs
-
-      # Beta 与正式版使用同一把 release 密钥签名：否则用户无法从 Beta 直接覆盖升级到正式版
-      # （Android 要求同包名 APK 签名一致）。Secrets 缺失时保持未签名（仅用于本地/临时测试）。
-      - name: 还原签名密钥
-        env:
-          KS_B64: ${{ secrets.ANDROID_KEYSTORE_B64 }}
-        run: |
-          if [ -z "$KS_B64" ]; then
-            echo "::warning::缺少 secrets.ANDROID_KEYSTORE_B64，Beta 包将未签名（无法覆盖安装正式版）"
-            exit 0
-          fi
-          echo "$KS_B64" | base64 -d > "$RUNNER_TEMP/release.keystore"
-          {
-            echo "ANDROID_KEYSTORE_PATH=$RUNNER_TEMP/release.keystore"
-            echo "ANDROID_KEYSTORE_PASSWORD=${{ secrets.ANDROID_KEYSTORE_PASSWORD }}"
-            echo "ANDROID_KEY_ALIAS=${{ secrets.ANDROID_KEY_ALIAS }}"
-            echo "ANDROID_KEY_PASSWORD=${{ secrets.ANDROID_KEY_PASSWORD }}"
-          } >> "$GITHUB_ENV"
-
-      # release 变体：与正式版同一构建路径，避免「Beta 是 debug 包」的差异
-      - name: 打包 APK（release）
-        working-directory: android
-        run: ./gradlew assembleRelease
-
-      - name: 产物门禁
-        run: |
-          DIR=android/app/build/outputs/apk/release
-          SIGNED="$DIR/app-release.apk"
-          UNSIGNED="$DIR/app-release-unsigned.apk"
-          if [ -f "$SIGNED" ]; then
-            APK="$SIGNED"
-            APKSIGNER="$ANDROID_HOME/build-tools/$(ls "$ANDROID_HOME/build-tools" | sort -V | tail -1)/apksigner"
-            "$APKSIGNER" verify --print-certs "$APK" > "$RUNNER_TEMP/signing.txt"
-            cat "$RUNNER_TEMP/signing.txt"
-            node scripts/verify-apk.cjs "$APK" "$RUNNER_TEMP/signing.txt"
-          elif [ -f "$UNSIGNED" ]; then
-            echo "::warning::Beta 包未签名（缺 ANDROID_KEYSTORE_B64）—— 仅可临时测试，无法覆盖安装正式版"
-            node scripts/verify-apk.cjs "$UNSIGNED"
-          else
-            echo "::error::未找到任何 release APK（构建产物路径可能变化）"
-            ls -la "$DIR" || true
-            exit 1
-          fi
-
-      # 重命名区分 Beta 包
+      # 只做改名，不再拼接 APK 路径
       - name: 重命名 Beta 包
         run: |
-          VERSION=$(node -p "require('./package.json').version")
           mkdir -p dist-apk
-          cp android/app/build/outputs/apk/release/app-release.apk "dist-apk/QuizTrainer-${VERSION}-beta.apk"
+          SUFFIX=""
+          [ "${{ steps.build.outputs.signed }}" = "true" ] || SUFFIX="-unsigned"
+          cp "${{ steps.build.outputs.apk }}" \
+             "dist-apk/QuizTrainer-${{ steps.build.outputs.version }}-beta${SUFFIX}.apk"
 
       - name: 上传 Beta APK
         uses: actions/upload-artifact@v7
         with:
-          name: QuizTrainer-Beta-${{ github.ref_name }}
-          path: dist-apk/QuizTrainer-*-beta.apk
+          name: QuizTrainer-Beta-${{ github.run_number }}
+          path: dist-apk/QuizTrainer-*-beta*.apk
+          if-no-files-found: error

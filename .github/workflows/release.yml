@@ -1,13 +1,13 @@
 name: 发布 Release APK
 
-# 发布 workflow（正式版）：
-#   - 推送 v 开头标签（如 v1.0.0）→ 自动打包并发布 GitHub Release（APK 挂载到 Release）
+# 正式版：推送 v 开头标签（如 v1.0.0）→ 构建并发布 GitHub Release。
+# 与 Beta 共用 .github/actions/android-release，避免两条流水线行为漂移。
 on:
   push:
     tags: [ "v*" ]
 
 permissions:
-  contents: write # 允许创建 GitHub Release
+  contents: write # 创建 GitHub Release
 
 jobs:
   build:
@@ -33,78 +33,43 @@ jobs:
           distribution: 'temurin'
           java-version: '21'
 
-      - name: 安装依赖
-        run: pnpm install --frozen-lockfile
-
-      - name: 构建本地插件
-        run: pnpm run build:plugin
-
-      - name: 同步网页到 dist
-        run: pnpm run sync:web
-
-      - name: 添加 Android 平台
-        run: pnpm run cap add android
-
-      # 版本号同步：从 tag（如 v1.0.1）提取版本写入 package.json 与
-      # android/app/build.gradle 的 versionName（须在 cap add android 之后执行）
-      - name: 同步版本号
-        run: node scripts/sync-version.cjs "${GITHUB_REF#refs/tags/v}"
-
-      - name: 应用平台补丁
-        run: node scripts/patch-android.cjs
-
-      - name: 同步原生工程
-        run: pnpm run cap sync android && node scripts/patch-android.cjs
-
-      # 签名凭据（GitHub Secrets）：
-      #   ANDROID_KEYSTORE_B64 — release.keystore 的 base64（`base64 -w0 release.keystore`）
-      #   ANDROID_KEYSTORE_PASSWORD / ANDROID_KEY_ALIAS / ANDROID_KEY_PASSWORD
+      # 正式版必须有签名密钥：缺了就立刻失败，避免产出无法覆盖安装的包
       - name: 校验签名凭据
         env:
           KS_B64: ${{ secrets.ANDROID_KEYSTORE_B64 }}
         run: |
           if [ -z "$KS_B64" ]; then
-            echo "::error::缺少 secrets.ANDROID_KEYSTORE_B64 —— 正式包必须用 release 签名，拒绝产出未签名包"
+            echo "::error::缺少 secrets.ANDROID_KEYSTORE_B64 —— 正式包必须 release 签名，拒绝产出未签名包"
             exit 1
           fi
 
-      - name: 还原签名密钥
-        env:
-          KS_B64: ${{ secrets.ANDROID_KEYSTORE_B64 }}
+      # 提前归一化并校验标签（v1.2.3 → 1.2.3）：避免跑完 cap add android 才在 sync-version 处失败，
+      # 同时保证 package.json / versionName / 产物文件名三处用同一个值
+      - name: 解析版本标签
         run: |
-          echo "$KS_B64" | base64 -d > "$RUNNER_TEMP/release.keystore"
-          {
-            echo "ANDROID_KEYSTORE_PATH=$RUNNER_TEMP/release.keystore"
-            echo "ANDROID_KEYSTORE_PASSWORD=${{ secrets.ANDROID_KEYSTORE_PASSWORD }}"
-            echo "ANDROID_KEY_ALIAS=${{ secrets.ANDROID_KEY_ALIAS }}"
-            echo "ANDROID_KEY_PASSWORD=${{ secrets.ANDROID_KEY_PASSWORD }}"
-          } >> "$GITHUB_ENV"
+          V="${GITHUB_REF_NAME#v}"
+          case "$V" in
+            [0-9]*.[0-9]*.[0-9]*) ;;
+            *) echo "::error::标签格式应为 v<major>.<minor>.<patch>，当前：$GITHUB_REF_NAME"; exit 1 ;;
+          esac
+          echo "VERSION=$V" >> "$GITHUB_ENV"
+          echo "版本：$V"
 
-      # release 变体：R8 混淆 + shrinkResources + release 签名（见 android/app/build.gradle）
-      - name: 打包 APK（release）
-        working-directory: android
-        run: ./gradlew assembleRelease
+      - name: 构建 Android 包
+        id: build
+        uses: ./.github/actions/android-release
+        with:
+          version: ${{ env.VERSION }}
+          version-code: ${{ github.run_number }}
+          keystore-b64: ${{ secrets.ANDROID_KEYSTORE_B64 }}
+          keystore-password: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          key-alias: ${{ secrets.ANDROID_KEY_ALIAS }}
+          key-password: ${{ secrets.ANDROID_KEY_PASSWORD }}
 
-      # 产物门禁：必须是 release 构建（无 debuggable）、无敏感权限、非 debug 签名
-      - name: 产物门禁
-        run: |
-          APK=android/app/build/outputs/apk/release/app-release.apk
-          APKSIGNER="$ANDROID_HOME/build-tools/$(ls "$ANDROID_HOME/build-tools" | sort -V | tail -1)/apksigner"
-          "$APKSIGNER" verify --print-certs "$APK" > "$RUNNER_TEMP/signing.txt"
-          cat "$RUNNER_TEMP/signing.txt"
-          node scripts/verify-apk.cjs "$APK" "$RUNNER_TEMP/signing.txt"
-
-      # 重命名发布包：QuizTrainer-<版本号>.apk
       - name: 重命名发布包
         run: |
-          VERSION="${GITHUB_REF#refs/tags/v}"
           mkdir -p dist-apk
-          cp android/app/build/outputs/apk/release/app-release.apk "dist-apk/QuizTrainer-${VERSION}.apk"
-
-      - name: 检查最终权限
-        run: |
-          echo "=== 最终 AndroidManifest 权限列表 ==="
-          grep -rhoE 'android:name="android.permission\.[A-Z_]+"' android/app/build/intermediates/merged_manifests/release/ 2>/dev/null | sed 's/.*android:name="\([^"]*\)".*/\1/' | sort -u || echo "（无权限声明）"
+          cp "${{ steps.build.outputs.apk }}" "dist-apk/QuizTrainer-${VERSION}.apk"
 
       - name: 发布 GitHub Release
         uses: softprops/action-gh-release@v3

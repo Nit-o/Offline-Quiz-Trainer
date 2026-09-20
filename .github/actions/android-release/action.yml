@@ -1,0 +1,152 @@
+name: Android release 构建
+description: >-
+  Beta 与正式版共用的构建链路：依赖安装 → 本地插件 → dist → cap add android → 版本同步
+  → 平台补丁 → R8/签名构建 → 产物门禁，并统一解析出 APK 路径（单一事实来源）。
+  调用方只需消费 outputs.apk，不要自行拼接 android/app/build/outputs/... 路径。
+
+inputs:
+  version:
+    description: 语义版本（如 1.2.3）。留空则沿用仓库 package.json 的 version（Beta 用）。
+    required: false
+    default: ""
+  version-code:
+    description: Android versionCode（必须单调递增）。留空则 sync-version 回落到时间戳。
+    required: false
+    default: ""
+  keystore-b64:
+    description: release.keystore 的 base64；为空则产出「未签名」APK（仅可临时测试）。
+    required: false
+    default: ""
+  keystore-password:
+    required: false
+    default: ""
+  key-alias:
+    required: false
+    default: ""
+  key-password:
+    required: false
+    default: ""
+  gradle-task:
+    description: 留空用 assembleRelease。切勿用 assembleDebug：debug 包带 debuggable，会被产物门禁拦下。
+    required: false
+    default: ""
+
+outputs:
+  apk:
+    description: 构建产物的相对路径（已校验存在）
+    value: ${{ steps.resolve.outputs.apk }}
+  signed:
+    description: 是否为已签名 release 包（'true' / 'false'）
+    value: ${{ steps.resolve.outputs.signed }}
+  version:
+    description: 本次构建使用的语义版本
+    value: ${{ steps.ver.outputs.version }}
+
+runs:
+  using: composite
+  steps:
+    # android/ 在 .gitignore 中，CI 每次都是从零生成，故所有原生改动必须能在补丁里复现
+    - name: 安装依赖
+      shell: bash
+      run: pnpm install --frozen-lockfile
+
+    - name: 构建本地插件
+      shell: bash
+      run: pnpm run build:plugin
+
+    - name: 同步网页到 dist
+      shell: bash
+      run: pnpm run sync:web
+
+    - name: 添加 Android 平台
+      shell: bash
+      run: pnpm run cap add android
+
+    - name: 解析版本号
+      id: ver
+      shell: bash
+      env:
+        INPUT_VERSION: ${{ inputs.version }}
+      run: |
+        if [ -n "$INPUT_VERSION" ]; then V="$INPUT_VERSION"; else V=$(node -p "require('./package.json').version"); fi
+        echo "version=$V" >> "$GITHUB_OUTPUT"
+        echo "构建版本：$V"
+
+    # 必须在 cap add android 之后（需要 android/app/build.gradle 存在）
+    - name: 同步版本号到 build.gradle
+      if: inputs.version != ''
+      shell: bash
+      env:
+        INPUT_VERSION: ${{ inputs.version }}
+        CAP_VERSION_CODE: ${{ inputs.version-code }}
+      run: node scripts/sync-version.cjs "$INPUT_VERSION"
+
+    - name: 应用平台补丁
+      shell: bash
+      run: node scripts/patch-android.cjs
+
+    # cap sync 会重新生成插件工程的 build.gradle，故补丁幂等重跑
+    - name: 同步原生工程 + 重跑补丁
+      shell: bash
+      run: pnpm run cap sync android && node scripts/patch-android.cjs
+
+    - name: 还原签名密钥
+      shell: bash
+      env:
+        KS_B64: ${{ inputs.keystore-b64 }}
+      run: |
+        if [ -z "$KS_B64" ]; then
+          echo "::warning::未配置签名密钥 → 本次产出未签名包，仅可临时测试（无法覆盖安装其他版本）"
+          exit 0
+        fi
+        echo "$KS_B64" | base64 -d > "$RUNNER_TEMP/release.keystore"
+        {
+          echo "ANDROID_KEYSTORE_PATH=$RUNNER_TEMP/release.keystore"
+          echo "ANDROID_KEYSTORE_PASSWORD=${{ inputs.keystore-password }}"
+          echo "ANDROID_KEY_ALIAS=${{ inputs.key-alias }}"
+          echo "ANDROID_KEY_PASSWORD=${{ inputs.key-password }}"
+        } >> "$GITHUB_ENV"
+
+    - name: 打包 APK
+      shell: bash
+      working-directory: android
+      env:
+        INPUT_TASK: ${{ inputs.gradle-task }}
+      run: |
+        # 未配置签名密钥时 assembleRelease 产出 app-release-unsigned.apk（可安装、可测），
+        # 而 assembleDebug 会带 debuggable 被门禁拦下，故默认始终走 release。
+        TASK="${INPUT_TASK:-assembleRelease}"
+        echo "gradle $TASK"
+        ./gradlew "$TASK"
+
+    # 产物路径的唯一解析点：下游（重命名/上传/发布）只读 $APK / outputs.apk
+    - name: 解析 APK 路径
+      id: resolve
+      shell: bash
+      run: |
+        REL=android/app/build/outputs/apk/release/app-release.apk
+        REL_UNSIGNED=android/app/build/outputs/apk/release/app-release-unsigned.apk
+        if [ -f "$REL" ]; then APK="$REL"; SIGNED=true
+        elif [ -f "$REL_UNSIGNED" ]; then APK="$REL_UNSIGNED"; SIGNED=false
+        else
+          echo "::error::未找到 release APK 产物（assembleRelease 是否成功？）"
+          ls -la android/app/build/outputs/apk/*/ 2>/dev/null || true
+          exit 1
+        fi
+        echo "apk=$APK" >> "$GITHUB_OUTPUT"
+        echo "signed=$SIGNED" >> "$GITHUB_OUTPUT"
+        echo "APK=$APK" >> "$GITHUB_ENV"
+        echo "解析到产物：$APK（signed=$SIGNED）"
+
+    # 门禁：无 debuggable + 无敏感权限；已签名时额外校验证书不是 debug 证书
+    - name: 产物门禁
+      shell: bash
+      run: |
+        APKSIGNER_DIR="$(ls -d "$ANDROID_HOME"/build-tools/* 2>/dev/null | sort -V | tail -1)"
+        if [ "${{ steps.resolve.outputs.signed }}" = "true" ] && [ -n "$APKSIGNER_DIR" ]; then
+          "$APKSIGNER_DIR/apksigner" verify --print-certs "$APK" > "$RUNNER_TEMP/signing.txt"
+          cat "$RUNNER_TEMP/signing.txt"
+          node scripts/verify-apk.cjs "$APK" "$RUNNER_TEMP/signing.txt"
+        else
+          node scripts/verify-apk.cjs "$APK"
+        fi

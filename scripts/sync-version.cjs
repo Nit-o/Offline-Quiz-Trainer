@@ -9,9 +9,11 @@
 const fs = require('fs');
 const path = require('path');
 
-const version = process.argv[2];
+/* 容忍带 v 前缀的标签名（如 v1.2.3）：调用方可能直接透传 GITHUB_REF_NAME。
+   统一归一化，避免 package.json.version 写成 "v1.2.3"（非法 semver）。 */
+const version = String(process.argv[2] || '').replace(/^v/i, '');
 if (!version || !/^\d+\.\d+\.\d+/.test(version)) {
-    console.error('[sync-version] 用法：node scripts/sync-version.cjs <version>（如 1.2.3）');
+    console.error('[sync-version] 用法：node scripts/sync-version.cjs <version>（如 1.2.3 或 v1.2.3）');
     process.exit(1);
 }
 
