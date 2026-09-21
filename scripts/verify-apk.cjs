@@ -1,14 +1,19 @@
 /* 发布产物门禁：确认 APK 是 release 构建、未被 debug 签名、且未引入敏感权限。
-   用法：node scripts/verify-apk.cjs <apk 路径> [signing-report 路径]
+   用法：node scripts/verify-apk.cjs <apk 路径> [signing-report 路径] [--allow-debuggable]
    - signing-report：apksigner verify --print-certs 的输出（CI 生成；缺失则跳过 debug 签名判定）
+   - --allow-debuggable：允许 debug 构建（Beta 包沿用旧签名，见 package.yml）。
+     仅放宽 debuggable 一项；敏感权限红线与清单可读性仍强制校验。
    - 不依赖 aapt2/外部进程：直接从 APK（ZIP）读出 AndroidManifest.xml 后按 UTF-16LE 匹配，
      跨平台、可在受限环境运行。
    退出码非 0 表示门禁不通过，CI 应中断发布。 */
 'use strict';
 const fs = require('fs');
 
-const apk = process.argv[2];
-const report = process.argv[3];
+const args = process.argv.slice(2).filter(a => !a.startsWith('--'));
+const flags = process.argv.slice(2).filter(a => a.startsWith('--'));
+const allowDebuggable = flags.includes('--allow-debuggable');
+const apk = args[0];
+const report = args[1];
 if (!apk || !fs.existsSync(apk)) {
     console.error(`[verify-apk] 未找到 APK：${apk || '(未提供路径)'}`);
     process.exit(1);
@@ -65,7 +70,11 @@ if (!manifest) {
 }
 /* 二进制清单中的字符串为 UTF-16LE（含长度前缀，子串匹配足够） */
 const u16 = manifest.toString('utf16le');
-check(!/debuggable/.test(u16), 'APK 清单不含 android:debuggable');
+if (allowDebuggable) {
+    console.log(`  · 已允许 debug 构建（--allow-debuggable）：跳过 debuggable 检查`);
+} else {
+    check(!/debuggable/.test(u16), 'APK 清单不含 android:debuggable');
+}
 
 const found = [...new Set([...u16.matchAll(/android\.permission\.[A-Z_]+/g)].map(m => m[0]))].sort();
 

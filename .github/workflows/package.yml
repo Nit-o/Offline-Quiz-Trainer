@@ -1,7 +1,12 @@
 name: 打包 Beta APK
 
-# Beta 测试包：push main 自动构建，或 Actions 页手动触发。
-# 发布正式版见 release.yml（推 v* 标签）。
+# Beta 测试包：push main 自动构建，或 Actions 页手动触发。发布正式版见 release.yml。
+#
+# 签名策略（重要）：Beta 不传签名密钥 → 构建 assembleDebug，复用 Gradle 的
+# ~/.android/debug.keystore（AOSP debug key，SHA-256 21343357…dddf）。
+# 这与历史 Beta 包（旧 CI 同样用 assembleDebug）签名一致，因此老用户可直接覆盖安装。
+# 该 key 是公开的，任何人都能签出可覆盖安装的同包名包 —— 仅用于内测分发，不要对外当正式版。
+# 需要真签名时，给下面 with 补上 keystore-b64 等参数即可切到 assembleRelease。
 on:
   push:
     branches: [ "main" ]
@@ -49,25 +54,17 @@ jobs:
       - name: 构建 Android 包
         id: build
         uses: ./.github/actions/android-release
-        with:
-          version-code: ${{ github.run_number }}
-          keystore-b64: ${{ secrets.ANDROID_KEYSTORE_B64 }}
-          keystore-password: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
-          key-alias: ${{ secrets.ANDROID_KEY_ALIAS }}
-          key-password: ${{ secrets.ANDROID_KEY_PASSWORD }}
 
       # 只做改名，不再拼接 APK 路径
       - name: 重命名 Beta 包
         run: |
           mkdir -p dist-apk
-          SUFFIX=""
-          [ "${{ steps.build.outputs.signed }}" = "true" ] || SUFFIX="-unsigned"
           cp "${{ steps.build.outputs.apk }}" \
-             "dist-apk/QuizTrainer-${{ steps.build.outputs.version }}-beta${SUFFIX}.apk"
+             "dist-apk/QuizTrainer-${{ steps.build.outputs.version }}-beta.apk"
 
       - name: 上传 Beta APK
         uses: actions/upload-artifact@v7
         with:
           name: QuizTrainer-Beta-${{ github.run_number }}
-          path: dist-apk/QuizTrainer-*-beta*.apk
+          path: dist-apk/QuizTrainer-*-beta.apk
           if-no-files-found: error

@@ -1,7 +1,7 @@
 name: Android release 构建
 description: >-
   Beta 与正式版共用的构建链路：依赖安装 → 本地插件 → dist → cap add android → 版本同步
-  → 平台补丁 → R8/签名构建 → 产物门禁，并统一解析出 APK 路径（单一事实来源）。
+  → 平台补丁 → 构建 → 产物门禁，并统一解析出 APK 路径（单一事实来源）。
   调用方只需消费 outputs.apk，不要自行拼接 android/app/build/outputs/... 路径。
 
 inputs:
@@ -9,12 +9,11 @@ inputs:
     description: 语义版本（如 1.2.3）。留空则沿用仓库 package.json 的 version（Beta 用）。
     required: false
     default: ""
-  version-code:
-    description: Android versionCode（必须单调递增）。留空则 sync-version 回落到时间戳。
-    required: false
-    default: ""
   keystore-b64:
-    description: release.keystore 的 base64；为空则产出「未签名」APK（仅可临时测试）。
+    description: >-
+      release.keystore 的 base64。提供时走 assembleRelease + R8 + 该密钥签名（正式版）；
+      留空时走 assembleDebug —— 复用 Gradle 的 ~/.android/debug.keystore（AOSP debug key），
+      与历史 Beta 包签名一致，老用户可直接覆盖升级。
     required: false
     default: ""
   keystore-password:
@@ -26,17 +25,13 @@ inputs:
   key-password:
     required: false
     default: ""
-  gradle-task:
-    description: 留空用 assembleRelease。切勿用 assembleDebug：debug 包带 debuggable，会被产物门禁拦下。
-    required: false
-    default: ""
 
 outputs:
   apk:
     description: 构建产物的相对路径（已校验存在）
     value: ${{ steps.resolve.outputs.apk }}
   signed:
-    description: 是否为已签名 release 包（'true' / 'false'）
+    description: 是否为带正式密钥的 release 包（'true' / 'false'）
     value: ${{ steps.resolve.outputs.signed }}
   version:
     description: 本次构建使用的语义版本
@@ -78,7 +73,7 @@ runs:
       shell: bash
       env:
         INPUT_VERSION: ${{ inputs.version }}
-        CAP_VERSION_CODE: ${{ inputs.version-code }}
+        CAP_VERSION_CODE: ${{ github.run_number }}
       run: node scripts/sync-version.cjs "$INPUT_VERSION"
 
     - name: 应用平台补丁
@@ -96,7 +91,7 @@ runs:
         KS_B64: ${{ inputs.keystore-b64 }}
       run: |
         if [ -z "$KS_B64" ]; then
-          echo "::warning::未配置签名密钥 → 本次产出未签名包，仅可临时测试（无法覆盖安装其他版本）"
+          echo "未提供签名密钥 → 走 assembleDebug，复用 Gradle debug keystore（与历史 Beta 包签名一致）"
           exit 0
         fi
         echo "$KS_B64" | base64 -d > "$RUNNER_TEMP/release.keystore"
@@ -110,12 +105,9 @@ runs:
     - name: 打包 APK
       shell: bash
       working-directory: android
-      env:
-        INPUT_TASK: ${{ inputs.gradle-task }}
       run: |
-        # 未配置签名密钥时 assembleRelease 产出 app-release-unsigned.apk（可安装、可测），
-        # 而 assembleDebug 会带 debuggable 被门禁拦下，故默认始终走 release。
-        TASK="${INPUT_TASK:-assembleRelease}"
+        # 有正式密钥 → release（R8 + 正式签名）；无密钥 → debug（沿用 AOSP debug key）
+        if [ -n "$ANDROID_KEYSTORE_PATH" ]; then TASK=assembleRelease; else TASK=assembleDebug; fi
         echo "gradle $TASK"
         ./gradlew "$TASK"
 
@@ -124,29 +116,38 @@ runs:
       id: resolve
       shell: bash
       run: |
-        REL=android/app/build/outputs/apk/release/app-release.apk
-        REL_UNSIGNED=android/app/build/outputs/apk/release/app-release-unsigned.apk
-        if [ -f "$REL" ]; then APK="$REL"; SIGNED=true
-        elif [ -f "$REL_UNSIGNED" ]; then APK="$REL_UNSIGNED"; SIGNED=false
+        REL_R=android/app/build/outputs/apk/release/app-release.apk
+        REL_U=android/app/build/outputs/apk/release/app-release-unsigned.apk
+        REL_D=android/app/build/outputs/apk/debug/app-debug.apk
+        if [ -f "$REL_R" ]; then APK="$REL_R"; SIGNED=true
+        elif [ -f "$REL_U" ]; then APK="$REL_U"; SIGNED=false
+        elif [ -f "$REL_D" ]; then APK="$REL_D"; SIGNED=false
         else
-          echo "::error::未找到 release APK 产物（assembleRelease 是否成功？）"
+          echo "::error::未找到 APK 产物"
           ls -la android/app/build/outputs/apk/*/ 2>/dev/null || true
           exit 1
         fi
         echo "apk=$APK" >> "$GITHUB_OUTPUT"
         echo "signed=$SIGNED" >> "$GITHUB_OUTPUT"
         echo "APK=$APK" >> "$GITHUB_ENV"
-        echo "解析到产物：$APK（signed=$SIGNED）"
+        echo "解析到产物：$APK（正式签名=$SIGNED）"
 
-    # 门禁：无 debuggable + 无敏感权限；已签名时额外校验证书不是 debug 证书
+    # 门禁：敏感权限红线始终强制；debuggable / debug 证书仅在正式密钥签名时强制
     - name: 产物门禁
       shell: bash
       run: |
-        APKSIGNER_DIR="$(ls -d "$ANDROID_HOME"/build-tools/* 2>/dev/null | sort -V | tail -1)"
-        if [ "${{ steps.resolve.outputs.signed }}" = "true" ] && [ -n "$APKSIGNER_DIR" ]; then
+        if [ "${{ steps.resolve.outputs.signed }}" = "true" ]; then
+          APKSIGNER_DIR="$(ls -d "$ANDROID_HOME"/build-tools/* 2>/dev/null | sort -V | tail -1)"
           "$APKSIGNER_DIR/apksigner" verify --print-certs "$APK" > "$RUNNER_TEMP/signing.txt"
           cat "$RUNNER_TEMP/signing.txt"
           node scripts/verify-apk.cjs "$APK" "$RUNNER_TEMP/signing.txt"
         else
-          node scripts/verify-apk.cjs "$APK"
+          # Beta：允许 debuggable 与 debug 证书（沿用旧签名），但仍校验无敏感权限。
+          # 打印实际签名证书，便于核对是否仍与历史 Beta 包同源（期望 CN=Android Debug）。
+          APKSIGNER_DIR="$(ls -d "$ANDROID_HOME"/build-tools/* 2>/dev/null | sort -V | tail -1)"
+          if [ -n "$APKSIGNER_DIR" ]; then
+            echo "=== Beta 包签名证书（期望 CN=Android Debug，SHA-256 以 21343357 开头）==="
+            "$APKSIGNER_DIR/apksigner" verify --print-certs "$APK" 2>&1 | sed -n '1,10p' || true
+          fi
+          node scripts/verify-apk.cjs "$APK" --allow-debuggable
         fi

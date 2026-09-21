@@ -60,7 +60,6 @@ jobs:
         uses: ./.github/actions/android-release
         with:
           version: ${{ env.VERSION }}
-          version-code: ${{ github.run_number }}
           keystore-b64: ${{ secrets.ANDROID_KEYSTORE_B64 }}
           keystore-password: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           key-alias: ${{ secrets.ANDROID_KEY_ALIAS }}
