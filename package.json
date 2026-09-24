@@ -11,19 +11,20 @@
     "typecheck": "node scripts/extract-inline-js.cjs && tsc -p tsconfig.json",
     "test:web": "node scripts/smoke_test.cjs",
     "test:fsrs": "node scripts/fsrs_logic_test.cjs",
+    "test:fsrs:compare": "node scripts/fsrs_compare.cjs",
     "test": "node scripts/smoke_test.cjs && node scripts/fsrs_logic_test.cjs"
   },
   "dependencies": {
-    "@capacitor/core": "^8.5.0",
-    "@capacitor/filesystem": "^8.1.2",
-    "@capacitor/share": "^8.0.1",
+    "@capacitor/core": "^8.5.2",
+    "@capacitor/filesystem": "^8.1.3",
+    "@capacitor/share": "^8.0.2",
     "@capacitor/synapse": "^1.0.4",
-    "@capgo/capacitor-share-target": "^8.0.46",
+    "@capgo/capacitor-share-target": "^8.0.54",
     "com.quiztrainer.savefile": "file:native-plugins/save-file"
   },
   "devDependencies": {
-    "@capacitor/android": "^8.5.0",
-    "@capacitor/cli": "^8.5.0",
+    "@capacitor/android": "^8.5.2",
+    "@capacitor/cli": "^8.5.2",
     "typescript": "^7.0.2"
   }
 }

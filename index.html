@@ -420,6 +420,14 @@
         }
         .menu-row-hint { font-size: var(--text-xs); color: var(--text-muted); flex-basis: 100%; }
         .menu-row-hint[hidden] { display: none; }
+        /* 失效卡片判定规则：可展开说明（summary 即提示行，键盘可聚焦） */
+        .fsrs-hint-details {
+            & > summary { cursor: pointer; color: var(--primary); list-style: none; }
+            & > summary::-webkit-details-marker { display: none; }
+            & > summary::after { content: " ▸"; color: var(--text-muted); }
+            &[open] > summary::after { content: " ▾"; }
+            & > p { margin: var(--sp-2) 0 0; line-height: 1.6; }
+        }
         /* FSRS 复习数据摘要 + 管理操作（备份/导入为 JSON，纯本地） */
         .fsrs-stats {
             display: flex;
@@ -597,6 +605,29 @@
         .file-drop-text { display: flex; flex-direction: column; gap: var(--sp-1); min-width: 0; }
         .file-drop-title { font-weight: 600; font-size: var(--text-sm); color: var(--text); }
         .file-drop-hint  { font-size: var(--text-xs); color: var(--text-muted); }
+        /* 剪贴板导入：与拖放区并列的第二入口（按钮 + 说明换行，窄屏不挤压） */
+        .file-toolbar {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: var(--sp-2) var(--sp-3);
+            margin-block-start: var(--sp-3);
+        }
+        .file-toolbar .menu-row-hint { flex: 1 1 14rem; }
+        /* 手动粘贴导入：等宽多行输入（Markdown 题库 / JSON 备份均按原样传入导入管线） */
+        #clipboardImportText {
+            width: 100%;
+            box-sizing: border-box;
+            min-height: 32vh;
+            resize: vertical;
+            padding: var(--sp-3);
+            border: var(--bw-1) solid var(--divider); border-radius: var(--radius);
+            background: var(--surface); color: var(--text);
+            font-family: var(--font-mono, ui-monospace, monospace);
+            font-size: var(--text-sm);
+            line-height: 1.5;
+            &:focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; }
+        }
         /* 缓存题库：导入成功后自动缓存，可一键加载免去再次在文件选择器中查找 */
         .bank-cache {
             margin-top: var(--sp-5);
@@ -887,6 +918,9 @@
             gap: var(--sp-2);
             margin-block-start: var(--sp-4);
         }
+        /* 重评条：与「下次复习」结果行同组，弱化视觉权重（不抢主流程） */
+        .rating-bar--relevel { margin-block-start: var(--sp-3); gap: var(--sp-1); }
+        .rating-bar--relevel .rating-btn { padding-inline: var(--sp-3); font-size: var(--text-xs); }
         .rating-hint {
             margin-block-start: var(--sp-3);
             font-size: var(--text-xs);
@@ -897,6 +931,11 @@
             font-weight: 600;
             color: var(--text);
         }
+
+        /* 暂停态可见化：答题后 / 切后台时计时冻结（弱化 + 时钟数字转弱）。
+           .timer-paused 由 TimerDisplay 挂在 [data-timer-box] 上（curTime/totalTime 的容器） */
+        [data-timer-box] { transition: opacity .15s var(--ease), color .15s var(--ease); }
+        .timer-paused, .timer-paused [id="curTime"], .timer-paused [id="totalTime"] { opacity: 0.55; color: var(--text-muted); }
 
         /* ============================================================
            CONTROLS — toolbar with two semantic regions
@@ -1359,6 +1398,10 @@
                                 <span class="file-drop-hint" id="fileHint">选择后自动加载 · 支持多选 .md 文件 · 也可从其他应用「分享」.md 到本应用直接导入</span>
                             </span>
                         </label>
+                        <div class="file-toolbar">
+                            <button type="button" id="clipboardImportBtn" class="btn btn-outline btn-sm" aria-describedby="clipboardImportHint">从剪贴板导入</button>
+                            <span class="menu-row-hint" id="clipboardImportHint">一键读取剪贴板内容并自动识别类型（Markdown 题库 / FSRS 备份 JSON）；无读取权限时可手动粘贴</span>
+                        </div>
                         <div id="fileList" aria-label="已选文件列表"></div>
                         <div id="fileStatus" class="file-status" role="status" aria-live="polite" aria-busy="false"></div>
                         <div class="bank-cache" aria-label="缓存的题库">
@@ -1393,6 +1436,11 @@
                         <div class="menu-row">
                             <label for="showHistoryToggle">显示历史</label>
                             <input type="checkbox" id="showHistoryToggle" checked>
+                        </div>
+                        <div class="menu-row">
+                            <label for="shuffleOptionsToggle">随机选项排列</label>
+                            <input type="checkbox" id="shuffleOptionsToggle" aria-describedby="shuffleOptionsHint">
+                            <span class="menu-row-hint" id="shuffleOptionsHint">按题干稳定打乱选项显示顺序（每次练习只生成一次）；答案仍按原始字母判定，快捷键 1–5 仍对应 A–E</span>
                         </div>
                         <div class="menu-row">
                             <label for="hideMasteredToggle">隐藏已掌握</label>
@@ -1452,6 +1500,10 @@
                         </div>
                         <input type="file" id="fsrsImportInput" accept=".json,application/json" hidden>
                         <span class="menu-row-hint" id="fsrsHint">备份/导入为 JSON 文件，仅存于本地；导入将覆盖现有数据。导出可选择「保存到本地」或「分享」（调起系统面板，可存到文件/网盘/微信等）；也可用「复制备份」手动保存为 .json</span>
+                        <details class="fsrs-hint-details" id="fsrsHintDetail">
+                            <summary class="menu-row-hint" id="fsrsHintSummary" role="button" tabindex="0" aria-describedby="fsrsHintDetailText">失效卡片判定规则</summary>
+                            <p class="menu-row-hint" id="fsrsHintDetailText">复习卡以题干全文为键，只有同时满足「非数组对象，且 due / stability / state 均为 number」才被视为有效。<br>• 备份导入：字段缺失或类型错误的条目会被跳过，并在提示里给出跳过条数；<br>• 换题库：题干在当前题库中找不到完全一致文本的孤儿卡会被自动清理，清理结果会在导入提示中显示（如「已清理 3 张失效卡」）。</p>
+                        </details>
                     </div>
                 </div>
                 <div class="menu-group menu-group--stats">
@@ -1521,8 +1573,8 @@
                 <div class="card-content">
                     <!-- 紧凑信息栏：计时 + 统计 -->
                     <div class="quiz-info-bar" id="quizInfoBar">
-                        <span class="quiz-info-item"><svg class="icon-sm" aria-hidden="true"><use href="#icon-clock"/></svg> <span id="curTime">00:00</span></span>
-                        <span class="quiz-info-item">总 <span id="totalTime">00:00</span></span>
+                        <span class="quiz-info-item" data-timer-box><svg class="icon-sm" aria-hidden="true"><use href="#icon-clock"/></svg> <span id="curTime">00:00</span></span>
+                        <span class="quiz-info-item" data-timer-box>总 <span id="totalTime">00:00</span></span>
                         <span class="quiz-info-sep" aria-hidden="true">|</span>
                         <span class="quiz-info-item stat-correct"><svg class="icon-sm" aria-hidden="true"><use href="#icon-check"/></svg> <span id="correctCount">0</span></span>
                         <span class="quiz-info-item stat-incorrect"><svg class="icon-sm" aria-hidden="true"><use href="#icon-cross"/></svg> <span id="incorrectCount">0</span></span>
@@ -1684,6 +1736,31 @@
     </div>
 </dialog>
 
+<!-- 导入入口（合并）：文件 / 剪贴板 / FSRS 备份 三条路径收敛到一个对话框，
+     剪贴板无读取权限（Android WebView）时再降级为手动粘贴（复用同一 textarea）。 -->
+<dialog class="preset-dialog" id="importFsrsDialog" aria-labelledby="importFsrsDialogTitle" aria-describedby="importFsrsDialogHint">
+    <div class="preset-dialog-panel">
+        <div class="preset-dialog-header">
+            <span class="preset-dialog-title" id="importFsrsDialogTitle">导入</span>
+            <button type="button" id="importFsrsDialogClose" class="preset-dialog-close" aria-label="关闭">×</button>
+        </div>
+        <p class="preset-dialog-hint" id="importFsrsDialogHint">选择题库文件或从剪贴板读取；备份 JSON 会自动识别（导入将覆盖现有复习数据）。</p>
+        <div class="preset-dialog-body" data-import-panel="merge">
+            <button type="button" id="importFileBtn" class="btn btn-outline" data-import-action="file">选择题库文件（.md）…</button>
+            <button type="button" id="importClipboardBtn" class="btn btn-outline" data-import-action="clipboard">从剪贴板导入</button>
+            <button type="button" id="importBackupBtn" class="btn btn-outline" data-import-action="backup">导入 FSRS 备份（.json）…</button>
+        </div>
+        <div class="preset-dialog-body" data-import-panel="paste" hidden>
+            <label for="clipboardImportText" class="visually-hidden">粘贴题库或 FSRS 备份内容</label>
+            <textarea id="clipboardImportText" rows="10" spellcheck="false" autocomplete="off" placeholder="在此粘贴 Markdown 题库或 FSRS 备份 JSON…"></textarea>
+        </div>
+        <div class="preset-dialog-actions" data-import-panel="paste" hidden>
+            <button type="button" id="clipboardImportCancel" class="btn btn-outline">取消</button>
+            <button type="button" id="clipboardImportConfirm" class="btn">导入</button>
+        </div>
+    </div>
+</dialog>
+
 <div class="snackbar" id="snackbar" role="status" aria-live="polite"></div>
 
 <!-- Capacitor ESM 运行库（无打包器方案）：importmap 把裸模块名解析到 dist/vendor/capacitor/ 下的文件。
@@ -1767,10 +1844,42 @@ class EventBus {
 }
 
 /* ===== Utilities ===== */
+/* 失效复习卡判定（唯一口径，导入与文档均以此为准）：
+   非数组对象，且 due / stability / state 均为 number。
+   ——不满足即为「字段缺失或类型错误」，导入备份时跳过并计数；
+   题干在当前题库中不存在的孤儿卡由 FsrsStore.prune(validTexts) 清理。 */
+const isValidFsrsCardRecord = v =>
+    !!v && typeof v === "object" && !Array.isArray(v) &&
+    typeof v.due === "number" && typeof v.stability === "number" && typeof v.state === "number";
 const esc = str => str == null ? "" : String(str).replace(/[&<>"']/g, m => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;", "'": "&#039;" })[m]);
 const fmtTime = ms => { const sec = Math.floor(ms / 1000); return `${String(Math.floor(sec / 60)).padStart(2, "0")}:${String(sec % 60).padStart(2, "0")}`; };
 const hashStr = s => { let h = 0; for (let i = 0; i < s.length; i++) { h = ((h << 5) - h) + s.charCodeAt(i); h |= 0; } return String(h); };
 const dateKey = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+/* 稳定字符串散列（FNV-1a）：用于「随机选项排列」按题干生成确定性种子，
+   保证同一题每次进入练习都得到完全相同的展示顺序（否则每次 render 都跳位）。 */
+const hashSeed = s => { let h = 0x811c9dc5; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 0x01000193) >>> 0; } return h >>> 0; };
+/* 确定性 Fisher-Yates（mulberry32 伪随机）：返回打乱后的索引数组。
+   只决定「视觉顺序」，元素的 key/text/answer 映射一律不动。 */
+const shuffledOrder = (len, seed) => {
+    const order = Array.from({ length: len }, (_, i) => i);
+    let t = seed >>> 0;
+    const rand = () => { t = (t + 0x6d2b79f5) >>> 0; let x = t; x = Math.imul(x ^ (x >>> 15), x | 1); x ^= x + Math.imul(x ^ (x >>> 7), x | 61); return ((x ^ (x >>> 14)) >>> 0) / 4294967296; };
+    for (let i = len - 1; i > 0; i--) { const j = Math.floor(rand() * (i + 1)); const tmp = order[i]; order[i] = order[j]; order[j] = tmp; }
+    return order;
+};
+/* 选项展示顺序（唯一入口，OptionRenderer 与错题回顾共用）：
+   非 enumerable 属性 _order 挂在题目对象上——不进 Object.keys/JSON.stringify，
+   因此不会被 BankCache 或其余序列化路径带出去。
+   关闭开关时只读取不写（缓存由设置变更或换题库时统一失效）。 */
+const optionOrder = (q, shuffle) => {
+    if (!q.options?.length) return [];
+    if (!shuffle) return q.options.map((_, i) => i);
+    if (Array.isArray(q._order) && q._order.length === q.options.length) return q._order;
+    q._order = shuffledOrder(q.options.length, hashSeed(q.text ?? ""));
+    return q._order;
+};
+/* 按展示顺序重排选项（返回新数组，不改原题对象） */
+const orderedOptions = (q, shuffle) => optionOrder(q, shuffle).map(i => q.options[i]);
 /* 读取文件文本：优先 File.text()（Chromium 系），缺失或超时降级 FileReader。
    部分 Android WebView 的 File.text() 永不 resolve，若无兜底会一直卡在“正在解析题库…” */
 const readFileText = (file, timeoutMs = 20000) => new Promise((resolve, reject) => {
@@ -1819,11 +1928,13 @@ class MarkdownParser {
 
 /* ===== Timer ===== */
 class Timer {
-    #bus; #startTime = 0; #questionStart = 0; #accumulated = []; #currentIdx = 0; #running = false; #rafId = null; #lastTotal = 0; #lastQSec = -1; #lastTSec = -1; #pauseStartedAt = 0; #pausedTotal = 0;
+    #bus; #startTime = 0; #questionStart = 0; #accumulated = []; #currentIdx = 0; #running = false; #rafId = null; #lastTotal = 0; #lastQSec = -1; #lastTSec = -1; #pauseStartedAt = 0; #pausedTotal = 0; #pausedUi = false;
     constructor(bus) { this.#bus = bus; }
-    start() { if (this.#running) return; this.#lastQSec = -1; this.#lastTSec = -1; const now = performance.now(); this.#startTime = now; this.#questionStart = now; this.#running = true; this.#tick(); }
-    stop() { if (!this.#running) return; this.#accrue(this.#currentIdx); this.#lastTotal = this.#elapsed(); this.#running = false; if (this.#rafId) { cancelAnimationFrame(this.#rafId); this.#rafId = null; } }
-    reset() { this.stop(); this.#accumulated = []; this.#startTime = 0; this.#questionStart = 0; this.#currentIdx = 0; this.#lastTotal = 0; this.#pauseStartedAt = 0; this.#pausedTotal = 0; }
+    /* 暂停状态通知：仅状态变化时 emit（UI 用弱化样式表明「计时已停」，避免用户以为在跑） */
+    #emitPaused(paused) { if (this.#pausedUi === paused) return; this.#pausedUi = paused; this.#bus.emit("timer:paused", { paused }); }
+    start() { if (this.#running) return; this.#lastQSec = -1; this.#lastTSec = -1; const now = performance.now(); this.#startTime = now; this.#questionStart = now; this.#running = true; this.#emitPaused(false); this.#tick(); }
+    stop() { if (!this.#running) return; this.#accrue(this.#currentIdx); this.#lastTotal = this.#elapsed(); this.#running = false; if (this.#rafId) { cancelAnimationFrame(this.#rafId); this.#rafId = null; } this.#emitPaused(true); }
+    reset() { this.stop(); this.#accumulated = []; this.#startTime = 0; this.#questionStart = 0; this.#currentIdx = 0; this.#lastTotal = 0; this.#pauseStartedAt = 0; this.#pausedTotal = 0; this.#emitPaused(false); }
     /* 切后台（锁屏/切应用）时暂停：rAF 在后台不再回调，但壁钟仍在走；不停表会把
        「在微信里查资料」的时间算成答题时间。暂停时长累加进 #pausedTotal，
        计时口径统一为「前台运行时长的累计」（见 #elapsed）。 */
@@ -1833,9 +1944,15 @@ class Timer {
         this.#accrue(this.#currentIdx);        /* 结算当前题已用时间 */
         this.#running = false;
         if (this.#rafId) { cancelAnimationFrame(this.#rafId); this.#rafId = null; }
+        this.#emitPaused(true);
+        /* 停表是 UI 上「已经停止计时」的最终值：补一次 tick，否则显示会停留在上一次采样
+           （rAF 在停表后不再回调，界面上的时间会看起来没结算） */
+        this.#bus.emit("timer:tick", { questionTime: this.getQuestionTime(this.#currentIdx), totalTime: this.getTotalTime() });
     }
     resume() {
-        if (this.#running || !this.#pauseStartedAt) return;
+        if (this.#running) return;
+        /* 从未暂停过（例如首题已完成、会话还没起表）：无暂停时长可扣，只把当前题基准对齐 */
+        if (!this.#pauseStartedAt) { this.#questionStart = performance.now(); this.#running = true; this.#emitPaused(false); this.#tick(); return; }
         /* 两件事必须同时做，缺一不可：
            ① 暂停时长记入 #pausedTotal —— 总用时口径只减这一段（不要改 #startTime，
               否则与 rAF 累计时钟叠加会把暂停时长算两次，恢复后总用时变负）；
@@ -1846,13 +1963,26 @@ class Timer {
         this.#pauseStartedAt = 0;
         this.#questionStart = performance.now();
         this.#running = true;
+        this.#emitPaused(false);
+        /* 恢复即刻补一次 tick：rAF 首次回调前界面应反映当前累计值（切后台/答题暂停后尤为明显） */
+        this.#bus.emit("timer:tick", { questionTime: this.getQuestionTime(this.#currentIdx), totalTime: this.getTotalTime() });
         this.#tick();
     }
     /* 前台累计时长（不含暂停）：总用时/单题用时的唯一口径 */
     #elapsed(now = performance.now()) {
         return now - this.#startTime - this.#pausedTotal - (this.#pauseStartedAt ? now - this.#pauseStartedAt : 0);
     }
-    switchQuestion(from, to) { if (!this.#running || from === to) return; this.#accrue(from); this.#currentIdx = to; this.#questionStart = performance.now(); }
+    /* 切题：暂停态下只改「当前题号」——本片段已在 pause() 结算，绝不能重复 accrue；
+       运行中才结算旧题并把新题的时间基准重置为此刻（恢复由 resume 负责）。
+       先更新 #currentIdx 再 emit：展示值必须对应「切过去的那一题」，否则暂停态下
+       会把新题的 0s 显示到旧题上。 */
+    switchQuestion(from, to) {
+        if (from === to) return;
+        if (this.#running) this.#accrue(from);
+        this.#currentIdx = to;
+        if (this.#running) this.#questionStart = performance.now();
+        this.#bus.emit("timer:tick", { questionTime: this.getQuestionTime(to), totalTime: this.getTotalTime() });
+    }
     #accrue(idx) { const elapsed = performance.now() - this.#questionStart; this.#accumulated[idx] = (this.#accumulated[idx] || 0) + elapsed; this.#questionStart = performance.now(); }
     #tick() {
         if (!this.#running) return;
@@ -1880,7 +2010,7 @@ class Timer {
 }
 
 /* ===== Storage ===== */
-const DEFAULTS = Object.freeze({ autoNext: true, autoDelay: 0.5, showHistory: true, hideMastered: false, fsrsEnabled: false, retention: 0.9, dailyNew: 20, autoRate: false, autoRatePreset: "standard", autoRateCustom: false, autoRatePresets: null, statsMode: "cumulative" });
+const DEFAULTS = Object.freeze({ autoNext: true, autoDelay: 0.5, showHistory: true, shuffleOptions: false, hideMastered: false, fsrsEnabled: false, retention: 0.9, dailyNew: 20, autoRate: false, autoRatePreset: "standard", autoRateCustom: false, autoRatePresets: null, statsMode: "cumulative" });
 class StorageAdapter {
     /* Storage write failures (private mode, quota) are surfaced via onPersistError
        so the UI can notify the user — never silently swallow (Nielsen error prevention). */
@@ -1962,10 +2092,14 @@ class BankCache {
     }
 }
 
-/* ===== FSRS Engine — 移植自 ts-fsrs v5.4.1 / FSRS-6.0（MIT License）=====
-   仅保留 LongTermScheduler 语义（enable_short_term=false、enable_fuzz=false），
-   公式与 packages/fsrs/src/{algorithm,help,constant}.ts 逐行对应。
-   对拍验证见 scripts/fsrs_compare.cjs */
+/* ===== FSRS Engine — 移植自 ts-fsrs v5.4.2 / FSRS-6.0（MIT License）=====
+   上游：open-spaced-repetition/ts-fsrs，packages/fsrs/src/{algorithm,help,constant}.ts
+   仅保留 LongTermScheduler 语义（enable_short_term=false、enable_fuzz=false）。
+   与 5.4.1 相比，5.4.2 只改了 clipParameters（自定义参数裁剪），公式与 W 常量未变；
+   W 常量即上游 default_w（FSRS-6），w[20]=FSRS6_DEFAULT_DECAY=0.1542。
+   版本号唯一来源：FSRS_TS_VERSION（README 与 scripts/fsrs_compare.cjs 均引用同一值）。
+   对拍验证见 scripts/fsrs_compare.cjs（npm install ts-fsrs@<FSRS_TS_VERSION> 到 .tmp-fsrs，仅用于对拍） */
+export const FSRS_TS_VERSION = "5.4.2";
 const FSRS_STATE = Object.freeze({ New: 0, Learning: 1, Review: 2, Relearning: 3 });
 const FSRS_RATING = Object.freeze({ Again: 1, Hard: 2, Good: 3, Easy: 4 });
 /* 自动评分（复习模式）：答错→忘记了(1)；答对按用时 ≤ easyMs 简单(4)、≤ goodMs 良好(3)、更久 困难(2)。
@@ -2137,8 +2271,9 @@ class FsrsEngine {
     #toDate(v) { return v instanceof Date ? v : new Date(v); }
 }
 
-/* ===== FsrsStore — 复习卡持久化（localStorage，题干全文为键） ===== */
-class FsrsStore {
+/* ===== FsrsStore — 复习卡持久化（localStorage，题干全文为键） =====
+   用 var（而非 const）声明：便于测试注入预置卡表（vm 沙箱里 var 会挂到 globalThis）。 */
+var FsrsStore = class FsrsStore {
     static KEY = "fsrs_cards_v1";
     /* 内存缓存：卡表仅在首次访问时解析一次，save 后同步更新——
        避免每次 get()/stats() 都 JSON.parse 全表（大题库下可省下秒级阻塞） */
@@ -2242,7 +2377,7 @@ class FsrsStore {
         }
         return { total: entries.length, due, avgStability: stCount ? stSum / stCount : 0, reps, lapses, reviews, forecast, weekly: { past, future } };
     }
-}
+};
 /* ===== End FSRS Engine ===== */
 
 /* ===== Question Parser ===== */
@@ -2327,9 +2462,9 @@ class QuizState {
 /* ===== Components ===== */
 
 class OptionRenderer {
-    #container; #bus;
-    constructor(container, bus) {
-        this.#container = container; this.#bus = bus;
+    #container; #bus; #shuffle;
+    constructor(container, bus, shuffle = () => false) {
+        this.#container = container; this.#bus = bus; this.#shuffle = shuffle;
         bus.on("question:render", ({ question, state }) => this.#render(question, state));
         bus.on("feedback:show", ({ question, state }) => this.#applyFeedback(question, state));
         bus.on("fsrs:awaitRating", ({ question, state }) => this.#applyFeedback(question, state));
@@ -2338,11 +2473,13 @@ class OptionRenderer {
     }
     #render(q, state) {
         let html = `<div class="question-title">${esc(q.text)}${q.type === "multiple" ? ' <small>(多选)</small>' : q.type === "judgment" ? ' <small>(判断)</small>' : ""}</div><div class="options">`;
-        q.options.forEach(opt => {
+        /* 展示顺序来自缓存的稳定顺序：同一题在本次练习中多次 render 不会重排；
+           data-key 始终是原始字母（A–E），正确判定与解析字母映射完全不变。 */
+        for (const opt of orderedOptions(q, this.#shuffle())) {
             const sel = state.selections.includes(opt.key);
             const dis = q.type === "multiple" && state.submitted;
             html += `<button type="button" class="option${sel ? " selected" : ""}${dis ? " disabled" : ""}" data-key="${esc(opt.key)}"${dis ? " disabled" : ""} aria-pressed="${sel}"><span>${esc(opt.key)}. ${esc(opt.text)}</span></button>`;
-        });
+        }
         html += "</div>";
         if (q.type === "multiple" && !state.submitted) html += `<div class="multi-submit-bar"><button id="multiSubmitBtn" class="btn btn-sm" ${state.selections.length ? "" : "disabled"} aria-label="提交多选题答案">提交答案</button></div>`;
         this.#container.innerHTML = html;
@@ -2370,11 +2507,18 @@ class FeedbackPanel {
         bus.on("feedback:show", ({ question, state, correct }) => this.show(question, state, correct));
         bus.on("feedback:hide", () => this.hide());
         bus.on("fsrs:awaitRating", ({ question, state, correct, preselected }) => this.showRatingBar(question, state, correct, preselected));
-        bus.on("fsrs:rated", ({ question, state, correct, rating, timeSpent }) => this.showRated(question, state, correct, rating, timeSpent));
+        bus.on("fsrs:rated", ({ question, state, correct, rating, timeSpent, relevelable }) => this.showRated(question, state, correct, rating, timeSpent, relevelable));
     }
     static RATING_NAMES = ["", "忘记了", "困难", "良好", "简单"];
     #icon(correct) { return correct ? '<svg class="icon-sm" aria-hidden="true"><use href="#icon-check"/></svg>' : '<svg class="icon-sm" aria-hidden="true"><use href="#icon-cross"/></svg>'; }
     #answerRow(q, state) { const us = state.selections.join(", ") || "未作答"; return `<div>您的答案: ${esc(us)}</div><div>正确答案: ${esc(q.answer)}</div>`; }
+    /* 四档评分按钮（高亮当前档）：待评分与已评分共用，点击即 emit("fsrs:rate") */
+    #ratingButtons(rating) {
+        return [1, 2, 3, 4].map(r => `<button type="button" class="btn btn-sm rating-btn${r === rating ? " btn-accent" : ""}" data-rating="${r}" aria-pressed="${r === rating}">${FeedbackPanel.RATING_NAMES[r]}</button>`).join("");
+    }
+    #bindRatingButtons() {
+        this.#container.querySelectorAll(".rating-btn").forEach(el => el.addEventListener("click", () => this.#bus.emit("fsrs:rate", { rating: +el.dataset.rating })));
+    }
     show(q, state, correct) {
         let html = `<div class="answer-feedback ${correct ? "correct" : "incorrect"}"><div class="answer-feedback-header">${this.#icon(correct)} <span>${correct ? "正确" : "错误"}</span></div>`;
         if (!correct) { const us = state.selections.join(", ") || "未作答"; html += `<div class="answer-feedback-content"><div>您的答案: ${esc(us)}</div><div>正确答案: ${esc(q.answer)}</div>${q.explanation ? `<div class="explanation-content">${MarkdownParser.parse(q.explanation)}</div>` : ""}</div>`; }
@@ -2385,27 +2529,29 @@ class FeedbackPanel {
     }
     /* FSRS 复习模式：先显示对错 + 评分条，用户自评后安排下次复习（解析延后到评分后） */
     showRatingBar(q, state, correct, preselected = correct ? 3 : 1) {
-        const btns = [1, 2, 3, 4].map(r => `<button type="button" class="btn btn-sm rating-btn${r === preselected ? " btn-accent" : ""}" data-rating="${r}" aria-pressed="${r === preselected}">${FeedbackPanel.RATING_NAMES[r]}</button>`).join("");
         let html = `<div class="answer-feedback ${correct ? "correct" : "incorrect"}"><div class="answer-feedback-header">${this.#icon(correct)} <span>${correct ? "正确" : "错误"}</span></div>`;
-        html += `<div class="answer-feedback-content">${this.#answerRow(q, state)}<div class="rating-bar" role="group" aria-label="记忆评分">${btns}</div><p class="rating-hint">这题记住了吗？评分后安排下次复习（快捷键 1–4，Enter 确认预选）</p></div></div>`;
+        html += `<div class="answer-feedback-content">${this.#answerRow(q, state)}<div class="rating-bar" role="group" aria-label="记忆评分">${this.#ratingButtons(preselected)}</div><p class="rating-hint">这题记住了吗？评分后安排下次复习（快捷键 1–4，Enter 确认预选）</p></div></div>`;
         this.#container.innerHTML = html;
         renderMath(this.#container);
-        this.#container.querySelectorAll(".rating-btn").forEach(el => el.addEventListener("click", () => this.#bus.emit("fsrs:rate", { rating: +el.dataset.rating })));
+        this.#bindRatingButtons();
         this.#container.classList.remove("hidden");
     }
-    /* 评分完成：下次复习时间 + 本题用时 + 解析（用时透明化自动评分的依据） */
-    showRated(q, state, correct, rating, timeSpent) {
+    /* 评分完成：下次复习时间 + 本题用时 + 解析 + 可改评价（重评从原始卡快照重算，间隔不会滚雪球） */
+    showRated(q, state, correct, rating, timeSpent, relevelable = false) {
         const due = new Date(state.nextDue);
         const days = Math.max(0, Math.ceil((due.getTime() - Date.now()) / 86400000));
         const when = days <= 0 ? "今天" : days === 1 ? "明天" : `${days} 天后`;
         const timeText = timeSpent != null ? ` · 用时 ${timeSpent < 60000 ? `${(timeSpent / 1000).toFixed(1)} 秒` : fmtTime(timeSpent)}` : "";
         let html = `<div class="answer-feedback ${correct ? "correct" : "incorrect"}"><div class="answer-feedback-header">${this.#icon(correct)} <span>${correct ? "正确" : "错误"}</span></div>`;
         html += `<div class="answer-feedback-content"><div class="rating-result">已评分「${FeedbackPanel.RATING_NAMES[rating]}」${timeText} · 下次复习：${when}</div>`;
+        /* 重评：当前档高亮，点其它档从原始卡重算——UI 上明确“会重新计算” */
+        if (relevelable) html += `<div class="rating-bar rating-bar--relevel" role="group" aria-label="更改记忆评价">${this.#ratingButtons(rating)}</div><p class="rating-hint">评价不合适？点其它档即可更改（快捷键 1–4）；修改将重新计算下次复习</p>`;
         if (!correct) html += this.#answerRow(q, state);
         if (q.explanation) html += `<div class="explanation-content">${MarkdownParser.parse(q.explanation)}</div>`;
         html += "</div></div>";
         this.#container.innerHTML = html;
         renderMath(this.#container);
+        if (relevelable) this.#bindRatingButtons();
         this.#container.classList.remove("hidden");
     }
     hide() { this.#container.classList.add("hidden"); this.#container.innerHTML = ""; }
@@ -2490,8 +2636,16 @@ class TimerDisplay {
     constructor(els, bus) {
         this.#els = els;
         bus.on("timer:tick", ({ questionTime, totalTime }) => {
+            /* timer:tick 携带毫秒（与 Timer 的其余出口一致），fmtTime 自身按秒格式化 */
             if (this.#els.cur) this.#els.cur.textContent = fmtTime(questionTime);
             if (this.#els.total) this.#els.total.textContent = fmtTime(totalTime);
+        });
+        /* 暂停态可见化：答题后 / 切后台时计时冻结，用弱化样式 + 说明文字表明原因 */
+        bus.on("timer:paused", ({ paused }) => {
+            [this.#els.cur, this.#els.total].forEach(el => {
+                el?.classList?.toggle?.("timer-paused", paused);
+                el?.setAttribute?.("title", paused ? "计时已暂停（答题后或切到后台）" : "计时中");
+            });
         });
     }
 }
@@ -2711,8 +2865,12 @@ class QuizController {
     #justAnswered = false; #autoNextId = null;
     #parser = new QuestionParser(); #timer; #els;
     #fsrsEngine = new FsrsEngine();
+    /* 重评用的原始卡快照（key = 题干全文）与随机选项顺序由题目对象上的 _order 缓存；
+       换题库 / 重新开始 / 导入备份时清空 */
+    #fsrsBaseCards = new Map();
     /* FSRS 生效条件：总开关开启 + 刷题模式（考试模式不受影响） */
     get #fsrsActive() { return this.#settings.fsrsEnabled && this.#mode === "practice"; }
+    get #shuffleOptions() { return this.#settings.shuffleOptions === true; }
 
     constructor() {
         this.#settings = StorageAdapter.getSettings();
@@ -2741,11 +2899,17 @@ class QuizController {
             menuPanel: $("menuPanel"),
             themeOptions: document.querySelectorAll(".theme-option"),
             fileInput: $("fileInput"), fileDropZone: $("fileDropZone"),
+            clipboardImportBtn: $("clipboardImportBtn"),
+            importFsrsDialog: $("importFsrsDialog"), importFsrsDialogClose: $("importFsrsDialogClose"),
+            importFsrsDialogTitle: $("importFsrsDialogTitle"), importFsrsDialogHint: $("importFsrsDialogHint"),
+            importPanels: document.querySelectorAll("[data-import-panel]"),
+            clipboardImportConfirm: $("clipboardImportConfirm"), clipboardImportCancel: $("clipboardImportCancel"),
+            clipboardImportText: $("clipboardImportText"),
             fileList: $("fileList"), fileStatus: $("fileStatus"), bankCacheList: $("bankCacheList"),
             modeSection: $("modeSection"), modeCards: document.querySelectorAll(".mode-card"),
             startBtn: $("startQuizBtn"),
             autoNextToggle: $("autoNextToggle"), autoNextDelay: $("autoNextDelay"),
-            showHistoryToggle: $("showHistoryToggle"), hideMasteredToggle: $("hideMasteredToggle"), autoRateToggle: $("autoRateToggle"),
+            showHistoryToggle: $("showHistoryToggle"), shuffleOptionsToggle: $("shuffleOptionsToggle"), hideMasteredToggle: $("hideMasteredToggle"), autoRateToggle: $("autoRateToggle"),
             fsrsEnabledToggle: $("fsrsEnabledToggle"), fsrsSubmenu: $("fsrsSubmenu"),
             autoRatePresetSelect: $("autoRatePresetSelect"), autoRatePresetRow: $("autoRatePresetRow"),
             autoRateCustomToggle: $("autoRateCustomToggle"),
@@ -2755,6 +2919,7 @@ class QuizController {
             retentionInput: $("retentionInput"), dailyNewInput: $("dailyNewInput"),
             resetFsrsBtn: $("resetFsrsBtn"), exportFsrsBtn: $("exportFsrsBtn"), copyFsrsBtn: $("copyFsrsBtn"), importFsrsBtn: $("importFsrsBtn"), fsrsImportInput: $("fsrsImportInput"),
             fsrsTotalCards: $("fsrsTotalCards"), fsrsDueToday: $("fsrsDueToday"), fsrsAvgStability: $("fsrsAvgStability"),
+            fsrsHint: $("fsrsHint"), fsrsHintDetail: $("fsrsHintDetail"),
             ovSessions: $("ovSessions"), ovAnswered: $("ovAnswered"), ovAccuracy: $("ovAccuracy"), ovMastered: $("ovMastered"),
             ovSessionsLabel: $("ovSessionsLabel"), ovAnsweredLabel: $("ovAnsweredLabel"), ovAccuracyLabel: $("ovAccuracyLabel"),
             statsModeBtn: $("statsModeBtn"), statsResetBtn: $("statsResetBtn"), statsGrid: $("statsGrid"),
@@ -2791,7 +2956,7 @@ class QuizController {
     }
 
     #initComponents() {
-        new OptionRenderer(this.#els.questionContainer, this.#bus);
+        new OptionRenderer(this.#els.questionContainer, this.#bus, () => this.#settings.shuffleOptions);
         new FeedbackPanel(this.#els.feedback, this.#bus);
         new NavigationBar(this.#els.questionNav, this.#bus);
         new ProgressBarComponent(this.#els.progressBar, this.#bus);
@@ -2820,6 +2985,25 @@ class QuizController {
         // The native <label for="fileInput"> handles click activation.
         this.#els.startBtn.addEventListener("click", () => this.#start());
         this.#els.fileInput.addEventListener("change", () => this.#onFileSelected());
+        /* 导入入口（合并）：
+           - 题库文件选择 / 拖放 → 顶部拖放区（不变）
+           - 剪贴板 → 顶部「从剪贴板导入」按钮：先直接读，读不到才弹同一个对话框的粘贴面板
+           - FSRS 备份 → 「复习数据」区的「导入备份」，打开同一对话框的合并面板 */
+        this.#els.clipboardImportBtn?.addEventListener("click", () => this.#onClipboardImport());
+        this.#els.importFsrsBtn?.addEventListener("click", () => this.#openImportDialog("merge"));
+        this.#els.importFsrsDialog?.addEventListener("click", e => {
+            const action = e.target?.closest?.("[data-import-action]")?.dataset?.importAction;
+            if (action) { this.#onImportAction(action); return; }
+            if (e.target === this.#els.importFsrsDialog) this.#els.importFsrsDialog.close();
+        });
+        this.#els.importFsrsDialogClose?.addEventListener("click", () => this.#els.importFsrsDialog?.close());
+        this.#els.clipboardImportConfirm?.addEventListener("click", () => {
+            const text = this.#els.clipboardImportText?.value ?? "";
+            if (!text.trim()) { this.#bus.emit("toast:show", { message: "请先粘贴题库或备份内容", isError: true }); return; }
+            this.#els.importFsrsDialog?.close();
+            this.#importText(text);
+        });
+        this.#els.clipboardImportCancel?.addEventListener("click", () => this.#els.importFsrsDialog?.close());
         this.#els.prevBtn.addEventListener("click", () => this.#navigate(-1));
         this.#els.nextBtn.addEventListener("click", () => this.#navigate(1));
         this.#els.markBtn.addEventListener("click", () => this.#toggleMark());
@@ -2834,6 +3018,14 @@ class QuizController {
         this.#els.autoNextToggle.addEventListener("change", e => { this.#settings.autoNext = e.target.checked; StorageAdapter.saveSettings(this.#settings); });
         this.#els.autoNextDelay.addEventListener("change", e => { const v = Math.min(5, Math.max(0, +e.target.value || 0)); e.target.value = v; this.#settings.autoDelay = v; StorageAdapter.saveSettings(this.#settings); });
         this.#els.showHistoryToggle.addEventListener("change", e => { this.#settings.showHistory = e.target.checked; this.#els.historyPanel.style.display = e.target.checked ? "" : "none"; StorageAdapter.saveSettings(this.#settings); });
+        this.#els.shuffleOptionsToggle.addEventListener("change", e => {
+            this.#settings.shuffleOptions = e.target.checked;
+            StorageAdapter.saveSettings(this.#settings);
+            /* 立即失效展示顺序缓存：开启时重新生成、关闭时恢复原始顺序，当前题即时生效 */
+            this.#invalidateOptionOrders();
+            if (this.#quizState) this.#refresh();
+            this.#bus.emit("toast:show", { message: e.target.checked ? "已开启随机选项排列（答案仍按原始字母判定）" : "已关闭随机选项排列，恢复原始顺序" });
+        });
         this.#els.hideMasteredToggle?.addEventListener("change", e => { this.#settings.hideMastered = e.target.checked; StorageAdapter.saveSettings(this.#settings); this.#bus.emit("toast:show", { message: e.target.checked ? "已启用隐藏已掌握题目，下次加载生效" : "已禁用隐藏已掌握题目" }); });
         this.#els.autoRateToggle.addEventListener("change", e => {
             this.#settings.autoRate = e.target.checked;
@@ -2901,7 +3093,7 @@ class QuizController {
         this.#els.backupSaveBtn?.addEventListener("click", () => { this.#saveFsrsBackup(); });
         this.#els.resetFsrsBtn?.addEventListener("click", () => this.#resetFsrsData());
         this.#els.copyFsrsBtn?.addEventListener("click", () => this.#copyFsrsBackup());
-        this.#els.importFsrsBtn?.addEventListener("click", () => this.#els.fsrsImportInput?.click());
+        /* 「导入备份」的入口已合并到统一导入对话框（见上方 #onImportAction("backup")），此处只保留 change 处理 */
         this.#els.fsrsImportInput?.addEventListener("change", () => this.#onImportFsrsFile());
         // 缓存题库列表：加载 / 删除（事件委托，条目由 #renderBankCache 动态生成）
         this.#els.bankCacheList?.addEventListener("click", e => {
@@ -2912,6 +3104,13 @@ class QuizController {
         });
         // 菜单打开时刷新复习数据摘要与数据统计（<details> toggle 事件）
         this.#els.menuPanel?.addEventListener("toggle", () => { this.#refreshMenuData(); });
+        /* 「失效卡片判定规则」摘要：辅助技术下 Enter/Space 需显式切换（部分实现不转发给 <details>） */
+        this.#els.fsrsHint?.addEventListener("keydown", e => {
+            if (e.key !== "Enter" && e.key !== " ") return;
+            e.preventDefault();
+            const details = /** @type {HTMLDetailsElement | null} */ (this.#els.fsrsHintDetail);
+            if (details) details.open = !details.open;
+        });
 
         this.#initModeCards(); // radiogroup pattern: roving tabindex + arrow keys + Enter/Space
         document.addEventListener("keydown", e => this.#handleKey(e));
@@ -3016,6 +3215,7 @@ class QuizController {
         this.#els.autoNextToggle.checked = this.#settings.autoNext;
         this.#els.autoNextDelay.value = this.#settings.autoDelay;
         this.#els.showHistoryToggle.checked = this.#settings.showHistory;
+        this.#els.shuffleOptionsToggle.checked = this.#settings.shuffleOptions;
         this.#els.hideMasteredToggle.checked = this.#settings.hideMastered;
         this.#els.fsrsEnabledToggle.checked = this.#settings.fsrsEnabled;
         this.#els.autoRateToggle.checked = this.#settings.autoRate;
@@ -3083,9 +3283,16 @@ class QuizController {
         this.#quizState = new QuizState(filtered);
         this.#currentIdx = 0;
         this.#computeMasteredSet();
-        /* 清理题库中已不存在的复习卡（换题库后旧卡会白占 localStorage 配额） */
+        /* 清空本会话派生缓存（原始卡快照 / 选项顺序）：换题库必须重置 */
+        this.#clearSessionCaches();
+        /* 清理题库中已不存在的复习卡（换题库后旧卡会白占 localStorage 配额）。
+           与导入备份的字段校验共用同一判定规则：此处只按题干全文比对（孤儿卡）。 */
         const prunedCards = FsrsStore.prune(filtered.map(q => q.text));
-        if (prunedCards > 0) summary += `；已清理 ${prunedCards} 张失效复习卡`;
+        if (prunedCards > 0) {
+            const note = `已清理 ${prunedCards} 张失效卡：题干与当前题库不完全一致`;
+            summary += `；${note}`;
+            this.#bus.emit("toast:show", { message: note });
+        }
         this.#els.fileStatus.innerText = summary;
         this.#els.quizSection.classList.add("hidden");
         this.#els.resultSection.classList.add("hidden");
@@ -3205,6 +3412,8 @@ class QuizController {
         this.#timer.reset(); this.#timer.start();
         this.#bus.emit("nav:build", { total: this.#questions.length, quizState: this.#quizState, masteredSet: this.#masteredSet });
         this.#showQuestion(0);
+        /* 首题可能已是完成状态（例如重新开始时命中已评分卡）：定表而非盲跑 */
+        this.#syncTimerToCurrentQuestion();
     }
 
     /* FSRS 复习队列：到期卡（按记忆保留率升序，弱记忆优先）+ 新卡（受每日上限约束）；队列在开赛前固定 */
@@ -3232,17 +3441,24 @@ class QuizController {
         this.#bus.emit("toast:show", { message: `复习队列：今日到期 ${due.length} 题 · ${newText}${skipped > 0 ? ` · ${skipped} 题未到期` : ""}` });
     }
 
-    /* FSRS：按自评写入卡片调度并标记已评分；未评分跳题视为未复习（卡片不动） */
+    /* FSRS：按自评写入卡片调度并标记已评分；未评分跳题视为未复习（卡片不动）。
+       重评（已评分后再次评分）：始终从 #fsrsBaseCards 里的「原始卡快照」重算，
+       绝不在已更新的卡上二次 next() —— 否则间隔会滚雪球式增长。 */
     #rateCard(rating) {
         if (!this.#fsrsActive || !this.#quizState) return;
         const idx = this.#currentIdx;
         const q = this.#questions[idx];
         const s = this.#quizState.get(idx);
-        if (!s || s.rated || !this.#quizState.isAnsweredRaw(idx)) return;
+        if (!s || !this.#quizState.isAnsweredRaw(idx)) return;
+        const isRelevel = s.rated === true;
+        /* 首次评分前快照原始卡（本地无记录 → 新卡）；重评必须有快照才能保证可复现 */
+        if (!isRelevel || !this.#fsrsBaseCards.has(q.text)) {
+            this.#fsrsBaseCards.set(q.text, FsrsStore.get(q.text) ?? this.#fsrsEngine.createEmptyCard(new Date()));
+        }
+        if (isRelevel && s.rating === rating) return; /* 点了当前档：无需重算 */
+        const base = this.#fsrsBaseCards.get(q.text);
         const now = new Date();
-        let card = FsrsStore.get(q.text);
-        if (!card) card = this.#fsrsEngine.createEmptyCard(now);
-        const nextCard = this.#fsrsEngine.next(card, now, rating);
+        const nextCard = this.#fsrsEngine.next(base, now, rating);
         /* 写盘失败（配额耗尽/隐私模式）：不标记已评分、不显示「下次复习」，
             明确告知本次未保存，让用户可重试或先导出备份清理缓存 */
         try {
@@ -3252,20 +3468,28 @@ class QuizController {
             return;
         }
         this.#quizState.markRated(idx, rating, nextCard.due instanceof Date ? nextCard.due : new Date(nextCard.due));
-        this.#justAnswered = true;
+        this.#justAnswered = !isRelevel; /* 重评不再触发自动下一题，让用户看清新的下次复习时间 */
         this.#updateDailyNewEstimate();
+        /* 重评后暂停计时：解读新间隔的时间不应计入本题用时 */
+        this.#timer.pause();
         this.#refresh();
+        if (isRelevel) this.#bus.emit("toast:show", { message: `已改为「${FeedbackPanel.RATING_NAMES[rating]}」，下次复习已重新计算` });
     }
 
-    /* 作答完成后的统一出口：自动评分开启时直接评分，否则渲染评分条 */
+    /* 作答完成后的统一出口：自动评分开启时直接评分（用时此刻已定），否则渲染评分条。
+       两条路径都在作答瞬间停表：解析/等待的时间不应计入本题与总用时。
+       考试模式允许改答案，故不在此停表。 */
     #afterAnswer() {
         this.#justAnswered = true;
         if (this.#fsrsActive && this.#settings.autoRate && !this.#quizState.get(this.#currentIdx).rated && this.#quizState.isAnsweredRaw(this.#currentIdx)) {
-            this.#rateCard(this.#autoRating());
+            this.#rateCard(this.#autoRating()); /* #rateCard 内部会 pause，保证自动评分用的是作答时长 */
         } else {
             this.#refresh();
+            if (this.#mode === "practice") this.#timer.pause();
         }
     }
+
+    /* 答题后停表：仅刷题/FSRS（practice）适用；考试模式可改答案且要算总用时，故不停表 */
 
     /* 自动评分：对错 + 本题用时 → 四档评分（阈值随题干/选项字数与题型动态调整，或按自定义固定秒数） */
     #autoRating() {
@@ -3384,61 +3608,76 @@ class QuizController {
         });
     }
 
+    /* 备份载荷（分享与保存共用同一 JSON 构造） */
+    #backupPayload() {
+        return JSON.stringify({
+            app: "Offline-Quiz-Trainer", kind: "fsrs-cards", version: 1,
+            exportedAt: new Date().toISOString(), cards: FsrsStore.load(),
+        }, null, 2);
+    }
+    #backupFileName() { return `fsrs-backup-${new Date().toISOString().slice(0, 10)}.json`; }
+
     /* 导出备份（分享）：
        ① Capacitor 原生 @capacitor/share（备份写入缓存目录 → FileProvider content:// → 系统分享面板，
           Android System WebView 不实现 navigator.share，必须走原生 Intent）；
        ② Web Share API（桌面/移动浏览器）；
-       ③ 复制剪贴板（Android WebView 无下载支持时）；④ 桌面浏览器 blob 下载。
+       ③ 文件分享不可用 → blob 下载 .json（Android WebView 下载被拦截时复制 JSON 文本并提示另存为 .json）。
+       分享动作只传 .json 文件：绝不把纯文本当作分享内容（否则收件方拿到的是无扩展名文本）。
        不再依赖 canShare() 预检——部分 WebView 缺失该方法或对 .json 文件返回 false。 */
     async #shareFsrsBackup() {
-        const data = {
-            app: "Offline-Quiz-Trainer", kind: "fsrs-cards", version: 1,
-            exportedAt: new Date().toISOString(), cards: FsrsStore.load(),
-        };
-        const json = JSON.stringify(data, null, 2);
-        const name = `fsrs-backup-${new Date().toISOString().slice(0, 10)}.json`;
+        const json = this.#backupPayload();
+        const name = this.#backupFileName();
         const file = new File([json], name, { type: "application/json" });
         const toast = message => this.#bus.emit("toast:show", { message });
         this.#els.backupDialog?.close();
         await CapacitorBridge.ready; /* 桥异步加载：等就绪后按原生能力分流 */
-        /* ① Capacitor 原生分享：优先分享 .json 文件（@capacitor/share + FileProvider），失败降级文本分享 */
+        /* ① Capacitor 原生分享：仅分享 .json 文件（@capacitor/share + FileProvider）。
+           写文件失败或分享失败 → 直接走 ③（不再降级为原生文本分享）。 */
         if (CapacitorBridge.isNative() && CapacitorBridge.Filesystem && CapacitorBridge.Share) {
             const { Directory, Encoding } = CapacitorBridge;
             const rel = `backups/${name}`;
-            const tryShare = async opts => {
-                try { await CapacitorBridge.Share.share(opts); return true; }
-                catch (e) { return /cancel/i.test(e?.message || ""); } /* 用户取消分享视为结束 */
-            };
             try {
                 await CapacitorBridge.Filesystem.writeFile({ path: rel, data: json, directory: Directory.Cache, encoding: Encoding.UTF8 });
                 const { uri } = await CapacitorBridge.Filesystem.getUri({ path: rel, directory: Directory.Cache });
-                if (await tryShare({ title: "FSRS 复习备份", dialogTitle: "分享备份", files: [uri] })) { toast("备份已通过系统分享导出"); return; }
-            } catch { /* 文件分享失败 → 文本分享 */ }
-            if (await tryShare({ title: "FSRS 复习备份", dialogTitle: "分享备份", text: json })) { toast("备份已通过系统分享导出"); return; }
-            /* 原生分享不可用/被取消 → 继续降级 */
+                await CapacitorBridge.Share.share({ files: [uri], title: "FSRS 复习备份" });
+                toast("备份已通过系统分享导出");
+                return;
+            } catch (e) {
+                if (/cancel/i.test(e?.message || "")) { toast("备份已通过系统分享导出"); return; } /* 用户取消分享视为结束 */
+                /* 文件分享不可用 → 继续 ②/③，不降级为文本分享 */
+            }
         }
-        /* ② Web Share API */
+        /* ② Web Share API：同样只传 .json 文件，失败不降级为文本分享 */
         if (typeof navigator.share === "function") {
-            /* 返回 true = 分享流程已结束（成功或用户取消）；false = 失败需降级 */
-            const tryShare = async shareData => {
-                try { await navigator.share(shareData); return true; }
-                catch (e) { return e?.name === "AbortError"; }
-            };
-            if (await tryShare({ files: [file], title: "FSRS 复习备份", text: name })) { toast("备份已通过系统分享导出"); return; }
-            if (await tryShare({ text: json, title: "FSRS 复习备份" })) { toast("备份已通过系统分享导出"); return; }
+            try {
+                await navigator.share({ files: [file], title: "FSRS 复习备份" });
+                toast("备份已通过系统分享导出");
+                return;
+            } catch (e) {
+                if (e?.name === "AbortError") { toast("备份已通过系统分享导出"); return; } /* 用户取消分享视为结束 */
+            }
         }
-        /* ③ Android WebView 无原生层时：复制兜底；④ 桌面浏览器：blob 下载 */
-        if (/android/i.test(navigator.userAgent)) { this.#copyFsrsBackup(json); return; }
-        const blob = new Blob([json], { type: "application/json" });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = url;
-        a.download = name;
-        document.body.appendChild(a);
-        a.click();
-        a.remove();
-        URL.revokeObjectURL(url);
-        toast("备份已导出");
+        /* ③ 文件分享不可用：blob 下载 .json；Android WebView 下载被拦截时复制 JSON 文本 */
+        this.#exportFsrsBackupFile(json, name);
+    }
+
+    /* 降级导出：blob 下载 .json（文件名/类型均为 .json）。
+       Android WebView 常直接拦截 <a download> 且无任何回调，故与保存路径一致地复制文本兜底，
+       提示「请粘贴保存为 .json」——注意这是剪贴板兜底，不是分享内容。 */
+    #exportFsrsBackupFile(json, name) {
+        try {
+            const url = URL.createObjectURL(new Blob([json], { type: "application/json" }));
+            const a = document.createElement("a");
+            a.href = url;
+            a.download = name;
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            setTimeout(() => URL.revokeObjectURL(url), 3000);
+            this.#bus.emit("toast:show", { message: "系统分享不可用，备份已导出为 .json 文件" });
+        } catch {
+            this.#copyFsrsBackup(json);
+        }
     }
 
     /* 导出备份（保存到本地）：
@@ -3446,12 +3685,8 @@ class QuizController {
        ② File System Access API 系统「另存为」对话框（桌面 Chrome/Edge 等）；
        ③ <a download> 下载；WebView 无原生层时给出明确提示（改用分享/复制）。 */
     async #saveFsrsBackup() {
-        const data = {
-            app: "Offline-Quiz-Trainer", kind: "fsrs-cards", version: 1,
-            exportedAt: new Date().toISOString(), cards: FsrsStore.load(),
-        };
-        const json = JSON.stringify(data, null, 2);
-        const name = `fsrs-backup-${new Date().toISOString().slice(0, 10)}.json`;
+        const json = this.#backupPayload();
+        const name = this.#backupFileName();
         /* toast(msg, isError)：超时分支按错误样式提示（此前第二个实参被忽略，实际显示为普通提示） */
         const toast = (message, isError = false) => this.#bus.emit("toast:show", { message, isError });
         this.#els.backupDialog?.close();
@@ -3614,12 +3849,12 @@ class QuizController {
         CapacitorBridge.ready.then(() => {
             const App = CapacitorBridge.App;
             if (!CapacitorBridge.isNative() || !App?.addListener) return;
-            App.addListener("appStateChange", ({ isActive }) => {
-                if (!isActive) { this.#timer.pause(); return; }
-                /* 仅在有进行中的练习时恢复，避免回前台把「已结束/未开始」的计时重新拉起 */
-                if (this.#quizState && !this.#els.quizSection.classList.contains("hidden")) this.#timer.resume();
-            }).catch(err => console.error("[CapacitorBridge] 生命周期监听注册失败:", err));
+            App.addListener("appStateChange", ({ isActive }) => { this.#applyAppState(!!isActive); })
+                .catch(err => console.error("[CapacitorBridge] 生命周期监听注册失败:", err));
         });
+        /* Web / 浏览器 WebView 兜底：无 @capacitor/app 时也能按页面可见性暂停计时。
+           与原生事件共用 #applyAppState，重复触发幂等（Timer.pause/resume 自带守卫）。 */
+        document.addEventListener("visibilitychange", () => { this.#applyAppState(document.visibilityState !== "hidden"); });
     }
 
     /* 复制备份：WebView / file:// 下 <a download> 常被系统拦截，剪贴板是最稳的离线方案。
@@ -3669,37 +3904,152 @@ class QuizController {
         if (!fl || !fl.length) return;
         const file = fl[0];
         readFileText(file).then(text => {
-            let cards;
-            try {
-                const data = JSON.parse(text);
-                cards = data && typeof data === "object" && !Array.isArray(data) && data.cards ? data.cards : data;
-            } catch { this.#bus.emit("toast:show", { message: "备份文件解析失败", isError: true }); return; }
-            if (!cards || typeof cards !== "object" || Array.isArray(cards)) { this.#bus.emit("toast:show", { message: "备份文件格式无效", isError: true }); return; }
-            const valid = {}; let bad = 0;
-            for (const [k, v] of Object.entries(cards)) {
-                if (v && typeof v.due === "number" && typeof v.stability === "number" && typeof v.state === "number") valid[k] = v;
-                else bad++;
-            }
-            const count = Object.keys(valid).length;
-            if (!count) { this.#bus.emit("toast:show", { message: "备份中无有效卡片", isError: true }); return; }
-            /* 覆盖现有数据属破坏性操作：先确认（与「重置数据」一致） */
-            if (!confirm(`导入将覆盖现有 ${FsrsStore.count()} 张卡，共 ${count} 张卡数据，确定继续？`)) return;
-            if (!FsrsStore.save(valid)) {
-                this.#bus.emit("toast:show", { message: "存储空间不足，导入未生效（原数据保持不变）", isError: true });
+            /* 复用 #importFsrsFromText：校验/确认/覆盖逻辑与「从剪贴板导入」完全一致 */
+            if (!this.#importFsrsFromText(text)) this.#bus.emit("toast:show", { message: "备份文件解析失败", isError: true });
+        }).catch(() => this.#bus.emit("toast:show", { message: "读取备份文件失败", isError: true }));
+    }
+
+    /* ===== 文本导入（剪贴板 / 手动粘贴共用）=====
+       路由：trim 后以 { 开头且能解出 cards（或 kind === "fsrs-cards"）→ FSRS 备份；
+       其余一律按 Markdown 题库走 #load（解析/缓存/#applyQuestions/错误提示全部复用）。
+       以 { 开头却解析不出卡片表时按「JSON 格式无效」报错，不再回落 Markdown（避免误报“无有效题目”）。
+       注意：用户文本只经 File/JSON.parse 流转，插入 DOM 处一律用 textContent/esc()。 */
+    #importText(raw) {
+        const text = String(raw ?? "").trim();
+        if (!text) { this.#bus.emit("toast:show", { message: "内容为空：请粘贴 Markdown 题库或 FSRS 备份 JSON", isError: true }); return; }
+        if (text.startsWith("{")) {
+            let data = null;
+            try { data = JSON.parse(text); }
+            catch {
+                this.#bus.emit("toast:show", { message: "JSON 格式无效：无法解析备份内容", isError: true });
                 return;
             }
-            this.#refreshMenuData();
-            this.#updateDailyNewEstimate();
-            this.#els.fsrsImportInput.value = "";
-            this.#bus.emit("toast:show", { message: `已导入 ${count} 张卡${bad ? `，跳过 ${bad} 条无效数据` : ""}` });
-        }).catch(() => this.#bus.emit("toast:show", { message: "读取备份文件失败", isError: true }));
+            const isBackup = data && typeof data === "object" && !Array.isArray(data) &&
+                (data.kind === "fsrs-cards" || (data.cards && typeof data.cards === "object" && !Array.isArray(data.cards)));
+            if (isBackup) {
+                this.#els.fileInput.value = "";
+                this.#importFsrsFromText(text);
+                return;
+            }
+            this.#bus.emit("toast:show", { message: "JSON 格式无效：未找到有效的卡片表（cards）", isError: true });
+            return;
+        }
+        const stamp = new Date().toISOString().slice(0, 10);
+        this.#load([new File([text], `剪贴板-${stamp}.md`, { type: "text/markdown" })])
+            .catch(err => this.#bus.emit("toast:show", { message: `加载失败：${err?.message || err}`, isError: true }));
+    }
+
+    /* 剪贴板一键导入：优先 navigator.clipboard.readText()；
+       不可用 / 被拒 / 超时 / 读不到内容 → 切到同一对话框的手动粘贴面板（Android WebView 无 readText 权限）。 */
+    async #onClipboardImport() {
+        let text = null;
+        const clip = navigator.clipboard;
+        if (clip && typeof clip.readText === "function") {
+            try {
+                /* 部分 WebView 的 readText 权限弹窗被忽略后永不 resolve：2s 超时后转手动粘贴 */
+                text = await Promise.race([
+                    clip.readText(),
+                    new Promise(resolve => setTimeout(() => resolve(null), 2000)),
+                ]);
+            } catch { text = null; }
+        }
+        /* text 为 null = 不可用/被拒/超时（转手动粘贴）；读到空串 = 剪贴板确实为空（明确提示） */
+        if (typeof text === "string") {
+            if (text.trim()) {
+                this.#els.importFsrsDialog?.close(); /* 一键读取成功：合并入口与粘贴入口都关掉对话框 */
+                this.#importText(text);
+            } else {
+                this.#bus.emit("toast:show", { message: "剪贴板为空：请先复制 Markdown 题库或 FSRS 备份 JSON", isError: true });
+            }
+            return;
+        }
+        /* 读不到 → 打开同一对话框并切到手动粘贴面板（Android WebView 无 readText 权限） */
+        this.#openImportDialog("paste");
+    }
+
+    /* 统一导入对话框：一个 <dialog> 承载「合并入口」与「手动粘贴」两个面板 */
+    #openImportDialog(mode = "merge") {
+        const dlg = this.#els.importFsrsDialog;
+        if (!dlg || typeof dlg.showModal !== "function") {
+            this.#bus.emit("toast:show", { message: "当前环境无法打开导入窗口，请改用文件选择器", isError: true });
+            return;
+        }
+        this.#switchImportPanel(mode);
+        if (!dlg.open) {
+            try { dlg.showModal(); } catch { this.#bus.emit("toast:show", { message: "无法打开导入窗口，请改用文件选择器", isError: true }); return; }
+        }
+        if (mode === "paste") this.#els.clipboardImportText?.focus();
+    }
+
+    #switchImportPanel(mode) {
+        const panels = this.#els.importPanels;
+        if (panels?.length) panels.forEach(p => { p.hidden = p.dataset?.importPanel !== mode; });
+        if (this.#els.importFsrsDialogTitle) this.#els.importFsrsDialogTitle.textContent = mode === "paste" ? "手动粘贴导入" : "导入";
+        if (this.#els.importFsrsDialogHint) {
+            this.#els.importFsrsDialogHint.textContent = mode === "paste"
+                ? "当前环境无法自动读取剪贴板。请在下方长按粘贴（Markdown 题库与 FSRS 备份 JSON 均可）。"
+                : "选择题库文件或从剪贴板读取；备份 JSON 会自动识别（导入将覆盖现有复习数据）。";
+        }
+        if (mode === "paste" && this.#els.clipboardImportText) this.#els.clipboardImportText.value = "";
+    }
+
+    /* 合并入口的三个动作：文件选择（原有 #fileInput） / 剪贴板 / FSRS 备份文件 */
+    #onImportAction(action) {
+        if (action === "backup") { this.#els.importFsrsDialog?.close(); this.#els.fsrsImportInput?.click(); return; }
+        if (action === "file") { this.#els.importFsrsDialog?.close(); this.#els.fileInput?.click(); return; }
+        /* 剪贴板：对话框先给出「读取中」反馈，读到内容即关闭并导入，读不到则切到粘贴面板 */
+        this.#switchImportPanel("merge");
+        if (this.#els.importFsrsDialogHint) this.#els.importFsrsDialogHint.textContent = "正在读取剪贴板…";
+        this.#onClipboardImport();
+    }
+
+    /* 导入 FSRS 备份文本：解析 → 逐条校验（isValidFsrsCardRecord，统计 bad）→ 确认 → 覆盖。
+       返回值：是否已成功覆盖（false 表示格式/内容无效，调用方可给出场景化提示）。 */
+    #importFsrsFromText(text) {
+        if (!text.trim()) { this.#bus.emit("toast:show", { message: "内容为空：未找到可导入的备份数据", isError: true }); return false; }
+        let data;
+        try { data = JSON.parse(text); }
+        catch { this.#bus.emit("toast:show", { message: "JSON 格式无效：无法解析备份内容", isError: true }); return false; }
+        const cards = data && typeof data === "object" && !Array.isArray(data) && data.cards ? data.cards : data;
+        if (!cards || typeof cards !== "object" || Array.isArray(cards)) {
+            this.#bus.emit("toast:show", { message: "JSON 格式无效：未找到有效的卡片表（cards）", isError: true });
+            return false;
+        }
+        const valid = {}; let bad = 0;
+        for (const [k, v] of Object.entries(cards)) {
+            if (isValidFsrsCardRecord(v)) valid[k] = v;
+            else bad++;
+        }
+        const count = Object.keys(valid).length;
+        if (!count) { this.#bus.emit("toast:show", { message: `JSON 格式无效：${bad} 张卡的字段缺失或类型错误`, isError: true }); return false; }
+        /* 覆盖现有数据属破坏性操作：先确认（与「重置数据」一致） */
+        if (!confirm(`导入将覆盖现有 ${FsrsStore.count()} 张卡，共 ${count} 张卡数据，确定继续？`)) return false;
+        if (!FsrsStore.save(valid)) {
+            this.#bus.emit("toast:show", { message: "存储空间不足，导入未生效（原数据保持不变）", isError: true });
+            return false;
+        }
+        this.#refreshMenuData();
+        this.#updateDailyNewEstimate();
+        /* 导入的卡片与当前题库无关：清掉原始卡快照，避免用旧快照重评出新结果 */
+        this.#fsrsBaseCards.clear();
+        this.#els.fsrsImportInput.value = "";
+        this.#bus.emit("toast:show", { message: `已导入 ${count} 张卡${bad ? `，跳过 ${bad} 条无效数据` : ""}` });
+        return true;
     }
 
     #showQuestion(idx) {
         if (!this.#quizState || idx < 0 || idx >= this.#questions.length) return;
-        this.#timer.switchQuestion(this.#currentIdx, idx);
+        const from = this.#currentIdx;
+        this.#timer.switchQuestion(from, idx);
         this.#currentIdx = idx;
         const q = this.#questions[idx], s = this.#quizState.get(idx);
+        /* 计时随目标题状态启停（幂等）：未完成 → 恢复（暂停中会在当前题重新起算）；
+           已完成/已评分 → 保持暂停，避免解读解析或犹豫的时长计入本题与总用时。
+           同题重渲染（from === idx，例如作答后刷新反馈）不改变计时状态。 */
+        if (from !== idx) {
+            if (this.#currentQuestionDone(idx)) this.#timer.pause();
+            else if (this.#mode === "practice") this.#timer.resume();
+        }
         this.#els.currentQ.textContent = idx + 1;
         const markText = this.#els.markBtn.querySelector(".btn-text");
         if (markText) markText.textContent = s.marked ? "已标记" : "标记";
@@ -3724,7 +4074,7 @@ class QuizController {
             this.#bus.emit("feedback:show", { question: q, state: s, correct: this.#quizState.isCorrect(idx) });
         } else if (this.#fsrsActive) {
             if (s.rated) {
-                this.#bus.emit("fsrs:rated", { question: q, state: s, correct: this.#quizState.isCorrect(idx), rating: s.rating, timeSpent: this.#timer.getQuestionTime(idx) });
+                this.#bus.emit("fsrs:rated", { question: q, state: s, correct: this.#quizState.isCorrect(idx), rating: s.rating, timeSpent: this.#timer.getQuestionTime(idx), relevelable: true });
             } else if (s.submitted || (q.type !== "multiple" && s.selections.length)) {
                 this.#bus.emit("fsrs:awaitRating", { question: q, state: s, correct: this.#quizState.isCorrect(idx), preselected: this.#quizState.isCorrect(idx) ? 3 : 1 });
             } else { this.#bus.emit("feedback:hide"); }
@@ -3743,6 +4093,41 @@ class QuizController {
     }
 
     #refresh() { this.#showQuestion(this.#currentIdx); }
+
+    /* ===== 计时暂停策略（Web 与原生共用，幂等）=====
+       需要停表的三种情形：切后台、提交答案、评分完成；
+       恢复只在「答题区可见 && 当前题未完成」时发生，重复事件不会重复扣时。 */
+    #currentQuestionDone(idx) {
+        if (!this.#quizState) return false;
+        return this.#fsrsActive ? this.#quizState.isRated(idx) : this.#quizState.isAnsweredRaw(idx);
+    }
+    /* 允许计时：会话中 + 答题区可见 + 当前题未完成。
+       （practice 含 FSRS；考试模式不自动停表，故同样进入下面分支） */
+    #timerResumeAllowed() {
+        if (!this.#quizState || this.#els.quizSection.classList.contains("hidden")) return false;
+        return !this.#currentQuestionDone(this.#currentIdx);
+    }
+    /* 前后台：原生 appStateChange 与 Web document.visibilitychange 共用同一收敛函数 */
+    #applyAppState(active) {
+        if (!active) { this.#timer.pause(); return; }
+        if (this.#timerResumeAllowed()) this.#timer.resume();
+    }
+    /* 选项展示顺序缓存失效：开关变更或换题库时调用（原题对象的 _order 非 enumerable） */
+    #invalidateOptionOrders() {
+        for (const q of this.#questions) { if (q && q._order) delete q._order; }
+    }
+    /* 清空本会话的派生缓存：原始卡快照 + 选项顺序 */
+    #clearSessionCaches() {
+        this.#fsrsBaseCards.clear();
+        this.#invalidateOptionOrders();
+    }
+    /* 答题区可见时按当前题状态定表：
+       考试模式不自动停表（要算总用时）；practice 下已完成则保持暂停，未完成则计时。 */
+    #syncTimerToCurrentQuestion() {
+        if (!this.#quizState || this.#mode !== "practice") return;
+        if (this.#currentQuestionDone(this.#currentIdx)) this.#timer.pause();
+        else this.#timer.resume();
+    }
 
     #navigate(dir) { this.#justAnswered = false; if (this.#autoNextId) { clearTimeout(this.#autoNextId); this.#autoNextId = null; } this.#showQuestion(this.#currentIdx + dir); }
 
@@ -3815,8 +4200,12 @@ class QuizController {
         this.#els.menuPanel.open = true; // <details> open
         this.#els.totalQ.textContent = this.#questions.length; // FSRS 重建队列后题数可能变化
         this.#computeMasteredSet();
+        /* 重新开始是本会话内的新练习：清快照与选项顺序缓存 */
+        this.#clearSessionCaches();
         this.#bus.emit("nav:build", { total: this.#questions.length, quizState: this.#quizState, masteredSet: this.#masteredSet });
         this.#showQuestion(0);
+        /* 首题可能已是完成状态（重新开始时命中已评分卡）：定表而非盲跑 */
+        this.#syncTimerToCurrentQuestion();
     }
 
     #showWrong() {
@@ -3833,7 +4222,8 @@ class QuizController {
                 const s = this.#quizState.get(i);
                 const us = s.selections.join(", ") || "未作答";
                 let opts = "";
-                for (const o of q.options) opts += `<span class="wrong-card-option${q.answer.includes(o.key) ? " correct-answer" : ""}">${esc(o.key)}. ${esc(o.text)}</span>`;
+                /* 与作答时看到的一致：随机选项排列开启时按同一缓存顺序展示 */
+                for (const o of orderedOptions(q, this.#shuffleOptions)) opts += `<span class="wrong-card-option${q.answer.includes(o.key) ? " correct-answer" : ""}">${esc(o.key)}. ${esc(o.text)}</span>`;
                 html += `<div class="wrong-card"><div class="wrong-card-header"><span>#${i + 1}</span><span class="badge">错题</span></div>`;
                 html += `<div class="wrong-card-title">${esc(q.text)}</div>`;
                 html += `<div class="wrong-card-options">${opts}</div>`;
@@ -3873,14 +4263,16 @@ class QuizController {
     #handleKey(e) {
         const active = /** @type {HTMLElement | null} */ (document.activeElement);
         const tag = active?.tagName;
-        // 按钮/链接保留原生键盘激活，避免全局 Enter 逻辑与按钮 click 双重触发
-        if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || tag === "BUTTON" || tag === "A" || active?.isContentEditable) return;
+        /* 评分条上的按钮：1–4 仍要能改评价，故不禁用；其余按钮/输入保留原生键盘激活，
+           避免全局 Enter 逻辑与按钮 click 双重触发 */
+        const inRatingBar = !!active?.closest?.(".rating-bar");
+        if (!inRatingBar && (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || tag === "BUTTON" || tag === "A" || active?.isContentEditable)) return;
         if (!this.#quizState) return;
         const q = this.#questions[this.#currentIdx];
+        const rateTarget = this.#fsrsActive && this.#quizState.isAnsweredRaw(this.#currentIdx) && e.key >= "1" && e.key <= "4";
+        if (rateTarget) { e.preventDefault(); this.#rateCard(+e.key); return; } /* 评分 / 已评分改评价 */
+        if (inRatingBar) return; /* 评分条按钮仅响应 1–4，其余按键交回浏览器 */
         if (e.key >= "1" && e.key <= "5") {
-            if (this.#fsrsActive && this.#quizState.isAnsweredRaw(this.#currentIdx) && !this.#quizState.get(this.#currentIdx).rated && e.key <= "4") {
-                e.preventDefault(); this.#rateCard(+e.key); return; // 待评分：1–4 = 评分
-            }
             const optIdx = +e.key - 1; if (q.options[optIdx]) { this.#quizState.select(this.#currentIdx, q.options[optIdx].key, q.type === "multiple"); this.#afterAnswer(); }
         }
         else if (e.key === "ArrowLeft")  { e.preventDefault(); this.#navigate(-1); }
@@ -3893,9 +4285,10 @@ class QuizController {
             if (this.#fsrsActive) {
                 const st = this.#quizState.get(this.#currentIdx);
                 if (q.type === "multiple" && !st.submitted) { this.#quizState.submitMulti(this.#currentIdx); this.#afterAnswer(); }
-                else if (this.#quizState.isAnsweredRaw(this.#currentIdx) && !st.rated) { this.#rateCard(this.#quizState.isCorrect(this.#currentIdx) ? 3 : 1); }
+                else if (this.#quizState.isAnsweredRaw(this.#currentIdx) && !st.rated) this.#rateCard(this.#quizState.isCorrect(this.#currentIdx) ? 3 : 1);
+                /* 已评分：Enter 不再改评价（避免误触），继续下一题；改评价用 1–4 或点击评分按钮 */
                 else if (this.#currentIdx < this.#questions.length - 1) this.#navigate(1);
-            } else if (q.type === "multiple" && this.#mode === "practice" && !this.#quizState.get(this.#currentIdx).submitted) { this.#quizState.submitMulti(this.#currentIdx); this.#justAnswered = true; this.#refresh(); }
+            } else if (q.type === "multiple" && this.#mode === "practice" && !this.#quizState.get(this.#currentIdx).submitted) { this.#quizState.submitMulti(this.#currentIdx); this.#justAnswered = true; this.#refresh(); this.#timer.pause(); }
             else if (this.#currentIdx < this.#questions.length - 1) this.#navigate(1);
         }
         else if (e.key === "Escape") { this.#closeNavOverlay(); }

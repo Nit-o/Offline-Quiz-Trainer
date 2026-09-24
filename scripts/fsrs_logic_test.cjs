@@ -1,5 +1,7 @@
 // 行为逻辑测试：QuizState 复习模式语义 + FsrsStore 持久化 + 复习队列构建（无 DOM）
+// 另含第 9 节失效卡判定、第 10 节版本号一致性（README ↔ index.html 常量 ↔ vendor/katex/VERSION）
 // 用法：node scripts/fsrs_logic_test.cjs
+// 对拍（与官方 ts-fsrs 比对公式结果）见 scripts/fsrs_compare.cjs，需联网装包，不在本测试内
 "use strict";
 const fs = require("fs");
 const path = require("path");
@@ -21,8 +23,11 @@ if (start < 0 || end < 0) { console.error("[extract] 找不到提取标记"); pr
 const TMP_DIR = path.join(__dirname, "..", ".tmp-fsrs");
 fs.mkdirSync(TMP_DIR, { recursive: true });
 const srcFile = path.join(TMP_DIR, "logic_src.cjs");
-fs.writeFileSync(srcFile, html.slice(start, end) + '\nmodule.exports = { QuizState, FsrsStore, FsrsEngine, autoRateFor, AUTO_RATE_PRESETS, resolveThresholds };');
-const { QuizState, FsrsStore, FsrsEngine, autoRateFor, AUTO_RATE_PRESETS, resolveThresholds } = require(srcFile);
+/* index.html 里 FSRS_TS_VERSION 用 export 暴露（供 tsc 的 noUnusedLocals 与对拍脚本读取）；
+   这里抽成 CJS，需去掉 export 关键字 */
+const slice = html.slice(start, end).replace(/^export\s+(const\s+FSRS_TS_VERSION)/m, "$1");
+fs.writeFileSync(srcFile, slice + '\nmodule.exports = { QuizState, FsrsStore, FsrsEngine, autoRateFor, AUTO_RATE_PRESETS, resolveThresholds, isValidFsrsCardRecord, FSRS_TS_VERSION };');
+const { QuizState, FsrsStore, FsrsEngine, autoRateFor, AUTO_RATE_PRESETS, resolveThresholds, isValidFsrsCardRecord, FSRS_TS_VERSION } = require(srcFile);
 
 let checks = 0;
 const ok = (label, cond) => { checks++; assert.ok(cond, `[FAIL] ${label}`); console.log(`[ok] ${label}`); };
@@ -196,6 +201,53 @@ const ok = (label, cond) => { checks++; assert.ok(cond, `[FAIL] ${label}`); cons
     ok("snapshot：周明细过去（新增仅 reps=1）", past.at(-1).key === "2026-01-04" && past.at(-1).reviews === 1 && past.at(-1).fresh === 1 && past.at(-2).reviews === 1);
     ok("snapshot：周明细未来 7 天（超窗不计）", future[0].due === 1 && future[1].due === 1 && future.slice(2).every(f => f.due === 0));
     FsrsStore.save({});
+}
+
+/* ============ 9. 失效复习卡判定：两条来源（导入校验跳过 / 换题库 prune 清理） ============ */
+{
+    /* 9a. 唯一判定口径（与 #onImportFsrsFile 共用）：非数组对象 + due/stability/state 均为 number */
+    ok("判定：null → 失效", isValidFsrsCardRecord(null) === false);
+    ok("判定：数组 → 失效", isValidFsrsCardRecord([1, 2]) === false);
+    ok("判定：字符串 → 失效", isValidFsrsCardRecord("card") === false);
+    ok("判定：空对象 → 失效（字段缺失）", isValidFsrsCardRecord({}) === false);
+    ok("判定：due 为数字字符串 → 失效（类型错误）", isValidFsrsCardRecord({ due: "1712000000000", stability: 2, state: 2 }) === false);
+    ok("判定：stability 缺失 → 失效", isValidFsrsCardRecord({ due: 1712000000000, state: 2 }) === false);
+    ok("判定：state 为 null → 失效", isValidFsrsCardRecord({ due: 1712000000000, stability: 2, state: null }) === false);
+    ok("判定：NaN 也是 number → 有效（仅校验类型）", isValidFsrsCardRecord({ due: NaN, stability: NaN, state: NaN }) === true);
+    ok("判定：三字段齐备 → 有效", isValidFsrsCardRecord({ due: 1712000000000, stability: 2.3065, state: 2, reps: 1 }) === true);
+
+    /* 9b. 来源 b：孤儿卡（题干与当前题库不完全一致）由 prune(validTexts) 清理 */
+    FsrsStore.save({});
+    FsrsStore.upsert("心脏位于？", { due: 1712000000000, stability: 2, difficulty: 5, state: 2, reps: 1, lapses: 0 });
+    FsrsStore.upsert("心脏位于？ ", { due: 1712000000000, stability: 2, difficulty: 5, state: 2, reps: 1, lapses: 0 }); /* 尾随空格 = 不同键 */
+    FsrsStore.upsert("肾脏位于？", { due: 1712000000000, stability: 3, difficulty: 5, state: 2, reps: 1, lapses: 0 });
+    ok("prune 前共 3 张卡", FsrsStore.count() === 3);
+    ok("prune 清理 2 张孤儿卡（尾随空格也算题干不一致）", FsrsStore.prune(["心脏位于？"]) === 2);
+    ok("prune 后仅保留题干完全一致的那张", FsrsStore.count() === 1 && !!FsrsStore.get("心脏位于？") && !FsrsStore.get("肾脏位于？"));
+    ok("prune 无孤儿时返回 0（不写盘）", FsrsStore.prune(["心脏位于？"]) === 0 && FsrsStore.count() === 1);
+    ok("prune 传空题库 → 全部清理（换题库场景）", FsrsStore.prune([]) === 1 && FsrsStore.count() === 0);
+    FsrsStore.save({});
+}
+
+/* ============ 10. 版本号一致性：index.html 常量 / README / vendor/katex/VERSION ============ */
+{
+    const repoRoot = path.join(__dirname, "..");
+    const readme = fs.readFileSync(path.join(repoRoot, "README.md"), "utf8");
+
+    /* 10a. FSRS 移植版本：README 显示的 ts-fsrs 版本必须与 FSRS_TS_VERSION 一致。
+       README 里是 Markdown 链接（[ts-fsrs](url) **v5.4.2**），故允许链接目标与强调符号穿插 */
+    ok("FSRS_TS_VERSION 是合法版本号", /^\d+\.\d+\.\d+$/.test(FSRS_TS_VERSION));
+    const readmeFsrs = readme.match(/ts-fsrs\b[^\n]*?\bv(\d+\.\d+\.\d+)/);
+    ok(`README 显示 ts-fsrs v${FSRS_TS_VERSION}`, !!readmeFsrs && readmeFsrs[1] === FSRS_TS_VERSION);
+
+    /* 10b. KaTeX 版本：README / vendor/katex/VERSION / index.html 占位符三处一致 */
+    const katexVersion = fs.readFileSync(path.join(repoRoot, "vendor", "katex", "VERSION"), "utf8").trim();
+    ok("vendor/katex/VERSION 是合法版本号", /^\d+\.\d+\.\d+$/.test(katexVersion));
+    const readmeKatex = readme.match(/KaTeX\b[^\n]*?\bv(\d+\.\d+\.\d+)/);
+    ok(`README 显示 KaTeX v${katexVersion}`, !!readmeKatex && readmeKatex[1] === katexVersion);
+    ok("index.html 保留 __KATEX_VERSION__ 占位符（构建时注入）", html.includes("__KATEX_VERSION__"));
+    /* 不允许在 index.html 里硬编码 KaTeX 版本，避免与 vendor 漂移 */
+    ok("index.html 未硬编码 KaTeX 版本", !new RegExp(`KaTeX\\s+v?${katexVersion.replace(/\./g, "\\.")}`).test(html));
 }
 
 console.log(`\n===== 结果: ${checks}/${checks} 项通过 =====`);

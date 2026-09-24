@@ -18,19 +18,90 @@ An HTML renderer that reads Markdown files and converts them into a quiz.
 
 ### 使用说明
 
-- 通过[ts-fsrs](https://github.com/open-spaced-repetition/ts-fsrs)支持了FSRS。
-- 通过[KaTeX](https://github.com/KaTeX/KaTeX)支持 LaTeX 公式：题目、选项与解析中的 `$...$` 行内公式、`$$...$$` 独立公式
+- 通过 [ts-fsrs](https://github.com/open-spaced-repetition/ts-fsrs) **v5.4.2**（FSRS-6.0）支持了 FSRS：
+  `FsrsEngine` 按该版本上游源码逐行移植（LongTermScheduler 语义），版本号唯一来源是
+  `index.html` 的 `FSRS_TS_VERSION` 常量；对拍见 `pnpm run test:fsrs:compare`
+- 通过 [KaTeX](https://github.com/KaTeX/KaTeX) **v0.18.9** 支持 LaTeX 公式：题目、选项与解析中的 `$...$` 行内公式、`$$...$$` 独立公式
+  （离线资源为 `vendor/katex`，版本号唯一来源是 `vendor/katex/VERSION`，构建时注入 `index.html`）
 - 主题切换（黑夜模式）。~~你可以在床上背着舍友偷偷内卷了~~
 - 支持触屏：左右滑动切换题目
-- 数据统计面板（菜单 → 数据统计）：累计答题/正确率/已掌握、近 7 天答题与复习趋势、未来 3 天复习量预测、近 1 周实际 / 未来 1 周预计（复习/新增/预计颜色区分），复习数据随 FSRS 备份导入导出
+- 数据统计面板（菜单 → 数据统计）：累计答题/正确率/已掌握、近 7 天答题与复习趋势、未来 3 天复习量预测、近 1 周实际 / 未来 1 周预计（复习/新增/预计颜色区分）
+- 复习数据随 FSRS 备份导入导出
+  - 分享出去的一律是 `.json` 文件；文件分享不可用时降级为 `.json` 下载，Android WebView 连下载都被拦截时才复制 JSON 文本并提示「请粘贴保存为 .json」
 - 快捷键
   - 左右箭头 = 切换题目
   - 1-5 = A-E
+  - 复习模式下 1-4 = 四档评分；已评分后 1-4 可**改评价**（从原始卡重算，不会越改越长）
 - 右下角按钮显示题目导航
+- 随机选项排列（菜单 → 设置）：按题干稳定打乱选项顺序，答案仍按原始字母判定，快捷键 1-5 仍对应 A-E
+- 计时自动暂停：切后台、提交答案、评分完成后停表；切到未作答的题自动恢复（见下节）
 
 ### 适配格式
 
 [示例](doc/示例.md)
+
+### 导入题库的方式（合并入口）
+
+菜单 → 导入题库：
+
+- **文件选择 / 拖放**：选择或拖入 `.md` 题库（支持多选，导入后自动缓存，下次可一键加载）。
+- **从剪贴板导入**：先去剪贴板取文本，再自动判定类型——
+  - 以 `{` 开头且能解出卡片表（`cards`，或 `kind === "fsrs-cards"`）→ 按 **FSRS 备份**导入
+    （校验、覆盖确认与「导入备份」完全一致，字段缺失/类型错误的卡片会被跳过并计数）；
+  - 其余内容 → 按 **Markdown 题库**导入（与文件导入走同一条解析/缓存/应用管线）。
+  内容为空、Markdown 里没有可解析的题目、JSON 格式无效都会给出明确提示，不会静默失败。
+- **导入 FSRS 备份**（复习数据区 →「导入备份」）：与「从剪贴板导入」共用同一个对话框，
+  三个动作（选择题库文件 / 从剪贴板导入 / 导入 FSRS 备份）都在一个 `#importFsrsDialog` 里。
+- **手动粘贴兜底**：Android WebView 等环境没有 `navigator.clipboard.readText` 权限（或被拒绝、读取超时）时，
+  同一对话框切到「手动粘贴」面板，长按粘贴后点「导入」即可——与一键读取汇入同一个导入函数。
+
+## 计时口径与自动暂停
+
+总用时与单题用时都只累计「前台且正在作答」的时间，其余一律不计入：
+
+| 时机 | 行为 |
+|---|---|
+| 提交答案（刷题 / FSRS） | 立即停表：解析、犹豫的时间不计入本题与总用时 |
+| FSRS 评分 / 改评价完成 | 停止计时，下次复习结果可从容阅读 |
+| 切到未作答的题 | 恢复计时，从切题那一刻重新起算该题 |
+| 切到已作答 / 已评分的题 | 保持暂停（单题用时冻结在原有值） |
+| 切后台（锁屏 / 切应用 / 切标签页） | 暂停；回前台时**仅在**「答题区可见且当前题未完成」时恢复 |
+| 考试模式 | 不自动停表（允许改答案，且要统计总用时） |
+
+- 停表时时钟数字会弱化显示，表示「计时已暂停」。
+- 原生 `appStateChange`（Capacitor）与 Web `document.visibilitychange` 汇入同一个收敛函数，
+  两个来源的 pause/resume 都幂等：重复事件不会重复扣时。
+- 自动评分取的是**作答瞬间**的用时，因此停表不会影响自动评分的档位。
+
+## 失效卡片判定规则
+
+复习卡以**题干全文**为键（`FsrsStore`，localStorage `fsrs_cards_v1`），因此“失效”只有两种来源，
+两者都不影响题库本身，只影响复习进度：
+
+| 来源 | 触发场景 | 处理方式 | 用户可见提示 |
+|---|---|---|---|
+| a) 字段无效 | 导入备份时某条记录字段缺失或类型错误 | 导入时跳过该条，其余照常写入 | `已导入 N 张卡，跳过 M 条无效数据` |
+| b) 孤儿卡 | 换了题库，旧卡的题干在当前题库中找不到**完全一致**的文本 | `FsrsStore.prune(validTexts)` 自动清理 | `已清理 X 张失效卡：题干与当前题库不完全一致` |
+
+判定口径集中在一个函数里（`isValidFsrsCardRecord`），导入与文档共用：
+
+```js
+// 有效 = 非数组对象，且 due / stability / state 三者都是 number
+const isValidFsrsCardRecord = v =>
+    !!v && typeof v === "object" && !Array.isArray(v) &&
+    typeof v.due === "number" && typeof v.stability === "number" && typeof v.state === "number";
+```
+
+注意几点：
+
+- **只校验类型，不校验取值范围**：`NaN` 也是 `number`，会通过校验（避免把历史遗留数据误判为损坏）。
+- **空白字符算不同题干**：键是精确匹配，`心脏位于？` 与 `心脏位于？ `（尾随空格）是两张不同的卡，
+  后者会被 prune 当作孤儿清理；所以改题库时不要顺手改动题干里的空格/标点。
+- **prune 只按当前题库比对**：`#applyQuestions`（文件导入与缓存加载共用）在应用题库后立即执行，
+  比对基准是**过滤后的题集**。因此开启「隐藏已掌握」再导入题库时，被隐藏题目的复习卡也会被当作孤儿清理；
+  想保留它们的复习进度，请在关闭「隐藏已掌握」的状态下导入。
+- 想彻底清空复习数据，用「重置数据」；想保留但排查问题，先「导出备份」再导入核对跳过条数。
+- 规则有单测覆盖：`scripts/fsrs_logic_test.cjs` 的第 3、9 节（判定函数 + prune 语义）。
 
 ## 项目结构
 
@@ -110,10 +181,45 @@ $env:ANDROID_KEY_PASSWORD = "***"
 ```powershell
 pnpm test                          # = smoke_test + fsrs_logic_test（CI 应以此为准）
 pnpm run typecheck                 # 抽出内联 JS → tsc --checkJs 类型检查
-pnpm run test:web                  # DOM 桩冒烟测试：导入/缓存/分享降级/答题/FSRS 全链路
-pnpm run test:fsrs                 # FSRS 调度逻辑与统计口径
-node scripts/fsrs_compare.cjs      # 与 ts-fsrs 对拍（需联网安装 ts-fsrs）
+pnpm run test:web                  # DOM 桩冒烟测试：导入/缓存/剪贴板与合并入口/改评价/选项洗牌/计时暂停/分享降级/答题/FSRS 全链路
+pnpm run test:fsrs                 # FSRS 调度逻辑与统计口径（含版本号一致性校验）
+pnpm run test:fsrs:compare         # 与官方 ts-fsrs 对拍（首次需联网安装到 .tmp-fsrs，仅用于对拍）
 ```
+
+### 第三方依赖版本
+
+README 里显示的版本号不是手写的装饰，而是由测试守住的单一来源：
+
+| 依赖 | 当前版本 | 唯一来源（改版本只改这里） | 一致性由谁校验 |
+|---|---|---|---|
+| [ts-fsrs](https://github.com/open-spaced-repetition/ts-fsrs) | **v5.4.2** | `index.html` 的 `FSRS_TS_VERSION` 常量 | `fsrs_logic_test.cjs` 第 10 节（比对 README）；`fsrs_compare.cjs` 第 6 节（比对官方包版本） |
+| [KaTeX](https://github.com/KaTeX/KaTeX) | **v0.18.9** | `vendor/katex/VERSION` | `fsrs_logic_test.cjs` 第 10 节（比对 README）；`sync-web.cjs` 注入 `__KATEX_VERSION__` 时校验格式 |
+| [Capacitor](https://capacitorjs.com/) | **8.5.2** | `package.json`（`capacitor.config.json` 不写版本） | `sync-web.cjs` 自检 importmap 指向的产物是否齐全 |
+
+Capacitor 是按包各自发版的，`package.json` 里当前声明的版本为：
+`@capacitor/core`/`cli`/`android` **8.5.2**、`@capacitor/filesystem` **8.1.3**、`@capacitor/share` **8.0.2**、
+`@capacitor/synapse` **1.0.4**、`@capgo/capacitor-share-target` **8.0.54**。
+表格里的 8.5.2 指 Capacitor 平台主线（core/cli/android）版本。
+
+`ts-fsrs` 只用于对拍：`FsrsEngine` 是**离线移植**（不含任何 npm 运行时依赖），
+对拍脚本会把官方包装进 `.tmp-fsrs/`（已 gitignore），永远不会进 `dist/` 或 APK。
+
+升级步骤：
+
+```powershell
+# 1) ts-fsrs：改 index.html 的 FSRS_TS_VERSION → 核对公式/W 常量 → 与官方包对拍
+pnpm run test:fsrs:compare
+
+# 2) KaTeX：解压新版 npm 包，把 dist/ 覆盖到 vendor/katex/，并按新版本改写 vendor/katex/VERSION
+pnpm run sync:web                  # 剔除未压缩源码 + 注入 __KATEX_VERSION__ → dist/
+
+# 3) Capacitor：改 package.json 里的版本 → 重装 → 重新生成 dist 与原生工程
+pnpm install
+pnpm run sync:web
+```
+
+> npm 缓存不在工作目录时（受限/沙箱环境），对拍安装需显式指定缓存位置：
+> `$env:npm_config_cache = "$PWD\.tmp-npm-cache"; pnpm run test:fsrs:compare`
 
 类型检查说明：`index.html` 的 JS 是内联的（单文件应用），`npm run typecheck` 会先用
 `scripts/extract-inline-js.cjs` 抽到 `.tmp-lint/`（已 gitignore），再按根 `tsconfig.json`
