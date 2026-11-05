@@ -18,12 +18,12 @@ An HTML renderer that reads Markdown files and converts them into a quiz.
 
 ### 使用说明
 
-- 通过 [ts-fsrs](https://github.com/open-spaced-repetition/ts-fsrs) **v5.4.2**（FSRS-6.0）支持了 FSRS：
-  `FsrsEngine` 按该版本上游源码逐行移植（LongTermScheduler 语义），版本号唯一来源是
-  `index.html` 的 `FSRS_TS_VERSION` 常量；对拍见 `pnpm run test:fsrs:compare`
-- 通过 [KaTeX](https://github.com/KaTeX/KaTeX) **v0.18.9** 支持 LaTeX 公式：题目、选项与解析中的 `$...$` 行内公式、`$$...$$` 独立公式
+- 通过 [ts-fsrs](https://github.com/open-spaced-repetition/ts-fsrs) **v6.0.0**（FSRS-7）支持了 FSRS：
+  `FsrsEngine` 按该版本上游源码移植（`DefaultScheduler` 语义：双轨迹记忆状态 + 分钟级学习步），
+  版本号唯一来源是 `index.html` 的 `FSRS_TS_VERSION` 常量；对拍见 `pnpm run test:fsrs:compare`
+- 通过 [KaTeX](https://github.com/KaTeX/KaTeX) **v0.19.1** 支持 LaTeX 公式：题目、选项与解析中的 `$...$` 行内公式、`$$...$$` 独立公式
   （离线资源为 `vendor/katex`，版本号唯一来源是 `vendor/katex/VERSION`，构建时注入 `index.html`）
-- 主题切换（黑夜模式）。~~你可以在床上背着舍友偷偷内卷了~~
+- 主题切换（菜单 → 主题 →「主题设置」，从右侧滑出的抽屉）：跟随系统 / 浅色 / 深色 / OLED，菜单入口回显当前主题。~~你可以在床上背着舍友偷偷内卷了~~
 - 支持触屏：左右滑动切换题目
 - 数据统计面板（菜单 → 数据统计）：累计答题/正确率/已掌握、近 7 天答题与复习趋势、未来 3 天复习量预测、近 1 周实际 / 未来 1 周预计（复习/新增/预计颜色区分）
 - 复习数据随 FSRS 备份导入导出
@@ -33,7 +33,12 @@ An HTML renderer that reads Markdown files and converts them into a quiz.
   - 1-5 = A-E
   - 复习模式下 1-4 = 四档评分；已评分后 1-4 可**改评价**（从原始卡重算，不会越改越长）
 - 右下角按钮显示题目导航
-- 随机选项排列（菜单 → 设置）：按题干稳定打乱选项顺序，答案仍按原始字母判定，快捷键 1-5 仍对应 A-E
+- 随机选项排列（菜单 → 设置）：按题干稳定打乱选项顺序，序号按显示位置重编为 A-E，快捷键 1-5 对应屏幕上看到的选项
+- 多选题判分与选择顺序、答案写法都无关：`ABCD`、`A、B、C、D`、`A B C D` 一律按字母集合比较
+- FSRS 刷题**始终自动评分**（不设开关）：作答瞬间按用时与对错打分，评分条随即变成「改评价」条，点其它档或按 1-4 会从原始卡重算
+  - FSRS-7 的学习步是分钟级的（新卡「忘记了」= 1 分钟、复习失败 = 10 分钟）：这类题会追加一份到队尾，本次练习内即可重逢，「下次复习」按 分钟 → 小时 → 天 表述
+  - 记忆保持率、自动评分标准、每日新卡上限集中在菜单 → 设置 →「FSRS 设置」弹窗（仅 FSRS 启用时出现）
+  - 记忆保持率可在 0–1 开区间内自定义（越界或留空回落 0.90），弹窗里附各档位的实测间隔对照
 - 计时自动暂停：切后台、提交答案、评分完成后停表；切到未作答的题自动恢复（见下节）
 
 ### 适配格式
@@ -47,7 +52,7 @@ An HTML renderer that reads Markdown files and converts them into a quiz.
 - **文件选择 / 拖放**：选择或拖入 `.md` 题库（支持多选，导入后自动缓存，下次可一键加载）。
 - **从剪贴板导入**：先去剪贴板取文本，再自动判定类型——
   - 以 `{` 开头且能解出卡片表（`cards`，或 `kind === "fsrs-cards"`）→ 按 **FSRS 备份**导入
-    （校验、覆盖确认与「导入备份」完全一致，字段缺失/类型错误的卡片会被跳过并计数）；
+    （覆盖确认与「导入备份」完全一致，备份内容原样写入）；
   - 其余内容 → 按 **Markdown 题库**导入（与文件导入走同一条解析/缓存/应用管线）。
   内容为空、Markdown 里没有可解析的题目、JSON 格式无效都会给出明确提示，不会静默失败。
 - **导入 FSRS 备份**（复习数据区 →「导入备份」）：与「从剪贴板导入」共用同一个对话框，
@@ -72,36 +77,6 @@ An HTML renderer that reads Markdown files and converts them into a quiz.
 - 原生 `appStateChange`（Capacitor）与 Web `document.visibilitychange` 汇入同一个收敛函数，
   两个来源的 pause/resume 都幂等：重复事件不会重复扣时。
 - 自动评分取的是**作答瞬间**的用时，因此停表不会影响自动评分的档位。
-
-## 失效卡片判定规则
-
-复习卡以**题干全文**为键（`FsrsStore`，localStorage `fsrs_cards_v1`），因此“失效”只有两种来源，
-两者都不影响题库本身，只影响复习进度：
-
-| 来源 | 触发场景 | 处理方式 | 用户可见提示 |
-|---|---|---|---|
-| a) 字段无效 | 导入备份时某条记录字段缺失或类型错误 | 导入时跳过该条，其余照常写入 | `已导入 N 张卡，跳过 M 条无效数据` |
-| b) 孤儿卡 | 换了题库，旧卡的题干在当前题库中找不到**完全一致**的文本 | `FsrsStore.prune(validTexts)` 自动清理 | `已清理 X 张失效卡：题干与当前题库不完全一致` |
-
-判定口径集中在一个函数里（`isValidFsrsCardRecord`），导入与文档共用：
-
-```js
-// 有效 = 非数组对象，且 due / stability / state 三者都是 number
-const isValidFsrsCardRecord = v =>
-    !!v && typeof v === "object" && !Array.isArray(v) &&
-    typeof v.due === "number" && typeof v.stability === "number" && typeof v.state === "number";
-```
-
-注意几点：
-
-- **只校验类型，不校验取值范围**：`NaN` 也是 `number`，会通过校验（避免把历史遗留数据误判为损坏）。
-- **空白字符算不同题干**：键是精确匹配，`心脏位于？` 与 `心脏位于？ `（尾随空格）是两张不同的卡，
-  后者会被 prune 当作孤儿清理；所以改题库时不要顺手改动题干里的空格/标点。
-- **prune 只按当前题库比对**：`#applyQuestions`（文件导入与缓存加载共用）在应用题库后立即执行，
-  比对基准是**过滤后的题集**。因此开启「隐藏已掌握」再导入题库时，被隐藏题目的复习卡也会被当作孤儿清理；
-  想保留它们的复习进度，请在关闭「隐藏已掌握」的状态下导入。
-- 想彻底清空复习数据，用「重置数据」；想保留但排查问题，先「导出备份」再导入核对跳过条数。
-- 规则有单测覆盖：`scripts/fsrs_logic_test.cjs` 的第 3、9 节（判定函数 + prune 语义）。
 
 ## 项目结构
 
@@ -192,8 +167,8 @@ README 里显示的版本号不是手写的装饰，而是由测试守住的单�
 
 | 依赖 | 当前版本 | 唯一来源（改版本只改这里） | 一致性由谁校验 |
 |---|---|---|---|
-| [ts-fsrs](https://github.com/open-spaced-repetition/ts-fsrs) | **v5.4.2** | `index.html` 的 `FSRS_TS_VERSION` 常量 | `fsrs_logic_test.cjs` 第 10 节（比对 README）；`fsrs_compare.cjs` 第 6 节（比对官方包版本） |
-| [KaTeX](https://github.com/KaTeX/KaTeX) | **v0.18.9** | `vendor/katex/VERSION` | `fsrs_logic_test.cjs` 第 10 节（比对 README）；`sync-web.cjs` 注入 `__KATEX_VERSION__` 时校验格式 |
+| [ts-fsrs](https://github.com/open-spaced-repetition/ts-fsrs) | **v6.0.0** | `index.html` 的 `FSRS_TS_VERSION` 常量 | `fsrs_logic_test.cjs` 第 10 节（比对 README）；`fsrs_compare.cjs` 第 8 节（比对官方包版本） |
+| [KaTeX](https://github.com/KaTeX/KaTeX) | **v0.19.1** | `vendor/katex/VERSION` | `fsrs_logic_test.cjs` 第 10 节（比对 README）；`sync-web.cjs` 注入 `__KATEX_VERSION__` 时校验格式 |
 | [Capacitor](https://capacitorjs.com/) | **8.5.2** | `package.json`（`capacitor.config.json` 不写版本） | `sync-web.cjs` 自检 importmap 指向的产物是否齐全 |
 
 Capacitor 是按包各自发版的，`package.json` 里当前声明的版本为：

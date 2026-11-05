@@ -114,13 +114,15 @@ const byId = [
     'importFileBtn','importClipboardBtn','importBackupBtn',
     'clipboardImportText','clipboardImportConfirm','clipboardImportCancel',
     'shuffleOptionsToggle',
-    'autoNextToggle','autoNextDelay','showHistoryToggle','hideMasteredToggle','autoRateToggle','fsrsEnabledToggle',
-    'fsrsSubmenu','autoRatePresetSelect','autoRatePresetRow','autoRateCustomToggle','presetDialog','presetDialogClose',
+    'autoNextToggle','autoNextDelay','showHistoryToggle','hideMasteredToggle','fsrsEnabledToggle',
+    'fsrsSettingsRow','fsrsSettingsBtn','fsrsSettingsDialog','fsrsSettingsDialogClose',
+    'themeDrawer','themeDrawerBtn','themeDrawerClose','themeCurrentValue',
+    'autoRatePresetSelect','autoRateCustomToggle','presetDialog','presetDialogClose',
     'presetResetBtn','presetSaveBtn','retentionInput','dailyNewInput','resetFsrsBtn','exportFsrsBtn','copyFsrsBtn',
     'importFsrsBtn','fsrsImportInput','fsrsTotalCards','fsrsDueToday','fsrsAvgStability','ovSessions','ovAnswered',
     'ovAccuracy','ovMastered','ovReps','ovLapses','ovAvgTime','trendChart','fc0','fc1','fc2','trendChartWide',
     'ovSessionsLabel','ovAnsweredLabel','ovAccuracyLabel','statsModeBtn','statsResetBtn','statsGrid','dailyNewEstimate',
-    'fsrsHint','fsrsHintDetail','fsrsHintSummary','fsrsHintDetailText',
+    'fsrsHint',
     'trendDetailBtn','trendDialog','trendDialogClose','backupDialog','backupDialogClose','backupShareBtn','backupSaveBtn',
     'quizSection','resultSection','questionContainer','answerFeedback','prevBtn','nextBtn','markBtn','masterBtn',
     'restartBtn','reviewBtn','wrongContainer','exportBtn','exportPanel','exportLinks','copyExportBtn','closeExportBtn',
@@ -580,14 +582,15 @@ const flush = () => new Promise(r => setTimeout(r, 30));
     await flush();
     assert(/成功加载 1 题/.test(els.fileStatus.innerText), `合并入口的剪贴板导入: "${els.fileStatus.innerText}"`);
     assert(!els.importFsrsDialog.open, '剪贴板读取成功后关闭对话框');
-    /* ⑦ 剪贴板为 FSRS 备份 JSON → 走 #importFsrsFromText（含无效卡片跳过与计数） */
-    const card = { due: Date.now() + 86400000, stability: 2.5, difficulty: 5, state: 2, reps: 1, lapses: 0, last_review: null };
-    const backup = JSON.stringify({ app: 'Offline-Quiz-Trainer', kind: 'fsrs-cards', version: 1, cards: { '剪贴板题': card, '坏卡': { due: 'nope' } } });
+    /* ⑦ 剪贴板为 FSRS 备份 JSON → 走 #importFsrsFromText（备份内容原样写入，不做字段校验） */
+    const card = { dueAt: Date.now() + 86400000, lastReviewAt: Date.now(), stability: 2.5, stabilityFast: 2, difficulty: 5, state: 2, reps: 1, lapses: 0, scheduledDays: 1, learningStep: 0, scheduleStatus: 'review' };
+    const backup = JSON.stringify({ app: 'Offline-Quiz-Trainer', kind: 'fsrs-cards', version: 1, cards: { '剪贴板题': card, '坏卡': { dueAt: 'nope' } } });
     readTextImpl = async () => backup;
     els.clipboardImportBtn.trigger('click');
     await flush();
-    assert(/已导入 1 张卡，跳过 1 条无效数据/.test(els.snackbar.textContent), `剪贴板 FSRS 备份路由正确: "${els.snackbar.textContent}"`);
-    assert(JSON.parse(store.get('fsrs_cards_v1'))['剪贴板题']?.stability === 2.5, 'FSRS 备份已覆盖写入（无效卡被跳过）');
+    assert(/已导入 2 张卡/.test(els.snackbar.textContent), `剪贴板 FSRS 备份路由正确: "${els.snackbar.textContent}"`);
+    assert(JSON.parse(store.get('fsrs_cards_v2'))['剪贴板题']?.stability === 2.5, 'FSRS 备份写入 v2 卡表（原样保留，含无法解析的坏卡）');
+    assert(!store.has('fsrs_cards_v1'), '不再读写 FSRS-6 时代的 fsrs_cards_v1');
     /* ⑧ 以 { 开头但 JSON 无效 → 明确提示（不静默按 Markdown 处理） */
     readTextImpl = async () => '{"kind":"fsrs-cards", bad json';
     els.clipboardImportBtn.trigger('click');
@@ -638,6 +641,40 @@ const flush = () => new Promise(r => setTimeout(r, 30));
     els.trendDialog.trigger('click');
     assert(!els.trendDialog.open, '点击空白处关闭弹窗');
 
+    console.log('== 13.1 菜单弹窗与抽屉：FSRS 设置（居中模态）+ 主题（右侧抽屉）==');
+    els.fsrsEnabledToggle.checked = true;
+    els.fsrsEnabledToggle.trigger('change');
+    assert(els.fsrsSettingsRow.hidden === false, 'FSRS 启用后「FSRS 设置」入口出现');
+    els.fsrsSettingsBtn.trigger('click');
+    assert(els.fsrsSettingsDialog.open, '「FSRS 设置」按钮打开对话框');
+    els.fsrsSettingsDialog.trigger('click');
+    assert(!els.fsrsSettingsDialog.open, '点击空白处关闭 FSRS 设置对话框');
+    els.fsrsSettingsBtn.trigger('click');
+    els.fsrsSettingsDialogClose.trigger('click');
+    assert(!els.fsrsSettingsDialog.open, '× 按钮关闭 FSRS 设置对话框');
+    /* 记忆保持率：合法自定义直接生效并持久化；越界/留空回落 0.90（FSRS-7 求解要求 0<dr<1） */
+    els.retentionInput.value = '0.95';
+    els.retentionInput.trigger('change');
+    assert(Number(els.retentionInput.value) === 0.95 && JSON.parse(store.get('quiz_settings')).retention === 0.95, `合法保持率保留: "${els.retentionInput.value}"`);
+    assert(/记忆保持率已设为 0\.95/.test(els.snackbar.textContent), `保持率变更提示: "${els.snackbar.textContent}"`);
+    els.retentionInput.value = '1.5';
+    els.retentionInput.trigger('change');
+    assert(Number(els.retentionInput.value) === 0.9 && JSON.parse(store.get('quiz_settings')).retention === 0.9, '越界保持率回落 0.90');
+    els.retentionInput.value = '';
+    els.retentionInput.trigger('change');
+    assert(JSON.parse(store.get('quiz_settings')).retention === 0.9, '留空保持率回落 0.90（引擎不因非法值构造失败）');
+    els.retentionInput.value = '0.9';
+    els.retentionInput.trigger('change');
+    els.fsrsEnabledToggle.checked = false;
+    els.fsrsEnabledToggle.trigger('change');
+    assert(els.fsrsSettingsRow.hidden, '关闭 FSRS 后入口隐藏');
+    /* 复位：后续小节的答题流程默认跑在非 FSRS 模式 */
+    els.themeDrawerBtn.trigger('click');
+    assert(els.themeDrawer.open, '「主题设置」打开右侧抽屉');
+    els.themeDrawer.trigger('click');
+    assert(!els.themeDrawer.open, '点击遮罩关闭主题抽屉');
+    assert(els.themeCurrentValue.textContent === '跟随系统', '选择器收进抽屉后菜单入口仍回显当前主题');
+
     console.log('== 14. 多行题干续行 + 代码块内容保护 ==');
     els.fileInput.files = [{ name: 'multi.md', text: async () => [
         '## 一、单选题',
@@ -674,7 +711,7 @@ const flush = () => new Promise(r => setTimeout(r, 30));
     assert(parsed.includes('<pre><code>js\n# 注释不是标题\n**不是加粗**\n</code></pre>'), '代码块内容原样保留（无 <h3>/加粗/<br>）');
     assert(!parsed.includes('<h3>'), '代码块内 # 行未被转为标题');
 
-    console.log('== 15. 随机选项排列：顺序稳定（多次 render 不跳位）、开关恢复、答案仍判对 ==');
+    console.log('== 15. 随机选项排列：顺序稳定（多次 render 不跳位）、开关恢复、序号按位置重编 ==');
     /* 反馈面板同样是 innerHTML 字符串：按 data-rating 解析四档按钮及其高亮状态 */
     const ratingButtons = () => [...els.answerFeedback.innerHTML.matchAll(/<button[^>]*data-rating="(\d)"[^>]*>/g)]
         .map(m => ({ rating: +m[1], accent: m[0].includes('btn-accent'), pressed: m[0].includes('aria-pressed="true"'), el: els.answerFeedback }));
@@ -705,11 +742,11 @@ const flush = () => new Promise(r => setTimeout(r, 30));
     await flush();
     assert(/已开启随机选项排列/.test(els.snackbar.textContent), `开启提示: "${els.snackbar.textContent}"`);
     const shuffled1 = renderedOptions();
-    assert(JSON.stringify(shuffled1) === JSON.stringify([{ key: 'B', text: 'B. 乙' }, { key: 'A', text: 'A. 甲' }]), `开启后按稳定顺序重排（B 在前）: ${JSON.stringify(shuffled1)}`);
+    assert(JSON.stringify(shuffled1) === JSON.stringify([{ key: 'B', text: 'A. 乙' }, { key: 'A', text: 'B. 甲' }]), `开启后按稳定顺序重排，序号按显示位置重编（原始 B 显示为 A）: ${JSON.stringify(shuffled1)}`);
     /* 稳定性：反馈/评分/重渲染都不会再次重排 */
-    dispatchKey('1'); // 仍按原始字母 A 选择 → 判对
+    dispatchKey('2'); // 屏幕上第 2 项 = 原始 A → 判对
     await flush();
-    assert(String(els.correctCount.textContent) === '1', '随机顺序下按 1 仍对应 A，答案判定正确');
+    assert(String(els.correctCount.textContent) === '1', '序号重编后按 2 = 选中屏幕上第 2 项（原始 A），答案判定正确');
     els.restartBtn.click();
     await flush();
     els.menuPanel.trigger('toggle');
@@ -797,38 +834,39 @@ const flush = () => new Promise(r => setTimeout(r, 30));
     await flush();
     assert(!els.quizSection.classList.contains('hidden'), 'FSRS 模式开始答题');
     assert(String(els.totalQ.textContent) === '2', 'FSRS 首次队列 2 题（全部新卡）');
-    dispatchKey('1'); // 作答
+    dispatchKey('1'); // 作答：自动评分已无开关，作答瞬间直接打分
     await flush();
-    assert(els.answerFeedback.innerHTML.includes('评分'), 'FSRS 作答后显示评分条');
-    dispatchKey('3'); // 评 Good
+    assert(/已评分「(简单|良好|困难|忘记了)」/.test(els.answerFeedback.innerHTML), 'FSRS 作答即自动评分（不再有手动评分条）');
+    assert(els.answerFeedback.innerHTML.includes('rating-bar--relevel'), '自动评分后评分条变成「改评价」条');
+    dispatchKey('3'); // 改评价为 Good
     await flush();
-    assert(els.answerFeedback.innerHTML.includes('下次复习'), '评分后显示下次复习时间');
+    assert(els.answerFeedback.innerHTML.includes('下次复习'), '改评价后显示下次复习时间');
     els.menuPanel.trigger('toggle'); // 菜单刷新 → 复习数据摘要
-    assert(String(els.fsrsTotalCards.textContent) === '1', '已写入 1 张复习卡');
+    assert(String(els.fsrsTotalCards.textContent) === '3', `已写入 1 张复习卡，且换题库不再清理孤儿卡（10.7 导入的 2 张仍在）: "${els.fsrsTotalCards.textContent}"`);
     els.navSubmitBtn.click();
     await flush();
     els.restartBtn.click();
     await flush();
     assert(String(els.totalQ.textContent) === '1', '重建队列后总题数更新为 1（仅剩新卡）');
 
-    console.log('== 18. FSRS 评分后可改评价（重评从原始卡快照重算，间隔不滚雪球） ==');
+    console.log('== 18. FSRS 评分后可改评价（重评从原始卡快照重算，间隔不滚雪球）+ 分钟级学习步重排队尾 ==');
     /* 预置一张到期卡：让本题走「已有记录」路径，避免新卡基线恰好也等于空卡而掩盖快照错误。
        必须经 FsrsStore.save 写入：FsrsStore 有内存缓存，直接写 localStorage 不会被读到。
-       期望值同样由 index.html 里的 FsrsEngine 现算（elapsed_days 由卡片字段决定，写死数字会失真）。 */
+       期望值同样由 index.html 里的 FsrsEngine 现算（间隔取决于卡上的 stability/stabilityFast/
+       difficulty 与毫秒级 elapsed，写死数字会失真）。 */
     const fsimSrc = html.slice(html.indexOf('const FSRS_STATE'), html.indexOf('/* ===== FsrsStore'));
     const FsrsEngine = new Function(`${fsimSrc}\nreturn FsrsEngine;`)();
     const simEngine = new FsrsEngine();
     const cardShape = next => ({
-        due: next.due instanceof Date ? next.due.getTime() : next.due,
-        stability: next.stability, difficulty: next.difficulty,
-        scheduled_days: next.scheduled_days, elapsed_days: next.elapsed_days,
-        reps: next.reps, lapses: next.lapses, learning_steps: next.learning_steps,
-        state: next.state,
-        last_review: next.last_review ? (next.last_review instanceof Date ? next.last_review.getTime() : next.last_review) : null,
+        dueAt: next.dueAt instanceof Date ? next.dueAt.getTime() : next.dueAt,
+        lastReviewAt: next.lastReviewAt ? (next.lastReviewAt instanceof Date ? next.lastReviewAt.getTime() : next.lastReviewAt) : null,
+        stability: next.stability, stabilityFast: next.stabilityFast, difficulty: next.difficulty,
+        scheduledDays: next.scheduledDays, learningStep: next.learningStep, scheduleStatus: next.scheduleStatus,
+        state: next.state, reps: next.reps, lapses: next.lapses,
     });
-    const baseCard = { due: Date.now() - 1000, stability: 5, difficulty: 5, scheduled_days: 5, elapsed_days: 5, reps: 3, lapses: 0, learning_steps: 0, state: 2, last_review: Date.now() - 5 * 86400000 };
+    const baseCard = { dueAt: Date.now() - 1000, lastReviewAt: Date.now() - 5 * 86400000, stability: 5, stabilityFast: 4, difficulty: 5, scheduledDays: 5, learningStep: 0, scheduleStatus: 'review', state: 2, reps: 3, lapses: 0 };
     sandbox.FsrsStore.save({ '重评题': baseCard });
-    assert(JSON.parse(store.get('fsrs_cards_v1'))['重评题'].stability === 5, '预置到期卡已落盘');
+    assert(JSON.parse(store.get('fsrs_cards_v2'))['重评题'].stability === 5, '预置到期卡已落盘（v2 卡表）');
     els.fileInput.files = [{ name: 'relevel.md', text: async () => [
         '## 一、单选题',
         '',
@@ -843,55 +881,66 @@ const flush = () => new Promise(r => setTimeout(r, 30));
     els.startQuizBtn.click();
     await flush();
     assert(String(els.totalQ.textContent) === '1', '到期卡进入复习队列');
+    const navButtons = () => els.questionNav.children.length;
+    const navBefore = navButtons();
     dispatchKey('1');
     await flush();
     assert(els.answerFeedback.innerHTML.includes('评分'), '作答后显示评分条');
     dispatchKey('3'); /* Good */
     await flush();
-    const cardAfter3 = JSON.parse(store.get('fsrs_cards_v1'))['重评题'];
-    const expect3 = cardShape(simEngine.next(baseCard, new Date(cardAfter3.last_review), 3));
+    const cardAfter3 = JSON.parse(store.get('fsrs_cards_v2'))['重评题'];
+    const expect3 = cardShape(simEngine.next(baseCard, new Date(cardAfter3.lastReviewAt), 3));
     assert(cardAfter3.reps === 4 && cardAfter3.stability === expect3.stability, `首次评分 Good 基于原始卡（reps 3→4, stability ${baseCard.stability}→${expect3.stability}）: ${JSON.stringify(cardAfter3)}`);
-    assert(Math.abs(cardAfter3.due - expect3.due) <= 2 && cardAfter3.scheduled_days === expect3.scheduled_days, `首次评分与 engine.next(原始卡, now, Good) 完全一致（due/scheduled_days 同步）`);
+    assert(Math.abs(cardAfter3.dueAt - expect3.dueAt) <= 2 && cardAfter3.scheduledDays === expect3.scheduledDays, `首次评分与 engine.next(原始卡, now, Good) 完全一致（dueAt/scheduledDays 同步）`);
+    assert(cardAfter3.stabilityFast === expect3.stabilityFast, `FSRS-7 快轨迹同步写入（stabilityFast ${baseCard.stabilityFast}→${expect3.stabilityFast}）`);
     assert(els.answerFeedback.innerHTML.includes('rating-bar--relevel'), '已评分后显示可改评价的评分条');
     const ratingBtns = ratingButtons();
     assert(ratingBtns.length === 4, `重评条含四档按钮: ${ratingBtns.length}`);
     assert(ratingBtns[2].accent && ratingBtns[2].pressed, '当前档（良好）高亮且 aria-pressed=true');
     assert(!ratingBtns[0].accent, '非当前档不高亮');
     assert(els.answerFeedback.innerHTML.includes('修改将重新计算下次复习'), '提示重评会重新计算');
-    /* 键盘改评价：1 = 忘记了 */
+    /* 键盘改评价：1 = 忘记了 → FSRS-7 给出 10 分钟的学习步（未到毕业间隔） */
     dispatchKey('1');
     await flush();
-    const cardAfter1 = JSON.parse(store.get('fsrs_cards_v1'))['重评题'];
-    const expect1 = cardShape(simEngine.next(baseCard, new Date(cardAfter1.last_review), 1));
+    const cardAfter1 = JSON.parse(store.get('fsrs_cards_v2'))['重评题'];
+    const expect1 = cardShape(simEngine.next(baseCard, new Date(cardAfter1.lastReviewAt), 1));
     assert(cardAfter1.stability === expect1.stability && cardAfter1.reps === 4, `改评价为「忘记了」仍从原始卡重算（stability ${expect3.stability}→${expect1.stability}，reps 仍为 4）: ${JSON.stringify(cardAfter1)}`);
-    assert(cardAfter1.due === expect1.due && cardAfter1.due < cardAfter3.due, '改评价后下次复习时间随之重算（更早）');    assert(/已改为/.test(els.snackbar.textContent), `改评价提示: "${els.snackbar.textContent}"`);
+    assert(cardAfter1.dueAt === expect1.dueAt && cardAfter1.dueAt < cardAfter3.dueAt, '改评价后下次复习时间随之重算（更早）');
+    assert(/已改为/.test(els.snackbar.textContent), `改评价提示: "${els.snackbar.textContent}"`);
     assert(ratingButtons()[0].accent, '改评价后高亮切到新档位（忘记了）');
-    /* 改评价为「简单」：桩不解析 innerHTML（无真实 DOM 按钮），故走与按钮相同的 emit 通道
-       （dispatchKey('4') → #rateCard(4)）；真实点击路径已由 15 节的 .rating-btn 委托点击覆盖。 */
+    /* FSRS-7 分钟级语义：10 分钟后再见 → 面板按「分钟后」表述，且本题追加一份到队尾（本次练习内重逢） */
+    assert(cardAfter1.scheduledDays < 1 && Math.abs(cardAfter1.scheduledDays * 1440 - 10) < 1e-6, `复习失败的间隔为 10 分钟（${cardAfter1.scheduledDays} 天）`);
+    assert(cardAfter1.state === 3 && cardAfter1.lapses === 1, '复习态 + 忘记了 → 进入重学并计一次遗忘');
+    assert(els.answerFeedback.innerHTML.includes('下次复习：10 分钟后'), `下次复习按分钟表述: ${(els.answerFeedback.innerHTML.match(/下次复习：[^<]*/) ?? [''])[0]}`);
+    assert(String(els.totalQ.textContent) === '2' && navButtons() === navBefore + 1, `分钟级学习步把本题追加到队尾（总题数 1→2，导航按钮 +1）: totalQ=${els.totalQ.textContent} nav=${navButtons()}`);
+    /* 再次改评价为「简单」（≥1 天）不会重复追加：队尾只留一份未做的副本 */
     dispatchKey('4');
     await flush();
-    const cardAfter4 = JSON.parse(store.get('fsrs_cards_v1'))['重评题'];
-    const expect4 = cardShape(simEngine.next(baseCard, new Date(cardAfter4.last_review), 4));
+    const cardAfter4 = JSON.parse(store.get('fsrs_cards_v2'))['重评题'];
+    const expect4 = cardShape(simEngine.next(baseCard, new Date(cardAfter4.lastReviewAt), 4));
     assert(cardAfter4.stability === expect4.stability && cardAfter4.reps === 4, `改评价为「简单」同样从原始卡重算: ${JSON.stringify(cardAfter4)}`);
+    assert(String(els.totalQ.textContent) === '2' && navButtons() === navBefore + 1, '改回 ≥1 天的档位不再追加副本（去重）');
     /* 刷新后的「下次复习/用时」面板：档位文案与 due 一致（QuizState 的 rating/nextDue 私有，
        这里用渲染结果验证它确实被同步刷新） */
     assert(els.answerFeedback.innerHTML.includes('已评分「简单」'), `面板显示当前评分: ${els.answerFeedback.innerHTML.slice(0, 200)}`);
-    const daysText = cardAfter4.scheduled_days <= 0 ? '今天' : cardAfter4.scheduled_days === 1 ? '明天' : `${cardAfter4.scheduled_days} 天后`;
-    assert(els.answerFeedback.innerHTML.includes(`下次复习：${daysText}`), `面板显示与重算结果一致的下次复习时间（${daysText}）`);
+    const daysText = `下次复习：${Math.max(1, Math.round(cardAfter4.scheduledDays))} 天后`;
+    assert(els.answerFeedback.innerHTML.includes(daysText), `面板显示与重算结果一致的下次复习时间（${daysText}）`);
     assert(/用时/.test(els.answerFeedback.innerHTML), '面板显示本题用时');
     /* 点当前档不重算：再评 4 不应改变任何字段 */
-    const snapshot4 = store.get('fsrs_cards_v1');
+    const snapshot4 = store.get('fsrs_cards_v2');
     dispatchKey('4');
     await flush();
-    assert(store.get('fsrs_cards_v1') === snapshot4, '重复选择当前档不重算（卡数据不变）');
+    assert(store.get('fsrs_cards_v2') === snapshot4, '重复选择当前档不重算（卡数据不变）');
     /* 连续重评不会滚雪球：始终等价于 engine.next(原始卡, now, rating) */
     dispatchKey('3');
     await flush();
-    const cardBack3 = JSON.parse(store.get('fsrs_cards_v1'))['重评题'];
-    /* due 必须按各自评分时刻重算（两次调用相隔数 ms，绝对时刻必然不同），
-       因此断言 scheduled_days/stability 一致 —— 这才是「无滚雪球」的可比证据 */
-    assert(cardBack3.stability === cardAfter3.stability && cardBack3.scheduled_days === cardAfter3.scheduled_days, `反复重评回到 Good 与首次一致（无滚雪球）: ${cardBack3.stability}/${cardBack3.scheduled_days}天 vs ${cardAfter3.stability}/${cardAfter3.scheduled_days}天`);
-    assert(cardBack3.last_review >= baseCard.last_review, 'reps 与 last_review 由原始卡 + 当前时刻决定');
+    const cardBack3 = JSON.parse(store.get('fsrs_cards_v2'))['重评题'];
+    /* dueAt 必须按各自评分时刻重算（两次调用相隔数 ms，绝对时刻必然不同）。
+       FSRS-7 的 elapsed 按毫秒折算，故用相对容差比较 —— 结果同量级即证明「无滚雪球」：
+       间隔只取决于原始卡 + 当前档位，与之前评过什么无关 */
+    const relClose = (a, b) => Math.abs(a - b) <= Math.max(1e-6, Math.abs(b) * 1e-6);
+    assert(relClose(cardBack3.stability, cardAfter3.stability) && relClose(cardBack3.scheduledDays, cardAfter3.scheduledDays), `反复重评回到 Good 与首次一致（无滚雪球）: ${cardBack3.stability}/${cardBack3.scheduledDays}天 vs ${cardAfter3.stability}/${cardAfter3.scheduledDays}天`);
+    assert(cardBack3.lastReviewAt >= baseCard.lastReviewAt, 'reps 与 lastReviewAt 由原始卡 + 当前时刻决定');
     /* 答对可改评价；答错同理，且判定仍以原始答案为准 */
     assert(els.answerFeedback.innerHTML.includes('正确'), '改评价不影响对错判定');
 
@@ -899,7 +948,7 @@ const flush = () => new Promise(r => setTimeout(r, 30));
     /* 假时钟：Timer 通过全局 performance.now() 取时，替换沙箱里的 performance 即可精确驱动 */
     let fakeMs = 1000000;
     sandbox.performance = { now: () => fakeMs };
-    store.set('fsrs_cards_v1', JSON.stringify({})); /* 清空复习卡：让两道题都作为新卡入队 */
+    store.set('fsrs_cards_v2', JSON.stringify({})); /* 清空复习卡：让两道题都作为新卡入队 */
     sandbox.FsrsStore.save({});
     els.fsrsEnabledToggle.checked = false;
     els.fsrsEnabledToggle.trigger('change');

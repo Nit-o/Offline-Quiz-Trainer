@@ -165,6 +165,7 @@
         @keyframes fadeSlideUp { from { opacity:0; transform:translateY(12px); } to { opacity:1; transform:translateY(0); } }
         @keyframes fadeIn       { from { opacity:0; } to { opacity:1; } }
         @keyframes scaleIn      { from { opacity:0; transform:scale(0.96); } to { opacity:1; transform:scale(1); } }
+        @keyframes slideInRight { from { transform:translateX(100%); } to { transform:translateX(0); } }
         @keyframes pulse        { 0%,100% { opacity:1; } 50% { opacity:0.6; } }
         @keyframes badgePop     { 0% { transform:scale(0); } 70% { transform:scale(1.15); } 100% { transform:scale(1); } }
         @keyframes fabEnter     { from { opacity:0; transform:scale(0) translateY(60px); } to { opacity:1; transform:scale(1) translateY(0); } }
@@ -370,11 +371,13 @@
             letter-spacing: 0.06em;
         }
         .menu-panel .menu-group-content { display: flex; flex-direction: column; gap: var(--space-related); }
-        .menu-panel .menu-row {
+        /* .menu-row 不局限于菜单面板：FSRS 设置对话框复用同一套行样式 */
+        .menu-row {
             display: flex;
             align-items: center;
             gap: var(--space-related);
             flex-wrap: wrap;
+            &[hidden] { display: none; }
             &:has(input:checked) label { color: var(--primary); }
             & label { cursor: pointer; user-select: none; font-size: var(--text-sm); color: var(--text); }
             & input[type="number"] {
@@ -393,41 +396,9 @@
                 &:focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; }
             }
         }
-        /* FSRS 设置子菜单（内嵌 details，随 FSRS 启用开关显隐） */
-        .fsrs-submenu {
-            margin-block-start: var(--sp-3);
-            border: var(--bw-1) solid var(--divider);
-            border-radius: var(--radius);
-            & summary {
-                display: flex;
-                align-items: center;
-                justify-content: space-between;
-                cursor: pointer; user-select: none;
-                padding: var(--sp-3) var(--sp-4);
-                font-size: var(--text-sm); font-weight: 600;
-                color: var(--primary);
-                list-style: none;
-                &::-webkit-details-marker { display: none; }
-                &::after { content: "▸"; color: var(--text-muted); }
-            }
-            &[open] summary::after { content: "▾"; }
-            & .fsrs-submenu-content {
-                display: flex;
-                flex-direction: column;
-                gap: var(--space-related);
-                padding: var(--sp-2) var(--sp-4) var(--sp-4);
-            }
-        }
+        /* FSRS 设置改为对话框承载，入口按钮沿用菜单行的次要按钮样式 */
         .menu-row-hint { font-size: var(--text-xs); color: var(--text-muted); flex-basis: 100%; }
         .menu-row-hint[hidden] { display: none; }
-        /* 失效卡片判定规则：可展开说明（summary 即提示行，键盘可聚焦） */
-        .fsrs-hint-details {
-            & > summary { cursor: pointer; color: var(--primary); list-style: none; }
-            & > summary::-webkit-details-marker { display: none; }
-            & > summary::after { content: " ▸"; color: var(--text-muted); }
-            &[open] > summary::after { content: " ▾"; }
-            & > p { margin: var(--sp-2) 0 0; line-height: 1.6; }
-        }
         /* FSRS 复习数据摘要 + 管理操作（备份/导入为 JSON，纯本地） */
         .fsrs-stats {
             display: flex;
@@ -1170,6 +1141,34 @@
             border-block-start: 1px solid var(--divider);
         }
 
+        /* ============================================================
+           RIGHT DRAWER — 主题设置（从屏幕右侧滑出的模态抽屉）
+           ============================================================ */
+        dialog.drawer {
+            border: none; background: none; padding: 0;
+            position: fixed; inset: 0;
+            width: 100%; height: 100%; max-width: 100%; max-height: 100%;
+            display: flex; align-items: stretch; justify-content: flex-end;
+            -webkit-tap-highlight-color: transparent;
+            &::backdrop { background: oklch(0 0 0 / 0.45); animation: fadeIn .15s var(--ease-out); }
+        }
+        dialog.drawer:not([open]) { display: none !important; }
+        dialog.drawer[open] .drawer-panel { animation: slideInRight .2s var(--ease-out); }
+        .drawer-panel {
+            background: var(--surface);
+            box-shadow: var(--shadow-lg);
+            width: min(20rem, 88vw);
+            padding: var(--sp-5);
+            display: flex;
+            flex-direction: column;
+            gap: var(--sp-4);
+            overflow-y: auto;
+        }
+        .drawer-body { display: flex; flex-direction: column; gap: var(--sp-4); }
+        /* 抽屉为竖排：主题按钮占满宽度、不再横向等分（选择器多一层，避免被小屏媒体查询的 flex 覆盖） */
+        .drawer .theme-selector { flex-direction: column; }
+        .drawer .theme-selector .theme-option { flex: none; justify-content: flex-start; }
+
         /* Question nav buttons inside overlay — plain <button>, no tab semantic */
         .question-nav-btn {
             width: 42px;
@@ -1413,11 +1412,9 @@
                 <div class="menu-group menu-group--theme">
                     <h3 class="menu-group-title">主题</h3>
                     <div class="menu-group-content">
-                        <div class="theme-selector" role="radiogroup" aria-label="主题选择" id="themeSelector">
-                            <button class="theme-option" data-theme-value="system" role="radio" tabindex="0" aria-checked="true" aria-label="跟随系统主题"><svg class="icon-sm" aria-hidden="true"><use href="#icon-system"/></svg> 系统</button>
-                            <button class="theme-option" data-theme-value="light" role="radio" tabindex="-1" aria-checked="false" aria-label="浅色主题"><svg class="icon-sm" aria-hidden="true"><use href="#icon-sun"/></svg> 浅色</button>
-                            <button class="theme-option" data-theme-value="dark" role="radio" tabindex="-1" aria-checked="false" aria-label="深色主题"><svg class="icon-sm" aria-hidden="true"><use href="#icon-moon"/></svg> 深色</button>
-                            <button class="theme-option" data-theme-value="oled" role="radio" tabindex="-1" aria-checked="false" aria-label="OLED 主题"><svg class="icon-sm" aria-hidden="true"><use href="#icon-oled"/></svg> OLED</button>
+                        <div class="menu-row">
+                            <button type="button" id="themeDrawerBtn" class="btn btn-outline btn-sm" aria-haspopup="dialog">主题设置</button>
+                            <span class="menu-row-hint">当前：<b id="themeCurrentValue">跟随系统</b> · 从右侧抽屉中选择</span>
                         </div>
                     </div>
                 </div>
@@ -1440,7 +1437,7 @@
                         <div class="menu-row">
                             <label for="shuffleOptionsToggle">随机选项排列</label>
                             <input type="checkbox" id="shuffleOptionsToggle" aria-describedby="shuffleOptionsHint">
-                            <span class="menu-row-hint" id="shuffleOptionsHint">按题干稳定打乱选项显示顺序（每次练习只生成一次）；答案仍按原始字母判定，快捷键 1–5 仍对应 A–E</span>
+                            <span class="menu-row-hint" id="shuffleOptionsHint">按题干稳定打乱选项顺序，并把序号按显示位置重编为 A–E（快捷键 1–5 对应屏幕上看到的选项）</span>
                         </div>
                         <div class="menu-row">
                             <label for="hideMasteredToggle">隐藏已掌握</label>
@@ -1452,37 +1449,10 @@
                             <input type="checkbox" id="fsrsEnabledToggle" aria-describedby="fsrsEnabledHint">
                             <span class="menu-row-hint" id="fsrsEnabledHint">间隔记忆：刷题模式按记忆曲线安排每日题目并记录复习数据</span>
                         </div>
-                        <details class="fsrs-submenu" id="fsrsSubmenu">
-                            <summary>FSRS 设置</summary>
-                            <div class="fsrs-submenu-content">
-                                <div class="menu-row">
-                                    <label for="retentionInput">记忆保持率</label>
-                                    <input type="number" id="retentionInput" value="0.90" step="0.05" min="0.8" max="0.95" inputmode="decimal" aria-describedby="retentionHint">
-                                    <span class="menu-row-hint" id="retentionHint">0.80–0.95，越高复习越勤</span>
-                                </div>
-                                <div class="menu-row">
-                                    <label for="autoRateToggle">自动评分</label>
-                                    <input type="checkbox" id="autoRateToggle" aria-describedby="autoRateHint">
-                                    <span class="menu-row-hint" id="autoRateHint">按用时与对错自动评分，跳过手动评分条；时限随题长与题型自动调整</span>
-                                </div>
-                                <div class="menu-row" id="autoRatePresetRow">
-                                    <input type="checkbox" id="autoRateCustomToggle" aria-label="自定义自动评分标准阈值">
-                                    <label for="autoRatePresetSelect">自动评分标准</label>
-                                    <select id="autoRatePresetSelect" aria-describedby="autoRatePresetHint">
-                                        <option value="strict">严格</option>
-                                        <option value="standard">标准</option>
-                                        <option value="relaxed">宽松</option>
-                                    </select>
-                                    <span class="menu-row-hint" id="autoRatePresetHint">严格/标准/宽松为松紧档位；阈值按题干与选项总字数、题型动态调整（多选＞单选＞判断）；<br>勾选左侧开关可自定义固定秒数</span>
-                                </div>
-                                <div class="menu-row">
-                                    <label for="dailyNewInput">每日新卡上限</label>
-                                    <input type="number" id="dailyNewInput" value="20" step="5" min="0" max="200" inputmode="numeric" aria-describedby="dailyNewHint">
-                                    <span class="menu-row-hint" id="dailyNewHint">0 = 不限</span>
-                                    <span class="menu-row-hint" id="dailyNewEstimate" hidden></span>
-                                </div>
-                            </div>
-                        </details>
+                        <div class="menu-row" id="fsrsSettingsRow" hidden>
+                            <button type="button" id="fsrsSettingsBtn" class="btn btn-outline btn-sm" aria-haspopup="dialog">FSRS 设置</button>
+                            <span class="menu-row-hint" id="fsrsSettingsHint">记忆保持率、自动评分标准与每日新卡上限</span>
+                        </div>
                     </div>
                 </div>
                 <div class="menu-group menu-group--fsrs">
@@ -1490,7 +1460,7 @@
                     <div class="menu-group-content">
                         <div class="fsrs-stats" aria-label="复习数据统计">
                             <span>总卡 <b id="fsrsTotalCards">0</b></span>
-                            <span>今日到期 <b id="fsrsDueToday">0</b></span>
+                            <span>已到期 <b id="fsrsDueToday">0</b></span>
                             <span>平均稳定度 <b id="fsrsAvgStability">—</b></span>
                         </div>
                         <div class="fsrs-actions">
@@ -1500,10 +1470,6 @@
                         </div>
                         <input type="file" id="fsrsImportInput" accept=".json,application/json" hidden>
                         <span class="menu-row-hint" id="fsrsHint">备份/导入为 JSON 文件，仅存于本地；导入将覆盖现有数据。导出可选择「保存到本地」或「分享」（调起系统面板，可存到文件/网盘/微信等）；也可用「复制备份」手动保存为 .json</span>
-                        <details class="fsrs-hint-details" id="fsrsHintDetail">
-                            <summary class="menu-row-hint" id="fsrsHintSummary" role="button" tabindex="0" aria-describedby="fsrsHintDetailText">失效卡片判定规则</summary>
-                            <p class="menu-row-hint" id="fsrsHintDetailText">复习卡以题干全文为键，只有同时满足「非数组对象，且 due / stability / state 均为 number」才被视为有效。<br>• 备份导入：字段缺失或类型错误的条目会被跳过，并在提示里给出跳过条数；<br>• 换题库：题干在当前题库中找不到完全一致文本的孤儿卡会被自动清理，清理结果会在导入提示中显示（如「已清理 3 张失效卡」）。</p>
-                        </details>
                     </div>
                 </div>
                 <div class="menu-group menu-group--stats">
@@ -1660,6 +1626,65 @@
         <div class="nav-overlay-grid" id="questionNav" aria-label="题目列表"></div>
         <div class="nav-overlay-submit">
             <button id="navSubmitBtn" class="btn btn-accent" aria-label="提交答卷">提交答卷</button>
+        </div>
+    </div>
+</dialog>
+
+<!-- 主题抽屉：从右侧滑入的模态面板，×/ESC/点击遮罩关闭（ThemeManager 仍按 .theme-option 绑定） -->
+<dialog class="drawer" id="themeDrawer" aria-labelledby="themeDrawerTitle">
+    <div class="drawer-panel">
+        <div class="preset-dialog-header">
+            <span class="preset-dialog-title" id="themeDrawerTitle">主题</span>
+            <button type="button" id="themeDrawerClose" class="preset-dialog-close" aria-label="关闭">×</button>
+        </div>
+        <div class="drawer-body">
+            <div class="theme-selector" role="radiogroup" aria-label="主题选择" id="themeSelector">
+                <button class="theme-option" data-theme-value="system" role="radio" tabindex="0" aria-checked="true" aria-label="跟随系统主题"><svg class="icon-sm" aria-hidden="true"><use href="#icon-system"/></svg> 跟随系统</button>
+                <button class="theme-option" data-theme-value="light" role="radio" tabindex="-1" aria-checked="false" aria-label="浅色主题"><svg class="icon-sm" aria-hidden="true"><use href="#icon-sun"/></svg> 浅色</button>
+                <button class="theme-option" data-theme-value="dark" role="radio" tabindex="-1" aria-checked="false" aria-label="深色主题"><svg class="icon-sm" aria-hidden="true"><use href="#icon-moon"/></svg> 深色</button>
+                <button class="theme-option" data-theme-value="oled" role="radio" tabindex="-1" aria-checked="false" aria-label="OLED 主题"><svg class="icon-sm" aria-hidden="true"><use href="#icon-oled"/></svg> OLED</button>
+            </div>
+            <p class="preset-dialog-hint">「跟随系统」随设备深浅色自动切换；方向键可在选项间切换主题。</p>
+        </div>
+    </div>
+</dialog>
+
+<!-- FSRS 设置对话框：由菜单中的「FSRS 设置」按钮打开，仅 FSRS 启用时可见 -->
+<dialog class="preset-dialog" id="fsrsSettingsDialog" aria-labelledby="fsrsSettingsDialogTitle">
+    <div class="preset-dialog-panel">
+        <div class="preset-dialog-header">
+            <span class="preset-dialog-title" id="fsrsSettingsDialogTitle">FSRS 设置</span>
+            <button type="button" id="fsrsSettingsDialogClose" class="preset-dialog-close" aria-label="关闭">×</button>
+        </div>
+        <div class="preset-dialog-body">
+            <div class="menu-row">
+                <label for="retentionInput">记忆保持率</label>
+                <input type="number" id="retentionInput" value="0.90" step="0.01" min="0.1" max="0.99" inputmode="decimal" aria-describedby="retentionHint retentionNote">
+                <span class="menu-row-hint" id="retentionHint">0–1 开区间内自定义（留空或越界回落 0.90）</span>
+            </div>
+            <p class="preset-dialog-hint" id="retentionNote">实测影响（连续「良好」的间隔，单位：天）——
+                0.80：38 / 308 / 1796（几乎不复习，遗忘风险高）·
+                0.85：15 / 98 / 454 ·
+                0.90（默认）：4.8 / 26 / 92 ·
+                0.92：2.4 / 14 / 43，复习失败会在当天再见 ·
+                0.95：新卡首答仅 7 小时 ·
+                ≥0.96：首答退化为分钟级，复习量激增</p>
+            <div class="menu-row">
+                <input type="checkbox" id="autoRateCustomToggle" aria-label="自定义自动评分标准阈值">
+                <label for="autoRatePresetSelect">自动评分标准</label>
+                <select id="autoRatePresetSelect" aria-describedby="autoRatePresetHint">
+                    <option value="strict">严格</option>
+                    <option value="standard">标准</option>
+                    <option value="relaxed">宽松</option>
+                </select>
+                <span class="menu-row-hint" id="autoRatePresetHint">自动评分始终开启：按用时与对错打分，评分后仍可改评价；<br>严格/标准/宽松为松紧档位，阈值按题干与选项总字数、题型动态调整（多选＞单选＞判断）；勾选左侧开关可自定义固定秒数</span>
+            </div>
+            <div class="menu-row">
+                <label for="dailyNewInput">每日新卡上限</label>
+                <input type="number" id="dailyNewInput" value="20" step="5" min="0" max="200" inputmode="numeric" aria-describedby="dailyNewHint">
+                <span class="menu-row-hint" id="dailyNewHint">0 = 不限</span>
+                <span class="menu-row-hint" id="dailyNewEstimate" hidden></span>
+            </div>
         </div>
     </div>
 </dialog>
@@ -1844,13 +1869,6 @@ class EventBus {
 }
 
 /* ===== Utilities ===== */
-/* 失效复习卡判定（唯一口径，导入与文档均以此为准）：
-   非数组对象，且 due / stability / state 均为 number。
-   ——不满足即为「字段缺失或类型错误」，导入备份时跳过并计数；
-   题干在当前题库中不存在的孤儿卡由 FsrsStore.prune(validTexts) 清理。 */
-const isValidFsrsCardRecord = v =>
-    !!v && typeof v === "object" && !Array.isArray(v) &&
-    typeof v.due === "number" && typeof v.stability === "number" && typeof v.state === "number";
 const esc = str => str == null ? "" : String(str).replace(/[&<>"']/g, m => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;", "'": "&#039;" })[m]);
 const fmtTime = ms => { const sec = Math.floor(ms / 1000); return `${String(Math.floor(sec / 60)).padStart(2, "0")}:${String(sec % 60).padStart(2, "0")}`; };
 const hashStr = s => { let h = 0; for (let i = 0; i < s.length; i++) { h = ((h << 5) - h) + s.charCodeAt(i); h |= 0; } return String(h); };
@@ -1880,6 +1898,24 @@ const optionOrder = (q, shuffle) => {
 };
 /* 按展示顺序重排选项（返回新数组，不改原题对象） */
 const orderedOptions = (q, shuffle) => optionOrder(q, shuffle).map(i => q.options[i]);
+/* 多选答案归一（判定与展示共用）：只取 A–E 字母，忽略顿号/逗号/空格等分隔符，去重后升序。
+   否则 `A、B、C、D` 这类带分隔符的答案会把分隔符也当成字符参与比较，全选照样判错。 */
+const keySet = v => [...new Set([...String(v ?? "").toUpperCase()].filter(c => c >= "A" && c <= "E"))].sort().join("");
+/* 展示字母：随机排列开启后按屏幕位置重编为 A、B、C…（原始键 → 展示键），关闭时为恒等映射。
+   判定始终在原始字母空间进行，此映射只用于「让人看到的序号与点的位置一致」。 */
+const displayKeyMap = (q, shuffle) => {
+    const map = {};
+    optionOrder(q, shuffle).forEach((origIdx, pos) => { map[q.options[origIdx].key] = String.fromCharCode(65 + pos); });
+    return map;
+};
+/* 答案回显（您的答案 / 正确答案）：随机排列开启后一律换成展示字母并按升序去重——
+   点选顺序与题库写法在序号重编后都会打乱，按字母集合读才与屏幕对得上；关闭时保持原有写法。 */
+const displayAnswer = (q, selections, shuffle) => {
+    if (!shuffle) return { us: selections.join(", ") || "未作答", correct: String(q.answer ?? "") };
+    const map = displayKeyMap(q, true);
+    const toDisp = keys => [...new Set(keys.map(k => map[k] ?? k))].sort().join("、");
+    return { us: selections.length ? toDisp(selections) : "未作答", correct: toDisp([...keySet(q.answer)]) };
+};
 /* 读取文件文本：优先 File.text()（Chromium 系），缺失或超时降级 FileReader。
    部分 Android WebView 的 File.text() 永不 resolve，若无兜底会一直卡在“正在解析题库…” */
 const readFileText = (file, timeoutMs = 20000) => new Promise((resolve, reject) => {
@@ -2010,7 +2046,7 @@ class Timer {
 }
 
 /* ===== Storage ===== */
-const DEFAULTS = Object.freeze({ autoNext: true, autoDelay: 0.5, showHistory: true, shuffleOptions: false, hideMastered: false, fsrsEnabled: false, retention: 0.9, dailyNew: 20, autoRate: false, autoRatePreset: "standard", autoRateCustom: false, autoRatePresets: null, statsMode: "cumulative" });
+const DEFAULTS = Object.freeze({ autoNext: true, autoDelay: 0.5, showHistory: true, shuffleOptions: false, hideMastered: false, fsrsEnabled: false, retention: 0.9, dailyNew: 20, autoRatePreset: "standard", autoRateCustom: false, autoRatePresets: null, statsMode: "cumulative" });
 class StorageAdapter {
     /* Storage write failures (private mode, quota) are surfaced via onPersistError
        so the UI can notify the user — never silently swallow (Nielsen error prevention). */
@@ -2035,7 +2071,7 @@ class StorageAdapter {
     /* 累计统计（数据统计面板）：练习次数 / 答题 / 正确 / 用时 + 近 30 天每日明细 + 近几次会话记录（面板可在累计/近 3 次间切换） */
     static getStats() { const s = this.#g("quiz_stats", null); return s && typeof s === "object" ? { sessions: 0, answered: 0, correct: 0, timeMs: 0, daily: {}, recent: [], ...s } : { sessions: 0, answered: 0, correct: 0, timeMs: 0, daily: {}, recent: [] }; }
     static saveStats(s) { this.#s("quiz_stats", s); }
-    /* answered 为实际作答数（未答不计）；fsrs 会话的每日活动由卡片 last_review
+    /* answered 为实际作答数（未答不计）；fsrs 会话的每日活动由卡片 lastReviewAt
        承载（可随备份导入/导出），不重复记入 daily，避免趋势图双重计数；
        recent 记录每次会话明细（累计与近 3 次切换共用，仅保留最近 10 次） */
     static recordSession({ correct = 0, answered = 0, timeMs = 0, fsrs = false } = {}) {
@@ -2092,16 +2128,19 @@ class BankCache {
     }
 }
 
-/* ===== FSRS Engine — 移植自 ts-fsrs v5.4.2 / FSRS-6.0（MIT License）=====
-   上游：open-spaced-repetition/ts-fsrs，packages/fsrs/src/{algorithm,help,constant}.ts
-   仅保留 LongTermScheduler 语义（enable_short_term=false、enable_fuzz=false）。
-   与 5.4.1 相比，5.4.2 只改了 clipParameters（自定义参数裁剪），公式与 W 常量未变；
-   W 常量即上游 default_w（FSRS-6），w[20]=FSRS6_DEFAULT_DECAY=0.1542。
+/* ===== FSRS Engine — 移植自 ts-fsrs v6.0.0 / FSRS-7（MIT License）=====
+   上游：open-spaced-repetition/ts-fsrs
+     算法 packages/fsrs/src/models/fsrs-7/{algorithm,constants}.ts
+     调度 packages/fsrs/src/middlewares/{learning-steps,monotonic-interval,maximum-interval,scheduled-days}
+   调度语义 = DefaultScheduler 默认配置：enableShortTerm / fractionalDays / allowModelOverride 开、
+   fuzz 关、学习步 ["1m","10m"]、重学步 ["10m"]、毕业间隔 1 天、最大间隔 36500 天。
+   FSRS-7 为双轨迹模型：记忆状态 {stability, stabilityFast, difficulty}，间隔可为分钟级。
    版本号唯一来源：FSRS_TS_VERSION（README 与 scripts/fsrs_compare.cjs 均引用同一值）。
    对拍验证见 scripts/fsrs_compare.cjs（npm install ts-fsrs@<FSRS_TS_VERSION> 到 .tmp-fsrs，仅用于对拍） */
-export const FSRS_TS_VERSION = "5.4.2";
+export const FSRS_TS_VERSION = "6.0.0";
 const FSRS_STATE = Object.freeze({ New: 0, Learning: 1, Review: 2, Relearning: 3 });
 const FSRS_RATING = Object.freeze({ Again: 1, Hard: 2, Good: 3, Easy: 4 });
+const FSRS_GRADES = Object.freeze([1, 2, 3, 4]);
 /* 自动评分（复习模式）：答错→忘记了(1)；答对按用时 ≤ easyMs 简单(4)、≤ goodMs 良好(3)、更久 困难(2)。
    阈值默认按「题干+选项总字数 × 题型」动态确定（AUTO_RATE_MODEL），
    仅当用户勾选自定义时才使用固定秒数（AUTO_RATE_PRESETS 为对话框默认值）。 */
@@ -2137,135 +2176,334 @@ const autoRateFor = (correct, ms, { easyMs, goodMs }) => {
 };
 const clamp = (v, min, max) => Math.min(Math.max(v, min), max);
 const roundTo = (num, decimals) => { const f = 10 ** decimals; return Math.round(num * f) / f; };
-/* dateDiffInDays — 与 ts-fsrs help.ts 一致：按 UTC 日历日取整 */
-function dateDiffInDays(last, cur) {
-    const utc1 = Date.UTC(last.getUTCFullYear(), last.getUTCMonth(), last.getUTCDate());
-    const utc2 = Date.UTC(cur.getUTCFullYear(), cur.getUTCMonth(), cur.getUTCDate());
-    return Math.floor((utc2 - utc1) / 86400000);
+const DAY_MS = 86400000;
+const SECONDS_PER_DAY = 86400;
+/* FSRS-7 模型边界与求解常数（上游 FSRS7_MODEL_BOUNDS / MIN_T / DR_MIN / DR_MAX） */
+const FSRS7_BOUNDS = Object.freeze({ sMin: 1e-4, sMax: 36500, fastMin: 1e-4, fastMax: 36500, dMin: 1, dMax: 10 });
+const FSRS7_MIN_T = 1 / SECONDS_PER_DAY;
+const FSRS7_LOG_MIN_T = Math.log(FSRS7_MIN_T);
+const FSRS7_DR_MIN = 1e-4;
+const FSRS7_DR_MAX = 0.9999;
+/* 上游 DefaultScheduler 默认学习步：新卡 1m/10m、重学 10m、毕业间隔 1 天 */
+const FSRS7_LEARNING_STEPS = Object.freeze(["1m", "10m"]);
+const FSRS7_RELEARNING_STEPS = Object.freeze(["10m"]);
+const FSRS7_GRADUATING_INTERVAL = 1;
+const FSRS7_MAXIMUM_INTERVAL = 36500;
+/* "1m" / "2h" / "1d" → 天（上游 ConvertStepUnitToMinutes 的等价实现） */
+function stepUnitToDays(step) {
+    const value = Number(step.slice(0, -1));
+    const unit = step.slice(-1);
+    if (!Number.isFinite(value)) throw new Error(`Invalid step value: ${step}`);
+    const minutes = unit === "m" ? value : unit === "h" ? value * 60 : unit === "d" ? value * 1440 : null;
+    if (minutes === null) throw new Error(`Invalid step unit: ${step}, expected m/h/d`);
+    return minutes / 1440;
 }
+/* 间隔求解要求 0 < 保持率 < 1；越界（旧设置、手输、清空）一律回落到默认值 */
+const FSRS_DEFAULT_RETENTION = 0.9;
+const normalizeRetention = v => {
+    const n = Math.round(Number(v) * 1000) / 1000;
+    return Number.isFinite(n) && n > 0 && n < 1 ? n : FSRS_DEFAULT_RETENTION;
+};
+/* 取值后果的一句话提示（阈值来自实测，对照表见 FSRS 设置弹窗） */
+const retentionImpact = v => v >= 0.96 ? "：新卡首答退化为分钟级，复习量激增"
+    : v >= 0.92 ? "：会出现当天重见的学习步"
+    : v <= 0.8 ? "：间隔大幅拉长，遗忘风险上升" : "";
 
 class FsrsEngine {
-    static W = Object.freeze([0.212, 1.2931, 2.3065, 8.2956, 6.4133, 0.8334, 3.0194, 0.001, 1.8722, 0.1666, 0.796, 1.4835, 0.0614, 0.2629, 1.6483, 0.6014, 1.8729, 0.5425, 0.0912, 0.0658, 0.1542]);
-    static S_MIN = 0.001;
-    static S_MAX = 36500;
+    /* FSRS-7 默认权重（34 个，上游 FSRS7_DEFAULT_WEIGHTS；w[14]=1 使慢轨迹的 easyBonus 恒为 1） */
+    static W = Object.freeze([
+        0.1104, 2.2395, 3.9221, 11.7841, 6.1686, 0.6457, 3.6807, 1.9795, 0, 1.3826,
+        0.7024, 0.5999, 0.8146, 0.6398, 1, 1.3207, 0.6707, 3.8668, 0.4416, 0.0934,
+        1.8631, 0.6162, 1.0869, 0.1567, 0.0801, 0.2421, 0.9464, 0.1433, 0.7145, 0,
+        0.5667, 0.3734, 0.5333, 0.3048,
+    ]);
+    static BOUNDS = FSRS7_BOUNDS;
 
-    constructor({ requestRetention = 0.9, maximumInterval = 36500 } = {}) {
-        if (requestRetention <= 0 || requestRetention > 1) throw new Error("Requested retention rate should be in the range (0,1]");
+    constructor({ requestRetention = FSRS_DEFAULT_RETENTION, maximumInterval = FSRS7_MAXIMUM_INTERVAL } = {}) {
+        /* 上游 next_interval 要求 0 < dr < 1；dr ≥ 0.9999 时视为立即到期 */
+        if (!Number.isFinite(requestRetention) || requestRetention <= 0 || requestRetention >= 1)
+            throw new Error("Desired retention rate should be in the range (0,1)");
+        this.retention = requestRetention;
         this.maximumInterval = maximumInterval;
-        const decay = -FsrsEngine.W[20]; // w20 为 FSRS-6 decay
-        const factor = Math.exp(Math.pow(decay, -1) * Math.log(0.9)) - 1.0;
-        this.decay = decay;
-        this.factor = roundTo(factor, 8);
-        this.intervalModifier = roundTo((Math.pow(requestRetention, 1 / decay) - 1) / this.factor, 8);
     }
 
     createEmptyCard(now = new Date()) {
-        return { due: now, stability: 0, difficulty: 0, elapsed_days: 0, scheduled_days: 0, reps: 0, lapses: 0, learning_steps: 0, state: FSRS_STATE.New, last_review: null };
+        return {
+            dueAt: now, lastReviewAt: null,
+            stability: 0, stabilityFast: 0, difficulty: 0,
+            state: FSRS_STATE.New, scheduleStatus: "new",
+            learningStep: 0, scheduledDays: 0, reps: 0, lapses: 0,
+        };
     }
 
-    /* R(t,S) = (1 + FACTOR * t/S)^DECAY */
-    forgettingCurve(elapsedDays, stability) {
-        return roundTo(Math.pow(1 + (this.factor * elapsedDays) / stability, this.decay), 8);
-    }
+    /* ---- 双轨迹遗忘曲线（上游 prepare_fast / fast_component / prepare_curve / compute_curve）---- */
 
-    /* S0(G) = max(w[G-1], 0.1) */
-    initStability(g) { return Math.max(FsrsEngine.W[g - 1], 0.1); }
-
-    /* D0(G) = w4 - e^((G-1)*w5) + 1 */
-    initDifficulty(g) { return roundTo(FsrsEngine.W[4] - Math.exp((g - 1) * FsrsEngine.W[5]) + 1, 8); }
-
-    linearDamping(deltaD, oldD) { return roundTo((deltaD * (10 - oldD)) / 9, 8); }
-
-    /* w7*init + (1-w7)*current */
-    meanReversion(init, current) { return roundTo(FsrsEngine.W[7] * init + (1 - FsrsEngine.W[7]) * current, 8); }
-
-    nextDifficulty(d, g) {
-        const deltaD = -FsrsEngine.W[6] * (g - 3);
-        const nextD = d + this.linearDamping(deltaD, d);
-        return clamp(this.meanReversion(this.initDifficulty(4), nextD), 1, 10);
-    }
-
-    nextRecallStability(d, s, r, g) {
+    /* 快轨迹：decay 随 sFast 变化，scale 由 w25 反推 */
+    prepareFast(sFast) {
         const w = FsrsEngine.W;
-        const hardPenalty = g === FSRS_RATING.Hard ? w[15] : 1;
-        const easyBound = g === FSRS_RATING.Easy ? w[16] : 1;
-        return roundTo(clamp(
-            s * (1 + Math.exp(w[8]) * (11 - d) * Math.pow(s, -w[9]) * (Math.exp((1 - r) * w[10]) - 1) * hardPenalty * easyBound),
-            FsrsEngine.S_MIN, FsrsEngine.S_MAX), 8);
+        const decay = -clamp(w[23] * Math.pow(sFast, w[33] - 0.3), 0.01, 0.95);
+        return { decay, scale: (Math.exp(Math.min(Math.log(w[25]) / decay, 60)) - 1) / sFast };
     }
 
-    nextForgetStability(d, s, r) {
-        const w = FsrsEngine.W;
-        return roundTo(clamp(
-            w[11] * Math.pow(d, -w[12]) * (Math.pow(s + 1, w[13]) - 1) * Math.exp((1 - r) * w[14]),
-            FsrsEngine.S_MIN, FsrsEngine.S_MAX), 8);
+    fastComponent(t, fast) {
+        const days = Math.max(t, 0);
+        const base = 1 + fast.scale * days;
+        return { recall: Math.pow(base, fast.decay), derivative: fast.decay * Math.pow(base, fast.decay - 1) * fast.scale };
     }
 
-    /* 单步记忆状态转移；enable_short_term=false 时 Again 的 stability 上限为当前值 */
-    nextState(d, s, t, g) {
-        if (d === 0 && s === 0) {
-            return { difficulty: clamp(this.initDifficulty(g), 1, 10), stability: this.initStability(g) };
+    /* 曲线里与时间无关的部分：每条评论/每次求根只算一次 */
+    prepareCurve(memory) {
+        const w = FsrsEngine.W, b = FSRS7_BOUNDS;
+        const s = clamp(memory.stability, b.sMin, b.sMax);
+        const sFast = clamp(memory.stabilityFast, b.fastMin, b.fastMax);
+        const d = clamp(memory.difficulty, b.dMin, b.dMax);
+        const fast = this.prepareFast(sFast);
+        const decay = -clamp(w[24], 0.01, 0.95);
+        const scale = (Math.pow(w[26], 1 / decay) - 1) * Math.exp((d - 5) * (w[32] - 0.3)) / s;
+        const weight1 = w[27] * Math.pow(sFast, -w[29]);
+        const weight2 = w[28] * Math.pow(s, w[30]) * Math.exp((d - 5) * (w[31] - 0.5));
+        return { fast, decay, scale, weight1, weight2, total: weight1 + weight2 };
+    }
+
+    computeCurve(t, p) {
+        const days = Math.max(t, 0);
+        const fast = this.fastComponent(days, p.fast);
+        const base = 1 + p.scale * days;
+        const slow = Math.pow(base, p.decay);
+        const derivative = p.decay * Math.pow(base, p.decay - 1) * p.scale;
+        return {
+            retrievability: (p.weight1 * fast.recall + p.weight2 * slow) / p.total * 0.99998 + 1e-5,
+            derivative: (p.weight1 * fast.derivative + p.weight2 * derivative) / p.total * 0.99998,
+        };
+    }
+
+    /* R(t) —— t 为分数天，非整数取整不再适用（FSRS-7 允许分钟级） */
+    forgettingCurve(elapsedDays, memory) {
+        return this.computeCurve(elapsedDays, this.prepareCurve(memory)).retrievability;
+    }
+
+    /* ---- 间隔求解（上游 next_interval：logT 牛顿迭代 7 步，残差过大再二分 50 步）---- */
+    nextInterval(memory, desiredRetention = this.retention) {
+        if (!Number.isFinite(desiredRetention) || desiredRetention <= 0 || desiredRetention >= 1)
+            throw new Error("Desired retention rate should be in the range (0,1)");
+        const target = clamp(desiredRetention, FSRS7_DR_MIN, FSRS7_DR_MAX);
+        if (target >= FSRS7_DR_MAX) return 0;
+        const b = FSRS7_BOUNDS;
+        const sFast = clamp(memory.stabilityFast, b.fastMin, b.fastMax);
+        const maxStability = Math.max(clamp(memory.stability, b.sMin, b.sMax), sFast);
+        const p = this.prepareCurve(memory);
+        let logT = Math.log(maxStability);
+        for (let i = 0; i < 7; i++) {
+            logT = clamp(logT, FSRS7_LOG_MIN_T, Math.log(b.sMax));
+            const t = clamp(Math.exp(logT), FSRS7_MIN_T, b.sMax);
+            const { retrievability, derivative } = this.computeCurve(t, p);
+            logT -= clamp((retrievability - target) / Math.min(derivative * t, -1e-12), -4, 4);
+            if (!Number.isFinite(logT)) break;
         }
-        const r = this.forgettingCurve(t, s);
-        const newS = g === FSRS_RATING.Again
-            ? clamp(roundTo(s, 8), FsrsEngine.S_MIN, this.nextForgetStability(d, s, r))
-            : this.nextRecallStability(d, s, r, g);
-        return { difficulty: this.nextDifficulty(d, g), stability: newS };
+        const interval = clamp(Math.exp(logT), 0, b.sMax);
+        if (Math.abs(this.computeCurve(interval, p).retrievability - target) <= 0.001) return interval;
+        let low = 0;
+        let high = Math.min(Math.max(maxStability, 1), b.sMax);
+        while (this.computeCurve(high, p).retrievability > target && high < b.sMax) high = Math.min(high * 2, b.sMax);
+        for (let i = 0; i < 50; i++) {
+            const mid = (low + high) / 2;
+            if (this.computeCurve(mid, p).retrievability > target) low = mid; else high = mid;
+        }
+        return (low + high) / 2;
     }
 
-    /* I(s) = min(max(1, round(s * modifier)), maxInterval)；fuzz 关闭时无随机扰动 */
-    nextInterval(s) {
-        return Math.min(Math.max(1, Math.round(s * this.intervalModifier)), this.maximumInterval);
+    /* ---- 记忆状态转移（上游 next_stability / next_state）---- */
+
+    /* start=7 为慢轨迹（w7..w14），start=15 为快轨迹（w15..w22） */
+    nextStability(s, d, r, g, start) {
+        const w = FsrsEngine.W;
+        const fail = w[start + 3] * (Math.pow(s + 1, w[start + 4]) - 1) * Math.exp((1 - r) * w[start + 5]);
+        const pls = Math.min(s, fail);
+        if (g === FSRS_RATING.Again) return pls;
+        const hardPenalty = g === FSRS_RATING.Hard ? w[start + 6] : 1;
+        const easyBonus = g === FSRS_RATING.Easy ? w[start + 7] : 1;
+        const increase = Math.exp(w[start] - 1.5) * (11 - d) * Math.pow(s, -w[start + 1])
+            * (Math.exp((1 - r) * w[start + 2]) - 1) * hardPenalty * easyBonus + 1;
+        return Math.max(pls, s * increase);
     }
 
-    /* 单次调度（对应 fsrs.next）——LongTermScheduler 语义 */
+    /* S0(G) = clamp(w[G-1], sMin, sMax) */
+    initStability(g) { return clamp(FsrsEngine.W[g - 1], FSRS7_BOUNDS.sMin, FSRS7_BOUNDS.sMax); }
+
+    /* D0(G) = w4 - e^(w5*(G-1)) + 1（未裁剪，调用处 clamp 到 [1,10]） */
+    initDifficulty(g) { const w = FsrsEngine.W; return w[4] - Math.exp(w[5] * (g - 1)) + 1; }
+
+    nextState(memory, elapsedDays, g, retrievability) {
+        const b = FSRS7_BOUNDS, w = FsrsEngine.W;
+        const s0 = memory?.stability ?? 0, sf0 = memory?.stabilityFast ?? 0, d0 = memory?.difficulty ?? 0;
+        /* 首次学习：快轨迹取慢轨迹的 0.8 倍 */
+        if (s0 === 0 && sf0 === 0 && d0 === 0) {
+            const s = this.initStability(g);
+            return {
+                stability: clamp(roundTo(s, 8), b.sMin, b.sMax),
+                stabilityFast: clamp(roundTo(s * 0.8, 8), b.fastMin, b.fastMax),
+                difficulty: clamp(roundTo(this.initDifficulty(g), 8), b.dMin, b.dMax),
+            };
+        }
+        if (s0 <= 0 || sf0 <= 0) throw new Error("Invalid FSRS-7 memory state: both stabilities must be positive");
+        const s = clamp(s0, b.sMin, b.sMax);
+        const sFast = clamp(sf0, b.fastMin, b.fastMax);
+        const d = clamp(d0, b.dMin, b.dMax);
+        const r = retrievability ?? this.forgettingCurve(elapsedDays, memory);
+        const stability = this.nextStability(s, d, r, g, 7);
+        let stabilityFast = this.nextStability(sFast, d, this.fastComponent(elapsedDays, this.prepareFast(sFast)).recall, g, 15);
+        if (g === FSRS_RATING.Again) stabilityFast = Math.min(stabilityFast, stability * 0.8);
+        let deltaD = -w[6] * (g - 3);
+        if (g === FSRS_RATING.Again) deltaD *= r + 0.1;
+        /* 均值回归固定 1%/99%（FSRS-7 不再使用 w7 作为回归系数） */
+        const difficulty = 0.01 * this.initDifficulty(FSRS_RATING.Easy) + 0.99 * (d + (10 - d) * deltaD / 9);
+        return {
+            stability: clamp(roundTo(stability, 8), b.sMin, b.sMax),
+            stabilityFast: clamp(roundTo(stabilityFast, 8), b.fastMin, b.fastMax),
+            difficulty: clamp(roundTo(difficulty, 8), b.dMin, b.dMax),
+        };
+    }
+
+    /* ---- 学习步（上游 calculateLearningSteps）----
+       按「当前状态 + 步序号」给出本步各评分的间隔与下一步；无条目表示该评分直接走模型间隔。 */
+    #learningSteps(state, learningStep) {
+        const steps = state === FSRS_STATE.Relearning || state === FSRS_STATE.Review
+            ? FSRS7_RELEARNING_STEPS : FSRS7_LEARNING_STEPS;
+        if (steps.length === 0 || learningStep >= steps.length) return {};
+        /* Review 卡只会因 Again 进入重学，其它评分无步长 */
+        if (state === FSRS_STATE.Review) return { [FSRS_RATING.Again]: { days: stepUnitToDays(steps[0]), nextStep: 0 } };
+        const first = stepUnitToDays(steps[0]);
+        const second = steps.length > 1 ? stepUnitToDays(steps[1]) : undefined;
+        const out = {
+            [FSRS_RATING.Again]: { days: first, nextStep: 0 },
+            [FSRS_RATING.Hard]: { days: second === undefined ? first * 1.5 : (first + second) / 2, nextStep: learningStep },
+        };
+        const nextUnit = steps[learningStep + 1];
+        if (nextUnit) {
+            const days = learningStep === 0 && second !== undefined ? second : stepUnitToDays(nextUnit);
+            if (days > 0) out[FSRS_RATING.Good] = { days, nextStep: learningStep + 1 };
+        }
+        return out;
+    }
+
+    /* 步长折算成整天数（对齐上游：先按分钟取整，再除以 1440） */
+    #resolveSteps(state, learningStep) {
+        const steps = this.#learningSteps(state, learningStep);
+        const stepList = state === FSRS_STATE.Relearning || state === FSRS_STATE.Review
+            ? FSRS7_RELEARNING_STEPS : FSRS7_LEARNING_STEPS;
+        const stepIntervals = {};
+        for (const g of FSRS_GRADES) {
+            const step = steps[g];
+            if (!step) continue;
+            const minutes = Math.round(Math.max(0, step.days * 1440) * 60) / 60;
+            if (minutes > 0) stepIntervals[g] = minutes / 1440;
+        }
+        return { steps, hasSteps: stepList.length > 0, stepIntervals, overridesStep: {} };
+    }
+
+    /* 上游 getLearningStepInterval（allowModelOverride=true）：
+       Again 用步长兜住模型间隔的上限，其它评分取两者较大；overridesStep 记录模型是否盖过了步长 */
+    #stepInterval(resolved, g, memory) {
+        const stepDays = resolved.stepIntervals[g];
+        const model = () => this.nextInterval(memory, this.retention);
+        let days;
+        if (g === FSRS_RATING.Again)
+            days = stepDays === undefined ? model() : Math.max(stepDays, Math.min(model(), FSRS7_GRADUATING_INTERVAL));
+        else if (stepDays === undefined)
+            days = resolved.hasSteps ? Math.max(model(), FSRS7_GRADUATING_INTERVAL) : model();
+        else
+            days = Math.max(stepDays, model());
+        resolved.overridesStep[g] = stepDays !== undefined && days !== stepDays;
+        return days;
+    }
+
+    /* 上游 calculateScheduleDay：出现 ≥1 天的候选后，后续评分至少比前一个大一天；
+       在那之前子天间隔单调不减，同秒碰撞时前进 1 秒 */
+    static #scheduleDay(candidates, maximumInterval) {
+        const toSeconds = days => Math.round(days * SECONDS_PER_DAY);
+        let scheduledDay;
+        let subDay = candidates[0];
+        for (let i = 0; i < candidates.length; i++) {
+            const ivl = candidates[i];
+            if (ivl >= 1) {
+                scheduledDay = Math.min(scheduledDay === undefined ? ivl : Math.max(ivl, scheduledDay + 1), maximumInterval);
+            } else if (scheduledDay === undefined && i > 0) {
+                const raised = Math.max(ivl, subDay);
+                subDay = subDay > 0 && toSeconds(ivl) >= toSeconds(candidates[i - 1]) && toSeconds(raised) === toSeconds(subDay)
+                    ? subDay + 1 / SECONDS_PER_DAY : raised;
+            }
+        }
+        return scheduledDay ?? subDay;
+    }
+
+    static #nextLearningState(state) {
+        if (state === FSRS_STATE.New) return FSRS_STATE.Learning;
+        if (state === FSRS_STATE.Review) return FSRS_STATE.Relearning;
+        return state;
+    }
+
+    /* 单次调度（对应 DefaultScheduler.review）。中间件洋葱顺序：
+       核心(模型间隔+学习步) → 单调间隔 → 最大间隔 → 学习步回填 → 写入 scheduledDays → 状态/步序 → reps/lapses */
     next(card, now, grade) {
         const c = this.#normalize(card);
-        const elapsed = (c.state !== FSRS_STATE.New && c.last_review)
-            ? dateDiffInDays(c.last_review, now) : 0;
-        const base = { ...c, last_review: now, elapsed_days: elapsed, reps: c.reps + 1 };
-        if (c.state === FSRS_STATE.New) base.scheduled_days = 0;
-        const again = this.#nextDS(base, elapsed, FSRS_RATING.Again);
-        const hard = this.#nextDS(base, elapsed, FSRS_RATING.Hard);
-        const good = this.#nextDS(base, elapsed, FSRS_RATING.Good);
-        const easy = this.#nextDS(base, elapsed, FSRS_RATING.Easy);
-        this.#applyIntervalOrdering(again, hard, good, easy, now);
-        for (const card of [again, hard, good, easy]) { card.state = FSRS_STATE.Review; card.learning_steps = 0; }
-        if (c.state !== FSRS_STATE.New) again.lapses += 1;
-        return [null, again, hard, good, easy][grade];
+        const memory = { stability: c.stability, stabilityFast: c.stabilityFast, difficulty: c.difficulty };
+        /* fractionalDays：经过时间按毫秒精确折算，不再是 UTC 日历日；新卡恒为 0 */
+        const elapsed = c.state === FSRS_STATE.New || !c.lastReviewAt
+            ? 0 : Math.max(0, (now.getTime() - c.lastReviewAt.getTime()) / DAY_MS);
+        const retrievability = this.forgettingCurve(elapsed, memory);
+
+        const stepCache = new Map();
+        const step = g => {
+            if (!stepCache.has(g)) stepCache.set(g, this.nextState(memory, elapsed, g, retrievability));
+            return stepCache.get(g);
+        };
+        const resolved = this.#resolveSteps(c.state, c.learningStep);
+        const intervalOf = g => this.#stepInterval(resolved, g, step(g));
+
+        let scheduledDays = intervalOf(grade);
+        scheduledDays = FsrsEngine.#scheduleDay(
+            [...FSRS_GRADES.slice(0, grade - 1).map(intervalOf), scheduledDays], this.maximumInterval);
+        scheduledDays = Math.min(scheduledDays, this.maximumInterval);
+        /* 模型没有盖过步长时，步长为最终答案（保住「1 分钟后再见」这类精确延迟） */
+        if (resolved.stepIntervals[grade] !== undefined && resolved.overridesStep[grade] !== true)
+            scheduledDays = resolved.stepIntervals[grade];
+        scheduledDays = Math.max(0, scheduledDays);
+
+        const result = {
+            ...c, ...step(grade),
+            state: FSRS_STATE.Review, scheduleStatus: "review", learningStep: 0,
+            scheduledDays,
+            dueAt: new Date(now.getTime() + scheduledDays * DAY_MS),
+            lastReviewAt: now,
+            reps: c.reps + 1,
+            lapses: c.lapses + (grade === FSRS_RATING.Again && c.state === FSRS_STATE.Review ? 1 : 0),
+        };
+        /* Again 覆盖步长，或间隔未到毕业间隔 → 留在/进入学习（重学）状态 */
+        if ((grade === FSRS_RATING.Again && resolved.overridesStep[grade] === true)
+            || scheduledDays < FSRS7_GRADUATING_INTERVAL) {
+            result.state = FsrsEngine.#nextLearningState(c.state);
+            result.scheduleStatus = "learning";
+            const nextStep = resolved.stepIntervals[grade] !== undefined ? resolved.steps[grade] : undefined;
+            if (nextStep) result.learningStep = Math.max(0, nextStep.nextStep);
+        }
+        return result;
     }
 
-    /* 记忆保留率，用于队列排序（弱记忆优先）；与 fsrs.get_retrievability(false) 一致 */
+    /* 记忆保留率，用于队列排序（弱记忆优先）；新卡返回 0，排在到期卡之后 */
     getRetrievability(card, now = new Date()) {
         const c = this.#normalize(card);
-        if (c.state === FSRS_STATE.New || !c.last_review) return 0;
-        const t = Math.max(Math.floor((now.getTime() - c.last_review.getTime()) / 86400000), 0);
-        return this.forgettingCurve(t, +c.stability.toFixed(8));
-    }
-
-    #nextDS(base, t, g) {
-        const ns = this.nextState(base.difficulty, base.stability, t, g);
-        return { ...base, difficulty: ns.difficulty, stability: ns.stability };
-    }
-
-    /* 四评分区间强制递增：again ≤ hard < good < easy（与 LongTermScheduler.next_interval 一致） */
-    #applyIntervalOrdering(again, hard, good, easy, now) {
-        let againIvl = this.nextInterval(again.stability);
-        let hardIvl = this.nextInterval(hard.stability);
-        let goodIvl = this.nextInterval(good.stability);
-        let easyIvl = this.nextInterval(easy.stability);
-        againIvl = Math.min(againIvl, hardIvl);
-        hardIvl = Math.max(hardIvl, againIvl + 1);
-        goodIvl = Math.max(goodIvl, hardIvl + 1);
-        easyIvl = Math.max(easyIvl, goodIvl + 1);
-        for (const [card, ivl] of [[again, againIvl], [hard, hardIvl], [good, goodIvl], [easy, easyIvl]]) {
-            card.scheduled_days = ivl;
-            card.due = new Date(now.getTime() + ivl * 86400000);
-        }
+        if (c.state === FSRS_STATE.New || !c.lastReviewAt) return 0;
+        const t = Math.max((now.getTime() - c.lastReviewAt.getTime()) / DAY_MS, 0);
+        return this.forgettingCurve(t, { stability: c.stability, stabilityFast: c.stabilityFast, difficulty: c.difficulty });
     }
 
     #normalize(card) {
-        return { ...card, due: this.#toDate(card.due), last_review: card.last_review ? this.#toDate(card.last_review) : null };
+        return {
+            ...this.createEmptyCard(),
+            ...card,
+            dueAt: this.#toDate(card.dueAt),
+            lastReviewAt: card.lastReviewAt ? this.#toDate(card.lastReviewAt) : null,
+        };
     }
 
     #toDate(v) { return v instanceof Date ? v : new Date(v); }
@@ -2274,7 +2512,8 @@ class FsrsEngine {
 /* ===== FsrsStore — 复习卡持久化（localStorage，题干全文为键） =====
    用 var（而非 const）声明：便于测试注入预置卡表（vm 沙箱里 var 会挂到 globalThis）。 */
 var FsrsStore = class FsrsStore {
-    static KEY = "fsrs_cards_v1";
+    /* v2：FSRS-7 双轨迹卡表（键名与字段均与旧的 FSRS-6 表不兼容，故直接换键、不迁移） */
+    static KEY = "fsrs_cards_v2";
     /* 内存缓存：卡表仅在首次访问时解析一次，save 后同步更新——
        避免每次 get()/stats() 都 JSON.parse 全表（大题库下可省下秒级阻塞） */
     static #cache = null;
@@ -2302,32 +2541,23 @@ var FsrsStore = class FsrsStore {
     static upsert(text, card) {
         const map = { ...this.load() };
         map[text] = {
-            due: card.due instanceof Date ? card.due.getTime() : card.due,
-            stability: card.stability, difficulty: card.difficulty,
-            scheduled_days: card.scheduled_days, elapsed_days: card.elapsed_days,
-            reps: card.reps, lapses: card.lapses, learning_steps: card.learning_steps,
-            state: card.state,
-            last_review: card.last_review ? (card.last_review instanceof Date ? card.last_review.getTime() : card.last_review) : null,
+            dueAt: card.dueAt instanceof Date ? card.dueAt.getTime() : card.dueAt,
+            lastReviewAt: card.lastReviewAt ? (card.lastReviewAt instanceof Date ? card.lastReviewAt.getTime() : card.lastReviewAt) : null,
+            stability: card.stability, stabilityFast: card.stabilityFast, difficulty: card.difficulty,
+            scheduledDays: card.scheduledDays, learningStep: card.learningStep,
+            scheduleStatus: card.scheduleStatus,
+            state: card.state, reps: card.reps, lapses: card.lapses,
         };
         if (!this.save(map)) throw new Error("STORAGE_FULL");
         return map[text];
     }
-    /* 删除题库中已不存在的卡片记录，返回删除数量（孤儿卡清理） */
-    static prune(validTexts) {
-        const map = this.load();
-        const valid = new Set(validTexts);
-        const before = Object.keys(map).length;
-        for (const k of Object.keys(map)) if (!valid.has(k)) delete map[k];
-        if (Object.keys(map).length !== before) this.save(map);
-        return before - Object.keys(map).length;
-    }
     static count() { return Object.keys(this.load()).length; }
-    /* 汇总统计：总卡数 / 今日到期 / 平均稳定度（天）/ 总复习次数 / 总遗忘次数 */
+    /* 汇总统计：总卡数 / 已到期 / 平均慢轨迹稳定度（天）/ 总复习次数 / 总遗忘次数 */
     static stats(now = new Date()) {
         const entries = Object.values(this.load());
         let due = 0, stSum = 0, stCount = 0, reps = 0, lapses = 0;
         for (const c of entries) {
-            if (c.due <= now.getTime()) due++;
+            if (c.dueAt <= now.getTime()) due++;
             if (c.stability > 0) { stSum += c.stability; stCount++; }
             reps += c.reps; lapses += c.lapses;
         }
@@ -2359,11 +2589,11 @@ var FsrsStore = class FsrsStore {
         const reviews = {};
         let due = 0, stSum = 0, stCount = 0, reps = 0, lapses = 0;
         for (const c of entries) {
-            if (c.due <= nowMs) due++;
+            if (c.dueAt <= nowMs) due++;
             if (c.stability > 0) { stSum += c.stability; stCount++; }
             reps += c.reps; lapses += c.lapses;
-            if (c.last_review) {
-                const d = new Date(c.last_review);
+            if (c.lastReviewAt) {
+                const d = new Date(c.lastReviewAt);
                 if (d.getTime() >= todayStart - (W_DAYS - 1) * dayMs) {
                     const key = dateKey(d);
                     reviews[key] = (reviews[key] ?? 0) + 1;
@@ -2371,9 +2601,9 @@ var FsrsStore = class FsrsStore {
                     if (day) { day.reviews++; if (c.reps === 1) day.fresh++; }
                 }
             }
-            if (c.due <= nowMs) forecast[0]++;
-            else for (let i = 1; i < FC_DAYS; i++) { if (c.due < fcStarts[i] + dayMs) { forecast[i]++; break; } }
-            if (c.due >= futureStart) { const idx = Math.floor((c.due - futureStart) / dayMs); if (idx < W_DAYS) future[idx].due++; }
+            /* 预测按「到期日落在哪一天」归档：分钟级学习步会让同一张卡今天再次到期 */
+            for (let i = 0; i < FC_DAYS; i++) { if (c.dueAt < fcStarts[i] + dayMs) { forecast[i]++; break; } }
+            if (c.dueAt >= futureStart) { const idx = Math.floor((c.dueAt - futureStart) / dayMs); if (idx < W_DAYS) future[idx].due++; }
         }
         return { total: entries.length, due, avgStability: stCount ? stSum / stCount : 0, reps, lapses, reviews, forecast, weekly: { past, future } };
     }
@@ -2450,12 +2680,14 @@ class QuizState {
     submitMulti(i) { this.get(i).submitted = true; }
     toggleMark(i) { this.get(i).marked = !this.get(i).marked; }
     markRated(i, rating, nextDue) { const s = this.get(i); s.rated = true; s.rating = rating; s.nextDue = nextDue; }
+    /* 队尾追加一题（FSRS 分钟级学习步：本题本次练习内还会再来） */
+    append(i) { this.#map.set(i, { selections: [], submitted: false, marked: false, rated: false, rating: 0, nextDue: null }); }
     isRated(i) { return this.get(i)?.rated === true; }
     /* 已作答（不带 ratedMode 门控）——用于判定真实对错 */
     isAnsweredRaw(i) { const s = this.get(i), q = this.#questions[i]; return q.type === "multiple" ? s.submitted && s.selections.length > 0 : s.selections.length > 0; }
     isAnswered(i) { return this.#ratedMode ? this.isRated(i) : this.isAnsweredRaw(i); }
     isErrorAnswered(i) { return this.isAnswered(i) && !this.isCorrect(i); }
-    isCorrect(i) { const q = this.#questions[i], s = this.get(i); if (!this.isAnsweredRaw(i)) return false; if (q.type !== "multiple") return s.selections[0] === q.answer; return [...s.selections].sort().join("") === [...q.answer.replace(/\s/g, "")].sort().join(""); }
+    isCorrect(i) { const q = this.#questions[i], s = this.get(i); if (!this.isAnsweredRaw(i)) return false; if (q.type !== "multiple") return s.selections[0] === q.answer; return keySet(s.selections) === keySet(q.answer); }
     reset() { this.#questions.forEach((_, i) => this.#map.set(i, { selections: [], submitted: false, marked: false, rated: false, rating: 0, nextDue: null })); }
 }
 
@@ -2474,11 +2706,11 @@ class OptionRenderer {
     #render(q, state) {
         let html = `<div class="question-title">${esc(q.text)}${q.type === "multiple" ? ' <small>(多选)</small>' : q.type === "judgment" ? ' <small>(判断)</small>' : ""}</div><div class="options">`;
         /* 展示顺序来自缓存的稳定顺序：同一题在本次练习中多次 render 不会重排；
-           data-key 始终是原始字母（A–E），正确判定与解析字母映射完全不变。 */
-        for (const opt of orderedOptions(q, this.#shuffle())) {
+           按钮上的字母按展示位置重编（A、B、C…），data-key 仍是原始字母，判定空间不变。 */
+        for (const [pos, opt] of orderedOptions(q, this.#shuffle()).entries()) {
             const sel = state.selections.includes(opt.key);
             const dis = q.type === "multiple" && state.submitted;
-            html += `<button type="button" class="option${sel ? " selected" : ""}${dis ? " disabled" : ""}" data-key="${esc(opt.key)}"${dis ? " disabled" : ""} aria-pressed="${sel}"><span>${esc(opt.key)}. ${esc(opt.text)}</span></button>`;
+            html += `<button type="button" class="option${sel ? " selected" : ""}${dis ? " disabled" : ""}" data-key="${esc(opt.key)}"${dis ? " disabled" : ""} aria-pressed="${sel}"><span>${String.fromCharCode(65 + pos)}. ${esc(opt.text)}</span></button>`;
         }
         html += "</div>";
         if (q.type === "multiple" && !state.submitted) html += `<div class="multi-submit-bar"><button id="multiSubmitBtn" class="btn btn-sm" ${state.selections.length ? "" : "disabled"} aria-label="提交多选题答案">提交答案</button></div>`;
@@ -2491,7 +2723,7 @@ class OptionRenderer {
     #applyFeedback(q, state) {
         this.#container.querySelectorAll(".option").forEach(el => {
             el.classList.remove("correct", "incorrect");
-            if (q.answer.includes(el.dataset.key)) el.classList.add("correct");
+            if (keySet(q.answer).includes(el.dataset.key)) el.classList.add("correct");
             else if (state.selections.includes(el.dataset.key)) el.classList.add("incorrect");
             el.classList.add("disabled");
             el.disabled = true;
@@ -2501,17 +2733,31 @@ class OptionRenderer {
 }
 
 class FeedbackPanel {
-    #container; #bus;
-    constructor(container, bus) {
-        this.#container = container; this.#bus = bus;
+    #container; #bus; #shuffle;
+    constructor(container, bus, shuffle = () => false) {
+        this.#container = container; this.#bus = bus; this.#shuffle = shuffle;
         bus.on("feedback:show", ({ question, state, correct }) => this.show(question, state, correct));
         bus.on("feedback:hide", () => this.hide());
         bus.on("fsrs:awaitRating", ({ question, state, correct, preselected }) => this.showRatingBar(question, state, correct, preselected));
         bus.on("fsrs:rated", ({ question, state, correct, rating, timeSpent, relevelable }) => this.showRated(question, state, correct, rating, timeSpent, relevelable));
     }
     static RATING_NAMES = ["", "忘记了", "困难", "良好", "简单"];
+    /* FSRS-7 允许分钟级间隔，故「下次复习」按 分钟 → 小时 → 天 递进表述，而不是笼统的「今天」 */
+    static formatDue(dueMs, from = Date.now()) {
+        const delta = dueMs - from;
+        if (delta <= 0) return "现在";
+        const minutes = delta / 60000;
+        if (minutes < 60) return `${Math.max(1, Math.round(minutes))} 分钟后`;
+        if (minutes < 1440) return `${Math.round(minutes / 60)} 小时后`;
+        const days = Math.max(1, Math.round(delta / 86400000));
+        return days === 1 ? "明天" : `${days} 天后`;
+    }
     #icon(correct) { return correct ? '<svg class="icon-sm" aria-hidden="true"><use href="#icon-check"/></svg>' : '<svg class="icon-sm" aria-hidden="true"><use href="#icon-cross"/></svg>'; }
-    #answerRow(q, state) { const us = state.selections.join(", ") || "未作答"; return `<div>您的答案: ${esc(us)}</div><div>正确答案: ${esc(q.answer)}</div>`; }
+    /* 答案回显用展示字母：随机排列开启后用户看到的是重编后的 A–E，此处必须与屏幕一致 */
+    #answerRow(q, state) {
+        const { us, correct } = displayAnswer(q, state.selections, this.#shuffle());
+        return `<div>您的答案: ${esc(us)}</div><div>正确答案: ${esc(correct)}</div>`;
+    }
     /* 四档评分按钮（高亮当前档）：待评分与已评分共用，点击即 emit("fsrs:rate") */
     #ratingButtons(rating) {
         return [1, 2, 3, 4].map(r => `<button type="button" class="btn btn-sm rating-btn${r === rating ? " btn-accent" : ""}" data-rating="${r}" aria-pressed="${r === rating}">${FeedbackPanel.RATING_NAMES[r]}</button>`).join("");
@@ -2521,7 +2767,7 @@ class FeedbackPanel {
     }
     show(q, state, correct) {
         let html = `<div class="answer-feedback ${correct ? "correct" : "incorrect"}"><div class="answer-feedback-header">${this.#icon(correct)} <span>${correct ? "正确" : "错误"}</span></div>`;
-        if (!correct) { const us = state.selections.join(", ") || "未作答"; html += `<div class="answer-feedback-content"><div>您的答案: ${esc(us)}</div><div>正确答案: ${esc(q.answer)}</div>${q.explanation ? `<div class="explanation-content">${MarkdownParser.parse(q.explanation)}</div>` : ""}</div>`; }
+        if (!correct) html += `<div class="answer-feedback-content">${this.#answerRow(q, state)}${q.explanation ? `<div class="explanation-content">${MarkdownParser.parse(q.explanation)}</div>` : ""}</div>`;
         html += "</div>";
         this.#container.innerHTML = html;
         renderMath(this.#container);
@@ -2538,9 +2784,7 @@ class FeedbackPanel {
     }
     /* 评分完成：下次复习时间 + 本题用时 + 解析 + 可改评价（重评从原始卡快照重算，间隔不会滚雪球） */
     showRated(q, state, correct, rating, timeSpent, relevelable = false) {
-        const due = new Date(state.nextDue);
-        const days = Math.max(0, Math.ceil((due.getTime() - Date.now()) / 86400000));
-        const when = days <= 0 ? "今天" : days === 1 ? "明天" : `${days} 天后`;
+        const when = FeedbackPanel.formatDue(new Date(state.nextDue).getTime());
         const timeText = timeSpent != null ? ` · 用时 ${timeSpent < 60000 ? `${(timeSpent / 1000).toFixed(1)} 秒` : fmtTime(timeSpent)}` : "";
         let html = `<div class="answer-feedback ${correct ? "correct" : "incorrect"}"><div class="answer-feedback-header">${this.#icon(correct)} <span>${correct ? "正确" : "错误"}</span></div>`;
         html += `<div class="answer-feedback-content"><div class="rating-result">已评分「${FeedbackPanel.RATING_NAMES[rating]}」${timeText} · 下次复习：${when}</div>`;
@@ -2562,7 +2806,18 @@ class NavigationBar {
     constructor(container, bus) {
         this.#container = container; this.#bus = bus;
         bus.on("nav:build", ({ total, quizState, masteredSet }) => this.#build(total, quizState, masteredSet));
+        bus.on("nav:append", ({ index }) => this.#append(index));
         bus.on("nav:updateStyles", ({ currentIdx, quizState, mode, masteredSet }) => this.#updateStyles(currentIdx, quizState, mode, masteredSet));
+    }
+    /* 队尾追加一枚导航按钮（FSRS 学习步重排），样式交给随后的 nav:updateStyles */
+    #append(index) {
+        if (index !== this.#btns.length) return;
+        const btn = document.createElement("button");
+        btn.className = "question-nav-btn"; btn.setAttribute("type", "button"); btn.textContent = String(index + 1);
+        btn.setAttribute("aria-label", `题目 ${index + 1}`);
+        btn.addEventListener("click", () => { this.#bus.emit("nav:clicked", index); this.#closeOverlay(); });
+        this.#container.appendChild(btn);
+        this.#btns.push(btn);
     }
     #build(total, quizState, masteredSet = new Set()) {
         this.#container.replaceChildren();
@@ -2816,6 +3071,8 @@ class OverviewPanel {
     }
 }
 
+/* 主题抽屉入口需要回显当前主题（选择器本身收进了抽屉里，菜单不再直接可见） */
+const THEME_NAMES = Object.freeze({ system: "跟随系统", light: "浅色", dark: "深色", oled: "OLED" });
 class ThemeManager {
     #buttons; #bus;
     constructor(buttons, bus) { this.#buttons = buttons; this.#bus = bus; this.#init(); }
@@ -2884,6 +3141,8 @@ class QuizController {
         this.#initBackButton();  /* Android 物理返回键：按层关闭，避免误退出应用 */
         this.#initAppLifecycle();/* 前后台切换：暂停/恢复计时，避免后台时长计入用时 */
         new ThemeManager(this.#els.themeOptions, this.#bus);
+        this.#bus.on("theme:changed", t => this.#renderThemeName(t));
+        this.#renderThemeName(StorageAdapter.getTheme() || "system");
         // Surface localStorage persistence failures (Nielsen error prevention).
         StorageAdapter.onPersistError = (k, _e) => {
             this.#bus.emit("toast:show", { message: `设置未能持久化（存储不可用或已满）`, isError: true });
@@ -2898,6 +3157,8 @@ class QuizController {
         this.#els = {
             menuPanel: $("menuPanel"),
             themeOptions: document.querySelectorAll(".theme-option"),
+            themeDrawer: $("themeDrawer"), themeDrawerBtn: $("themeDrawerBtn"),
+            themeDrawerClose: $("themeDrawerClose"), themeCurrentValue: $("themeCurrentValue"),
             fileInput: $("fileInput"), fileDropZone: $("fileDropZone"),
             clipboardImportBtn: $("clipboardImportBtn"),
             importFsrsDialog: $("importFsrsDialog"), importFsrsDialogClose: $("importFsrsDialogClose"),
@@ -2909,9 +3170,11 @@ class QuizController {
             modeSection: $("modeSection"), modeCards: document.querySelectorAll(".mode-card"),
             startBtn: $("startQuizBtn"),
             autoNextToggle: $("autoNextToggle"), autoNextDelay: $("autoNextDelay"),
-            showHistoryToggle: $("showHistoryToggle"), shuffleOptionsToggle: $("shuffleOptionsToggle"), hideMasteredToggle: $("hideMasteredToggle"), autoRateToggle: $("autoRateToggle"),
-            fsrsEnabledToggle: $("fsrsEnabledToggle"), fsrsSubmenu: $("fsrsSubmenu"),
-            autoRatePresetSelect: $("autoRatePresetSelect"), autoRatePresetRow: $("autoRatePresetRow"),
+            showHistoryToggle: $("showHistoryToggle"), shuffleOptionsToggle: $("shuffleOptionsToggle"), hideMasteredToggle: $("hideMasteredToggle"),
+            fsrsEnabledToggle: $("fsrsEnabledToggle"),
+            fsrsSettingsRow: $("fsrsSettingsRow"), fsrsSettingsBtn: $("fsrsSettingsBtn"),
+            fsrsSettingsDialog: $("fsrsSettingsDialog"), fsrsSettingsDialogClose: $("fsrsSettingsDialogClose"),
+            autoRatePresetSelect: $("autoRatePresetSelect"),
             autoRateCustomToggle: $("autoRateCustomToggle"),
             presetDialog: $("presetDialog"), presetDialogClose: $("presetDialogClose"),
             presetResetBtn: $("presetResetBtn"), presetSaveBtn: $("presetSaveBtn"),
@@ -2919,7 +3182,6 @@ class QuizController {
             retentionInput: $("retentionInput"), dailyNewInput: $("dailyNewInput"),
             resetFsrsBtn: $("resetFsrsBtn"), exportFsrsBtn: $("exportFsrsBtn"), copyFsrsBtn: $("copyFsrsBtn"), importFsrsBtn: $("importFsrsBtn"), fsrsImportInput: $("fsrsImportInput"),
             fsrsTotalCards: $("fsrsTotalCards"), fsrsDueToday: $("fsrsDueToday"), fsrsAvgStability: $("fsrsAvgStability"),
-            fsrsHint: $("fsrsHint"), fsrsHintDetail: $("fsrsHintDetail"),
             ovSessions: $("ovSessions"), ovAnswered: $("ovAnswered"), ovAccuracy: $("ovAccuracy"), ovMastered: $("ovMastered"),
             ovSessionsLabel: $("ovSessionsLabel"), ovAnsweredLabel: $("ovAnsweredLabel"), ovAccuracyLabel: $("ovAccuracyLabel"),
             statsModeBtn: $("statsModeBtn"), statsResetBtn: $("statsResetBtn"), statsGrid: $("statsGrid"),
@@ -2957,7 +3219,7 @@ class QuizController {
 
     #initComponents() {
         new OptionRenderer(this.#els.questionContainer, this.#bus, () => this.#settings.shuffleOptions);
-        new FeedbackPanel(this.#els.feedback, this.#bus);
+        new FeedbackPanel(this.#els.feedback, this.#bus, () => this.#settings.shuffleOptions);
         new NavigationBar(this.#els.questionNav, this.#bus);
         new ProgressBarComponent(this.#els.progressBar, this.#bus);
         new StatsPanel({ correct: this.#els.correctCount, incorrect: this.#els.incorrectCount, unanswered: this.#els.unansweredCount }, this.#bus);
@@ -3024,15 +3286,9 @@ class QuizController {
             /* 立即失效展示顺序缓存：开启时重新生成、关闭时恢复原始顺序，当前题即时生效 */
             this.#invalidateOptionOrders();
             if (this.#quizState) this.#refresh();
-            this.#bus.emit("toast:show", { message: e.target.checked ? "已开启随机选项排列（答案仍按原始字母判定）" : "已关闭随机选项排列，恢复原始顺序" });
+            this.#bus.emit("toast:show", { message: e.target.checked ? "已开启随机选项排列（序号按显示位置重编为 A–E）" : "已关闭随机选项排列，恢复原始顺序" });
         });
         this.#els.hideMasteredToggle?.addEventListener("change", e => { this.#settings.hideMastered = e.target.checked; StorageAdapter.saveSettings(this.#settings); this.#bus.emit("toast:show", { message: e.target.checked ? "已启用隐藏已掌握题目，下次加载生效" : "已禁用隐藏已掌握题目" }); });
-        this.#els.autoRateToggle.addEventListener("change", e => {
-            this.#settings.autoRate = e.target.checked;
-            StorageAdapter.saveSettings(this.#settings);
-            this.#els.autoRatePresetRow.style.display = e.target.checked ? "" : "none";
-            this.#bus.emit("toast:show", { message: e.target.checked ? "已开启自动评分" : "已关闭自动评分" });
-        });
         this.#els.autoRatePresetSelect.addEventListener("change", e => { this.#settings.autoRatePreset = e.target.value; StorageAdapter.saveSettings(this.#settings); this.#bus.emit("toast:show", { message: `自动评分标准：${e.target.options[e.target.selectedIndex].text}` }); });
         // 自定义阈值开关：勾选即启用并弹出编辑对话框；取消勾选恢复预设
         this.#els.autoRateCustomToggle.addEventListener("change", e => {
@@ -3053,16 +3309,20 @@ class QuizController {
         this.#els.fsrsEnabledToggle.addEventListener("change", e => {
             this.#settings.fsrsEnabled = e.target.checked;
             StorageAdapter.saveSettings(this.#settings);
-            this.#els.fsrsSubmenu.style.display = e.target.checked ? "" : "none";
+            this.#els.fsrsSettingsRow.hidden = !e.target.checked;
             this.#bus.emit("toast:show", { message: e.target.checked ? "已启用 FSRS，刷题模式将按记忆曲线安排题目" : "已关闭 FSRS，刷题模式恢复即时反馈" });
         });
+        /* FSRS 设置对话框：×/ESC/点击遮罩关闭；关闭后把焦点还给入口按钮 */
+        this.#els.fsrsSettingsBtn?.addEventListener("click", () => { try { this.#els.fsrsSettingsDialog?.showModal(); } catch { /* 旧浏览器降级：无对话框也可用 */ } });
+        this.#els.fsrsSettingsDialogClose?.addEventListener("click", () => this.#els.fsrsSettingsDialog?.close());
+        this.#els.fsrsSettingsDialog?.addEventListener("click", e => { if (e.target === this.#els.fsrsSettingsDialog) this.#els.fsrsSettingsDialog.close(); });
         this.#els.retentionInput.addEventListener("change", e => {
-            const v = Math.min(0.95, Math.max(0.8, +e.target.value));
+            const v = normalizeRetention(e.target.value);
             e.target.value = v;
             this.#settings.retention = v;
             StorageAdapter.saveSettings(this.#settings);
             this.#fsrsEngine = new FsrsEngine({ requestRetention: v });
-            this.#bus.emit("toast:show", { message: `记忆保持率已设为 ${v.toFixed(2)}` });
+            this.#bus.emit("toast:show", { message: `记忆保持率已设为 ${v}${retentionImpact(v)}` });
         });
         this.#els.dailyNewInput.addEventListener("change", e => {
             const v = Math.max(0, Math.min(200, Math.round(+e.target.value)));
@@ -3104,13 +3364,10 @@ class QuizController {
         });
         // 菜单打开时刷新复习数据摘要与数据统计（<details> toggle 事件）
         this.#els.menuPanel?.addEventListener("toggle", () => { this.#refreshMenuData(); });
-        /* 「失效卡片判定规则」摘要：辅助技术下 Enter/Space 需显式切换（部分实现不转发给 <details>） */
-        this.#els.fsrsHint?.addEventListener("keydown", e => {
-            if (e.key !== "Enter" && e.key !== " ") return;
-            e.preventDefault();
-            const details = /** @type {HTMLDetailsElement | null} */ (this.#els.fsrsHintDetail);
-            if (details) details.open = !details.open;
-        });
+        /* 主题抽屉：入口在菜单，抽屉从右侧滑出；×/ESC/点击遮罩关闭 */
+        this.#els.themeDrawerBtn?.addEventListener("click", () => { try { this.#els.themeDrawer?.showModal(); } catch { /* 旧浏览器降级：无对话框也可用 */ } });
+        this.#els.themeDrawerClose?.addEventListener("click", () => this.#els.themeDrawer?.close());
+        this.#els.themeDrawer?.addEventListener("click", e => { if (e.target === this.#els.themeDrawer) this.#els.themeDrawer.close(); });
 
         this.#initModeCards(); // radiogroup pattern: roving tabindex + arrow keys + Enter/Space
         document.addEventListener("keydown", e => this.#handleKey(e));
@@ -3211,6 +3468,8 @@ class QuizController {
         });
     }
 
+    #renderThemeName(theme) { if (this.#els.themeCurrentValue) this.#els.themeCurrentValue.textContent = THEME_NAMES[theme] ?? THEME_NAMES.system; }
+
     #applySettings() {
         this.#els.autoNextToggle.checked = this.#settings.autoNext;
         this.#els.autoNextDelay.value = this.#settings.autoDelay;
@@ -3218,14 +3477,13 @@ class QuizController {
         this.#els.shuffleOptionsToggle.checked = this.#settings.shuffleOptions;
         this.#els.hideMasteredToggle.checked = this.#settings.hideMastered;
         this.#els.fsrsEnabledToggle.checked = this.#settings.fsrsEnabled;
-        this.#els.autoRateToggle.checked = this.#settings.autoRate;
         this.#els.autoRatePresetSelect.value = this.#settings.autoRatePreset;
         this.#els.autoRateCustomToggle.checked = this.#settings.autoRateCustom;
+        this.#settings.retention = normalizeRetention(this.#settings.retention);
         this.#els.retentionInput.value = this.#settings.retention;
         this.#els.dailyNewInput.value = this.#settings.dailyNew;
         this.#els.historyPanel.style.display = this.#settings.showHistory ? "" : "none";
-        this.#els.fsrsSubmenu.style.display = this.#settings.fsrsEnabled ? "" : "none";
-        this.#els.autoRatePresetRow.style.display = this.#settings.autoRate ? "" : "none";
+        this.#els.fsrsSettingsRow.hidden = !this.#settings.fsrsEnabled;
         this.#fsrsEngine = new FsrsEngine({ requestRetention: this.#settings.retention });
     }
 
@@ -3285,14 +3543,6 @@ class QuizController {
         this.#computeMasteredSet();
         /* 清空本会话派生缓存（原始卡快照 / 选项顺序）：换题库必须重置 */
         this.#clearSessionCaches();
-        /* 清理题库中已不存在的复习卡（换题库后旧卡会白占 localStorage 配额）。
-           与导入备份的字段校验共用同一判定规则：此处只按题干全文比对（孤儿卡）。 */
-        const prunedCards = FsrsStore.prune(filtered.map(q => q.text));
-        if (prunedCards > 0) {
-            const note = `已清理 ${prunedCards} 张失效卡：题干与当前题库不完全一致`;
-            summary += `；${note}`;
-            this.#bus.emit("toast:show", { message: note });
-        }
         this.#els.fileStatus.innerText = summary;
         this.#els.quizSection.classList.add("hidden");
         this.#els.resultSection.classList.add("hidden");
@@ -3424,7 +3674,7 @@ class QuizController {
         this.#questions.forEach(q => {
             const card = FsrsStore.get(q.text); // 内存缓存读取 O(1)
             if (!card) fresh.push(q);
-            else if (card.due <= now.getTime()) dueEntries.push({ q, card });
+            else if (card.dueAt <= now.getTime()) dueEntries.push({ q, card });
         });
         /* 弱记忆优先：每张卡只计算一次记忆保留率再排序（避免比较器内重复计算） */
         dueEntries.forEach(e => { e.r = this.#fsrsEngine.getRetrievability(e.card, now); });
@@ -3438,7 +3688,7 @@ class QuizController {
         this.#currentIdx = 0;
         const skipped = total - this.#questions.length; // 已学未到期 + 超限新卡今日不刷
         const newText = freshQueue.length < fresh.length ? `新卡 ${freshQueue.length}/${fresh.length} 题` : `新卡 ${fresh.length} 题`;
-        this.#bus.emit("toast:show", { message: `复习队列：今日到期 ${due.length} 题 · ${newText}${skipped > 0 ? ` · ${skipped} 题未到期` : ""}` });
+        this.#bus.emit("toast:show", { message: `复习队列：已到期 ${due.length} 题 · ${newText}${skipped > 0 ? ` · ${skipped} 题未到期` : ""}` });
     }
 
     /* FSRS：按自评写入卡片调度并标记已评分；未评分跳题视为未复习（卡片不动）。
@@ -3467,7 +3717,8 @@ class QuizController {
             this.#bus.emit("toast:show", { message: "存储空间不足，本次评分未保存：请先导出备份或清理缓存题库", isError: true });
             return;
         }
-        this.#quizState.markRated(idx, rating, nextCard.due instanceof Date ? nextCard.due : new Date(nextCard.due));
+        this.#quizState.markRated(idx, rating, nextCard.dueAt instanceof Date ? nextCard.dueAt : new Date(nextCard.dueAt));
+        this.#requeueIfNeeded(q, nextCard);
         this.#justAnswered = !isRelevel; /* 重评不再触发自动下一题，让用户看清新的下次复习时间 */
         this.#updateDailyNewEstimate();
         /* 重评后暂停计时：解读新间隔的时间不应计入本题用时 */
@@ -3476,12 +3727,25 @@ class QuizController {
         if (isRelevel) this.#bus.emit("toast:show", { message: `已改为「${FeedbackPanel.RATING_NAMES[rating]}」，下次复习已重新计算` });
     }
 
-    /* 作答完成后的统一出口：自动评分开启时直接评分（用时此刻已定），否则渲染评分条。
+    /* 分钟级学习步（<1 天）意味着「本题稍后还要再见」——追加一份到队尾，本次练习内即可重逢，
+       对齐上游 learn 队列；队里已有未做的副本时不重复追加（重评也只保留一份）。 */
+    #requeueIfNeeded(q, nextCard) {
+        if (nextCard.scheduledDays >= 1 || !this.#quizState) return;
+        for (let i = this.#currentIdx + 1; i < this.#questions.length; i++)
+            if (this.#questions[i].text === q.text && !this.#quizState.get(i).rated) return;
+        const i = this.#questions.length;
+        this.#questions.push(q);
+        this.#quizState.append(i);
+        this.#bus.emit("nav:append", { index: i });
+        if (this.#els.totalQ) this.#els.totalQ.textContent = String(this.#questions.length);
+    }
+
+    /* 作答完成后的统一出口：FSRS 刷题按用时与对错直接评分（用时此刻已定），否则渲染评分条。
        两条路径都在作答瞬间停表：解析/等待的时间不应计入本题与总用时。
        考试模式允许改答案，故不在此停表。 */
     #afterAnswer() {
         this.#justAnswered = true;
-        if (this.#fsrsActive && this.#settings.autoRate && !this.#quizState.get(this.#currentIdx).rated && this.#quizState.isAnsweredRaw(this.#currentIdx)) {
+        if (this.#fsrsActive && !this.#quizState.get(this.#currentIdx).rated && this.#quizState.isAnsweredRaw(this.#currentIdx)) {
             this.#rateCard(this.#autoRating()); /* #rateCard 内部会 pause，保证自动评分用的是作答时长 */
         } else {
             this.#refresh();
@@ -3820,8 +4084,9 @@ class QuizController {
             const App = CapacitorBridge.App;
             if (!CapacitorBridge.isNative() || !App?.addListener) return;
             App.addListener("backButton", () => {
-                const dialog = /** @type {HTMLDialogElement | null} */ (document.querySelector("dialog[open]"));
-                if (dialog) { dialog.close(); return; }
+                /* 取最后一个打开的对话框：FSRS 设置里还能再叠开「自定义评分标准」，返回键要先退最上层 */
+                const dialogs = document.querySelectorAll("dialog[open]");
+                if (dialogs.length) { /** @type {HTMLDialogElement} */ (dialogs[dialogs.length - 1]).close(); return; }
                 if (!this.#els.exportPanel.classList.contains("hidden")) {
                     this.#els.exportPanel.classList.add("hidden");
                     return;
@@ -4003,8 +4268,8 @@ class QuizController {
         this.#onClipboardImport();
     }
 
-    /* 导入 FSRS 备份文本：解析 → 逐条校验（isValidFsrsCardRecord，统计 bad）→ 确认 → 覆盖。
-       返回值：是否已成功覆盖（false 表示格式/内容无效，调用方可给出场景化提示）。 */
+    /* 导入 FSRS 备份文本：解析 → 确认 → 覆盖（备份内容原样写入，不做字段校验）。
+       返回值：是否已成功覆盖（false 表示格式无效，调用方可给出场景化提示）。 */
     #importFsrsFromText(text) {
         if (!text.trim()) { this.#bus.emit("toast:show", { message: "内容为空：未找到可导入的备份数据", isError: true }); return false; }
         let data;
@@ -4015,16 +4280,11 @@ class QuizController {
             this.#bus.emit("toast:show", { message: "JSON 格式无效：未找到有效的卡片表（cards）", isError: true });
             return false;
         }
-        const valid = {}; let bad = 0;
-        for (const [k, v] of Object.entries(cards)) {
-            if (isValidFsrsCardRecord(v)) valid[k] = v;
-            else bad++;
-        }
-        const count = Object.keys(valid).length;
-        if (!count) { this.#bus.emit("toast:show", { message: `JSON 格式无效：${bad} 张卡的字段缺失或类型错误`, isError: true }); return false; }
+        const count = Object.keys(cards).length;
+        if (!count) { this.#bus.emit("toast:show", { message: "JSON 里没有卡片：备份的卡片表为空", isError: true }); return false; }
         /* 覆盖现有数据属破坏性操作：先确认（与「重置数据」一致） */
         if (!confirm(`导入将覆盖现有 ${FsrsStore.count()} 张卡，共 ${count} 张卡数据，确定继续？`)) return false;
-        if (!FsrsStore.save(valid)) {
+        if (!FsrsStore.save(cards)) {
             this.#bus.emit("toast:show", { message: "存储空间不足，导入未生效（原数据保持不变）", isError: true });
             return false;
         }
@@ -4033,7 +4293,7 @@ class QuizController {
         /* 导入的卡片与当前题库无关：清掉原始卡快照，避免用旧快照重评出新结果 */
         this.#fsrsBaseCards.clear();
         this.#els.fsrsImportInput.value = "";
-        this.#bus.emit("toast:show", { message: `已导入 ${count} 张卡${bad ? `，跳过 ${bad} 条无效数据` : ""}` });
+        this.#bus.emit("toast:show", { message: `已导入 ${count} 张卡` });
         return true;
     }
 
@@ -4184,7 +4444,7 @@ class QuizController {
     #restart() {
         if (!this.#quizState) return;
         if (this.#fsrsActive) {
-            // 重新构建队列：已评分的题下次到期在将来，不会重复出现
+            // 重新构建队列：已毕业（间隔 ≥1 天）的题到期在将来，不再出现；学习步未走完的题仍到期，会再次入队
             this.#buildFsrsQueue();
             if (!this.#questions.length) { this.#bus.emit("toast:show", { message: "今日复习已完成 🎉" }); return; }
         } else {
@@ -4220,14 +4480,16 @@ class QuizController {
             html += `<p class="wrong-summary">共 ${totalW} 道错题，占总题数 ${this.#questions.length} 的 ${Math.round((totalW / this.#questions.length) * 100)}%</p>`;
             for (const { q, i } of wrong) {
                 const s = this.#quizState.get(i);
-                const us = s.selections.join(", ") || "未作答";
+                /* 与作答时看到的一致：随机排列开启时按同一缓存顺序展示，字母也按位置重编 */
+                const { us, correct } = displayAnswer(q, s.selections, this.#shuffleOptions);
                 let opts = "";
-                /* 与作答时看到的一致：随机选项排列开启时按同一缓存顺序展示 */
-                for (const o of orderedOptions(q, this.#shuffleOptions)) opts += `<span class="wrong-card-option${q.answer.includes(o.key) ? " correct-answer" : ""}">${esc(o.key)}. ${esc(o.text)}</span>`;
+                const ansKeys = keySet(q.answer);
+                let pos = 0;
+                for (const o of orderedOptions(q, this.#shuffleOptions)) opts += `<span class="wrong-card-option${ansKeys.includes(o.key) ? " correct-answer" : ""}">${String.fromCharCode(65 + pos++)}. ${esc(o.text)}</span>`;
                 html += `<div class="wrong-card"><div class="wrong-card-header"><span>#${i + 1}</span><span class="badge">错题</span></div>`;
                 html += `<div class="wrong-card-title">${esc(q.text)}</div>`;
                 html += `<div class="wrong-card-options">${opts}</div>`;
-                html += `<div class="wrong-card-answer-row"><span>你的答案: <span class="wrong-card-user-ans">${esc(us)}</span></span><span>正确答案: <span class="wrong-card-correct-ans">${esc(q.answer)}</span></span></div>`;
+                html += `<div class="wrong-card-answer-row"><span>你的答案: <span class="wrong-card-user-ans">${esc(us)}</span></span><span>正确答案: <span class="wrong-card-correct-ans">${esc(correct)}</span></span></div>`;
                 if (q.explanation) html += `<div class="wrong-card-explanation"><strong>解析：</strong>${MarkdownParser.parse(q.explanation)}</div>`;
                 html += "</div>";
             }
@@ -4273,7 +4535,9 @@ class QuizController {
         if (rateTarget) { e.preventDefault(); this.#rateCard(+e.key); return; } /* 评分 / 已评分改评价 */
         if (inRatingBar) return; /* 评分条按钮仅响应 1–4，其余按键交回浏览器 */
         if (e.key >= "1" && e.key <= "5") {
-            const optIdx = +e.key - 1; if (q.options[optIdx]) { this.#quizState.select(this.#currentIdx, q.options[optIdx].key, q.type === "multiple"); this.#afterAnswer(); }
+            /* 数字键对应屏幕上第 N 个选项（随机排列开启后即「看到的 A/B/C…」），选中仍传原始键 */
+            const opt = orderedOptions(q, this.#shuffleOptions)[+e.key - 1];
+            if (opt) { this.#quizState.select(this.#currentIdx, opt.key, q.type === "multiple"); this.#afterAnswer(); }
         }
         else if (e.key === "ArrowLeft")  { e.preventDefault(); this.#navigate(-1); }
         else if (e.key === "ArrowRight") { e.preventDefault(); this.#navigate(1); }
