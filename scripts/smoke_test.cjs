@@ -86,6 +86,7 @@ class El {
     }
     matches(sel) {
         if ((this._sel ?? '') === sel) return true;
+        if (sel.startsWith('#')) return (this.attributes.id ?? null) === sel.slice(1);
         if (sel.startsWith('.')) return this.className.split(/\s+/).includes(sel.slice(1));
         if (sel.startsWith('[') && sel.endsWith(']')) {
             const attr = sel.slice(1, -1).split('=')[0];
@@ -101,7 +102,23 @@ class El {
     close() { this.open = false; }
     closest(sel) { let el = this; while (el) { if (el.matches?.(sel)) return el; el = el._parent; } return null; }
     get innerHTML() { return this._html ?? ''; }
-    set innerHTML(v) { this._html = v; this.children = []; }
+    /* 组件用 innerHTML 字符串渲染，再 querySelector("#xxx") 找回其中的按钮绑事件
+       （多选题/主观题的「提交答案」）。桩不解析 HTML 会让这些按钮永远找不到、点不动，
+       故这里只为带 id 的 <button> 造出子桩（应用代码本身不遍历 children，不影响其它断言）。 */
+    set innerHTML(v) {
+        this._html = v; this.children = [];
+        for (const m of String(v).matchAll(/<button\b([^>]*)>/g)) {
+            const attrs = m[1];
+            const idm = attrs.match(/\bid="([^"]+)"/);
+            if (!idm) continue;
+            const b = new El('button');
+            b.attributes.id = idm[1];
+            b.className = (attrs.match(/\bclass="([^"]+)"/) ?? [, ''])[1];
+            b.disabled = /\bdisabled\b/.test(attrs);
+            b.setAttribute('aria-label', (attrs.match(/aria-label="([^"]+)"/) ?? [, ''])[1]);
+            this.children.push(b); b._parent = this;
+        }
+    }
     get firstChild() { return this.children[0] ?? null; }
 }
 
@@ -127,11 +144,14 @@ const byId = [
     'quizSection','resultSection','questionContainer','answerFeedback','prevBtn','nextBtn','markBtn','masterBtn',
     'restartBtn','reviewBtn','wrongContainer','exportBtn','exportPanel','exportLinks','copyExportBtn','closeExportBtn',
     'historyPanel','historyList','snackbar','curTime','totalTime','progressBar','currentQ','totalQ','correctCount',
-    'incorrectCount','unansweredCount','scoreValue','totalScore','resultTotalTime','avgTime','resCorrect','resIncorrect',
-    'resUnanswered','resultMsg','touchSwipeZone','questionSlideWrap','markBadge','navFab','navOverlay','navOverlayClose',
+    'incorrectCount','unansweredCount','subjectiveCount','subjectiveStat','scoreValue','totalScore','resultTotalTime','avgTime','resCorrect','resIncorrect',
+    'resUnanswered','resSubjective','resSubjectiveStat','resultGrid','resultMsg','touchSwipeZone','questionSlideWrap','markBadge','navFab','navOverlay','navOverlayClose',
     'navSubmitBtn','questionNav',
 ];
 byId.forEach(id => { els[id] = new El(); if (id === 'quizSection' || id === 'modeSection' || id === 'resultSection') els[id].classList.add('hidden'); });
+/* 与真实 DOM 一致：「主观」计数与结果页「主观」磁贴默认隐藏，只在本卷含主观题时出现 */
+els.subjectiveStat.classList.add('hidden');
+els.resSubjectiveStat.classList.add('hidden');
 // masterBtn/markBtn 内的 .btn-text
 els.markBtn._sel = 'markBtn';
 els.masterBtn._sel = 'masterBtn';
@@ -701,6 +721,22 @@ const flush = () => new Promise(r => setTimeout(r, 30));
     assert(/成功加载 2 题/.test(els.fileStatus.innerText), `多行题干与代码块题库解析: "${els.fileStatus.innerText}"`);
     assert(els.fileInput.value === '', '再次导入后文件选择器已清空');
 
+    /* 解析器类本体（第 15 节 MarkdownParser 同款做法）：下面几节按题库文本直接验解析语义 */
+    const QuestionParser = new Function(`${html.slice(html.indexOf('class QuestionParser'), html.indexOf('/* ===== Quiz State ===== */'))}\nreturn QuestionParser;`)();
+    /* 回归：`**解析：** 内容` 是 doc/示例.md 文档里的标准写法，正文必须真的被捕获。
+       曾经为了兼容 PDF 题库的 `答案分析：` 把 explain 改成多分支，其中一支只匹配
+       `**解析：**` 前缀而没有捕获组 → m[1] 为 undefined，所有解析静默变空。 */
+    const ep = new QuestionParser();
+    const eqs = ep.parseMarkdown([
+        '## 一、单选题',
+        '### 1. 甲题', 'A. 甲', 'B. 乙', '**答案： A**', '**解析：** 星号标题 + 空格。',
+        '### 2. 乙题', 'A. 甲', 'B. 乙', '**答案： A**', '**解析：**紧挨星号。',
+        '### 3. 丙题', 'A. 甲', 'B. 乙', '**答案： A**', '答案分析： PDF 题库常见的裸标签。',
+        '### 4. 丁题', 'A. 甲', 'B. 乙', '**答案： A**', '解析：裸标签无星号。',
+    ].join('\n'), 'explain.md');
+    assert(JSON.stringify(eqs.map(q => q.explanation)) === JSON.stringify(['星号标题 + 空格。', '紧挨星号。', 'PDF 题库常见的裸标签。', '裸标签无星号。']),
+        `四种解析写法（**解析：** x / **解析：**x / 答案分析：x / 解析：x）都能捕获正文: ${JSON.stringify(eqs.map(q => q.explanation))}`);
+
     console.log('== 15. MarkdownParser：代码/行内代码内容不被二次改写 ==');
     const escSrc = html.match(/const esc = [^\n]*\n/)[0];
     const parserClass = html.slice(html.indexOf('class MarkdownParser'), html.indexOf('/* ===== Timer'));
@@ -1053,6 +1089,230 @@ const flush = () => new Promise(r => setTimeout(r, 30));
     assert(t2.getQuestionTime(0) === 6000 && t2.getTotalTime() === 7000, `重复 pause 幂等: ${t2.getQuestionTime(0)}/${t2.getTotalTime()}`);
     t2.resume(); t2.resume();         /* 重复 resume 幂等 */
     assert(t2.getTotalTime() === 7000, `重复 resume 幂等: ${t2.getTotalTime()}`);
+
+    console.log('== 20. 主观题（填空/简答/论述）：解析 → 提交看参考答案 → 收起再自测 → 统计口径 → FSRS 手动评分 ==');
+    els.fsrsEnabledToggle.checked = false;
+    els.fsrsEnabledToggle.trigger('change');
+    els.autoNextToggle.checked = false;
+    els.autoNextToggle.trigger('change');
+    store.set('fsrs_cards_v2', JSON.stringify({})); /* 清空复习卡：本节 6 题都按新卡入队 */
+    sandbox.FsrsStore.save({});
+    const subjMd = [
+        '## 一、单选题',
+        '',
+        '### 1. 客观题甲',
+        'A. 对',
+        'B. 错',
+        '**答案： A**',
+        '**解析：** 客观解析。',
+        '',
+        '## 二、填空题',
+        '',
+        '### 1. 炮制方法大致可分为___、__五类。',
+        '**答案：** 修治，水制。',
+        '',
+        '### 2. 答案跨行的填空题',
+        '**答案：** 水火共制是指既要用水又要用火，常',
+        '用方法有煮、蒸、炖、燀、淬等。',
+        '**解析：** 填空解析。',
+        '',
+        '## 三、简答题',
+        '',
+        '### 1. 何谓中药的炮制？',
+        '**答案：** 简答参考答案。',
+        '',
+        '## 四、论述题',
+        '',
+        '### 1. 中药炮制的目的是什么？',
+        '**答案：** 论述参考答案。',
+        '',
+        '### 2. 混进主观题小节的选择题',
+        'A. 甲',
+        'B. 乙',
+        '**答案： B**',
+    ].join('\n');
+    const sp = new QuestionParser();
+    const sq = sp.parseMarkdown(subjMd, 'subjective.md');
+    assert(sp.errors.length === 0, `填空/简答/论述小节不产生解析错误: ${JSON.stringify(sp.errors)}`);
+    assert(sq.length === 6 && sq.filter(q => q.type === 'subjective').length === 4, `识别出 4 道主观题（共 ${sq.length} 题）`);
+    assert(JSON.stringify(sq.filter(q => q.type === 'subjective').map(q => q.subtype)) === JSON.stringify(['fill', 'fill', 'short', 'essay']), `小节标题决定主观题细分: ${JSON.stringify(sq.map(q => q.subtype))}`);
+    assert(sq[1].options.length === 0 && sq[1].answer === '修治，水制。', '填空题没有选项也能成立（只要有参考答案）');
+    assert(sq[2].answer === '水火共制是指既要用水又要用火，常用方法有煮、蒸、炖、燀、淬等。', `PDF 换行的参考答案被续接而不是丢弃（中文之间不插空格）: "${sq[2].answer}"`);
+    assert(sq[2].explanation === '填空解析。', '主观题同样支持解析行');
+    assert(sq[5].type === 'single' && sq[5].subtype === null && sq[5].options.length === 2, '主观题小节里混进的选择题回落为客观题（选项不被吞掉，细分标签一并清除）');
+
+    els.fileInput.files = [{ name: 'subjective.md', text: async () => subjMd }];
+    els.fileInput.trigger('change');
+    await flush();
+    assert(/成功加载 6 题/.test(els.fileStatus.innerText), `导入结果: "${els.fileStatus.innerText}"`);
+    assert(/含主观题 4 道（不批改）/.test(els.fileStatus.innerText), `导入提示点明主观题数量与「不批改」: "${els.fileStatus.innerText}"`);
+
+    els.startQuizBtn.click();
+    await flush();
+    assert(String(els.totalQ.textContent) === '6', '总题数 6（客观 2 + 主观 4）');
+    assert(!els.subjectiveStat.classList.contains('hidden'), '本卷含主观题 → 信息栏出现「主观」计数');
+    assert(String(els.subjectiveCount.textContent) === '0' && String(els.unansweredCount.textContent) === '6', '四个计数之和恒等于总题数（主观按「已完成」累加，初始 0）');
+
+    /* --- 填空题题面：无选项 + 提交按钮 + 不批改提示 --- */
+    dispatchKey('ArrowRight');
+    await flush();
+    assert(els.questionContainer.innerHTML.includes('(填空)'), `题面标注细分题型: ${els.questionContainer.innerHTML.slice(0, 110)}`);
+    assert(!/<button[^>]*class="option/.test(els.questionContainer.innerHTML), '主观题不渲染任何选项按钮');
+    assert(els.questionContainer.innerHTML.includes('主观题不批改'), '提交前提示「不批改，先自行作答」');
+    assert(els.answerFeedback.classList.contains('hidden'), '提交前不显示参考答案');
+    const subjBtn = els.questionContainer.querySelector('#subjectiveSubmitBtn');
+    assert(!!subjBtn && !subjBtn.disabled, '「提交答案」按钮可直接点（不像多选题要先选选项）');
+    subjBtn.click();
+    await flush();
+    assert(!els.answerFeedback.classList.contains('hidden') && els.answerFeedback.innerHTML.includes('参考答案'), '提交后反馈面板显示「参考答案」');
+    assert(els.answerFeedback.innerHTML.includes('修治，水制。'), '参考答案内容已渲染');
+    assert(els.answerFeedback.innerHTML.includes('answer-feedback subjective'), '使用中性样式（不套用对/错配色）');
+    assert(!els.answerFeedback.innerHTML.includes('正确') && !els.answerFeedback.innerHTML.includes('错误'), '主观题不批改：面板不出现对/错判定');
+    assert(String(els.correctCount.textContent) === '0' && String(els.incorrectCount.textContent) === '0', '主观题不进正确/错误计数');
+    assert(String(els.subjectiveCount.textContent) === '1' && String(els.unansweredCount.textContent) === '5', '计入答题数：主观 1、未答 5');
+    assert(els.questionContainer.innerHTML.includes('收起答案') && els.questionContainer.innerHTML.includes('评分不受影响'), '提交后按钮变为「收起答案」并说明评分不受影响');
+
+    /* --- 收起答案：回到未提交态，可再自测一遍 --- */
+    els.questionContainer.querySelector('#subjectiveSubmitBtn').click();
+    await flush();
+    assert(els.answerFeedback.classList.contains('hidden'), '收起后参考答案隐藏');
+    assert(els.questionContainer.innerHTML.includes('提交答案') && !els.questionContainer.innerHTML.includes('收起答案'), '按钮回到「提交答案」');
+    assert(String(els.subjectiveCount.textContent) === '0' && String(els.unansweredCount.textContent) === '6', '收起后回到未完成（主观 0、未答 6）');
+    dispatchKey('Enter');
+    await flush();
+    assert(els.answerFeedback.innerHTML.includes('修治，水制。'), 'Enter 快捷键同样能提交主观题');
+    assert(String(els.subjectiveCount.textContent) === '1', 'Enter 提交后重新计入答题数');
+
+    /* --- 客观题照常批改，交卷后统计口径：得分分母只算客观题 --- */
+    store.set('quiz_stats', JSON.stringify({ sessions: 0, answered: 0, correct: 0, subjective: 0, timeMs: 0, daily: {}, recent: [] }));
+    if (els.statsGrid.getAttribute('aria-pressed') === 'true') els.statsGrid.trigger('click'); /* 切回累计，便于断言 */
+    dispatchKey('ArrowLeft');
+    await flush();
+    dispatchKey('2'); /* 客观题甲选 B → 错误 */
+    await flush();
+    assert(String(els.incorrectCount.textContent) === '1', '客观题照常批改（错误 1）');
+    for (let i = 0; i < 5; i++) { dispatchKey('ArrowRight'); await flush(); }
+    dispatchKey('2'); /* 末题（回落的选择题）选 B → 正确 */
+    await flush();
+    assert(String(els.correctCount.textContent) === '1' && String(els.currentQ.textContent) === '6', `走到第 6 题并答对: currentQ=${els.currentQ.textContent}`);
+    els.navSubmitBtn.click();
+    await flush();
+    assert(String(els.resCorrect.textContent) === '1' && String(els.resIncorrect.textContent) === '1' && String(els.resSubjective.textContent) === '1' && String(els.resUnanswered.textContent) === '3', `结果页 1/1/1/3: ${els.resCorrect.textContent}/${els.resIncorrect.textContent}/${els.resSubjective.textContent}/${els.resUnanswered.textContent}`);
+    assert(!els.resSubjectiveStat.classList.contains('hidden') && els.resultGrid.classList.contains('has-subjective'), '含主观题时结果页出现「主观」磁贴并切 4 列栅格');
+    assert(String(els.totalScore.textContent) === '2' && String(els.scoreValue.textContent) === '1', `得分分母只算客观题（1/2）: ${els.scoreValue.textContent}/${els.totalScore.textContent}`);
+    els.reviewBtn.click();
+    assert(els.wrongContainer.innerHTML.includes('客观题甲'), '错题回顾列出答错的客观题');
+    assert(!els.wrongContainer.innerHTML.includes('炮制方法大致可分为'), '错题回顾不含主观题（不批改 → 无所谓对错）');
+    els.menuPanel.trigger('toggle');
+    await flush();
+    assert(String(els.ovAnswered.textContent) === '3', `概览答题数含主观题（1+1+1）: ${els.ovAnswered.textContent}`);
+    assert(els.ovAccuracy.textContent === '50%', `概览正确率分母只算客观题（1/2）: ${els.ovAccuracy.textContent}`);
+    assert(/总正确率（客观题）/.test(els.ovAccuracyLabel.textContent), `正确率标签点明口径: "${els.ovAccuracyLabel.textContent}"`);
+
+    /* --- FSRS：主观题不参与自动评分，提交后手动选档 --- */
+    els.fsrsEnabledToggle.checked = true;
+    els.fsrsEnabledToggle.trigger('change');
+    els.startQuizBtn.click();
+    await flush();
+    assert(String(els.totalQ.textContent) === '6', `FSRS 队列含全部 6 题（均为新卡）: ${els.totalQ.textContent}`);
+    dispatchKey('ArrowRight'); /* 到填空题 */
+    await flush();
+    assert(els.answerFeedback.classList.contains('hidden'), 'FSRS 下主观题未提交时不显示面板');
+    dispatchKey('Enter');
+    await flush();
+    assert(!/已评分/.test(els.answerFeedback.innerHTML), '主观题不参与「作答即自动评分」（没有对错可依据）');
+    assert(els.answerFeedback.innerHTML.includes('修治，水制。'), 'FSRS 下提交后先显示参考答案');
+    assert(ratingButtons().length === 4, '参考答案下方给出四档评分条');
+    assert(ratingButtons()[2].accent && ratingButtons()[2].pressed, '预选「良好」而非「忘记了」（不批改 → 不能按答错处理）');
+    assert(JSON.parse(store.get('fsrs_cards_v2'))['炮制方法大致可分为___、__五类。'] === undefined, '未评分前不写卡表');
+    dispatchKey('2'); /* 手动评「困难」 */
+    await flush();
+    const subjCard = JSON.parse(store.get('fsrs_cards_v2'))['炮制方法大致可分为___、__五类。'];
+    assert(!!subjCard && subjCard.reps === 1, `手动评分后才写入复习卡: ${JSON.stringify(subjCard)?.slice(0, 110)}`);
+    assert(/已评分「困难」/.test(els.answerFeedback.innerHTML) && els.answerFeedback.innerHTML.includes('下次复习'), `评分结果与下次复习时间回显: ${els.answerFeedback.innerHTML.slice(0, 160)}`);
+    assert(els.answerFeedback.innerHTML.includes('修治，水制。'), '评分后参考答案仍在（评分条之后）');
+    assert(!els.questionContainer.innerHTML.includes('收起答案'), '已评分后不再提供「收起答案」（避免与评分结果打架）');
+
+    /* --- 全主观题卷：不计得分 --- */
+    els.fsrsEnabledToggle.checked = false;
+    els.fsrsEnabledToggle.trigger('change');
+    els.fileInput.files = [{ name: 'all-subjective.md', text: async () => ['## 一、简答题', '', '### 1. 何谓中药的炮制？', '**答案：** 参考答案。'].join('\n') }];
+    els.fileInput.trigger('change');
+    await flush();
+    assert(/成功加载 1 题，含主观题 1 道/.test(els.fileStatus.innerText), `纯主观题题库可导入: "${els.fileStatus.innerText}"`);
+    els.startQuizBtn.click();
+    await flush();
+    dispatchKey('Enter');
+    await flush();
+    els.navSubmitBtn.click();
+    await flush();
+    assert(String(els.totalScore.textContent) === '0' && String(els.resSubjective.textContent) === '1', `全主观题卷得分分母为 0: ${els.totalScore.textContent}`);
+    assert(els.resultMsg.textContent === '本卷均为主观题，不计得分', `全主观题卷的结果文案: "${els.resultMsg.textContent}"`);
+
+    /* --- 原始试卷格式的解析细节（不依赖具体题库文件） --- */
+    const fmt = new QuestionParser();
+    const fq = fmt.parseMarkdown([
+        '（二）B型题（说明）',
+        'A.甲 B.乙',
+        'C.丙',
+        '1.第一问：',
+        '2.第二问：',
+        '答案：1.A 2.C',
+        '答案分析：甲对，故第1题答案应选A；丙对，故第2题答案应选C。',
+        'A.子 B.丑',
+        '3.第三问：',
+        '答案：B',
+        '4.第四问：',
+        '答案：A',
+    ].join('\n'), 'fmt.md');
+    assert(fmt.errors.length === 0, `共用选项组解析零错误: ${JSON.stringify(fmt.errors)}`);
+    assert(fq.length === 4 && fq[0].options.length === 3 && fq[1].options.length === 3 && fq[2].options.length === 2, `两组小题分别拿到各自的备选项: ${JSON.stringify(fq.map(q => q.options.map(o => o.text)))}`);
+    assert(fq[0].answer === 'A' && fq[1].answer === 'C' && /第2小题/.test(fq[1].text), '合并答案「1.A 2.C」按题号分发并标注来源');
+    assert(fq[0].explanation === '甲对，故第1题答案应选A；' && fq[1].explanation === '丙对，故第2题答案应选C。', `合并解析按题号分发: ${JSON.stringify(fq.map(q => q.explanation))}`);
+    assert(fq[2].answer === 'B' && fq[3].answer === 'A' && fq[2].options[0].text === '子' && /第3小题/.test(fq[2].text), '共用选项组同样支持每题一行答案');
+    const miss = new QuestionParser();
+    const mq = miss.parseMarkdown(['（二）B型题（说明）', 'A.甲 B.乙', '1.有答案：', '2.没答案：', '答案：1.A'].join('\n'), 'miss.md');
+    assert(mq.length === 1 && miss.errors.length === 1 && miss.errors[0].reason === '缺少答案', `共用选项组漏印答案时如实报错而不是静默丢题: ${JSON.stringify(miss.errors)}`);
+    const label = new QuestionParser();
+    const lq = label.parseMarkdown(['## 一、单选题', '1.甲', 'A .对', 'B．错', '正确答案：A', '【解析】入。', '2.乙', 'A、对', 'B、错', '【答案】B', '答案解析：出。'].join('\n'), 'label.md');
+    assert(label.errors.length === 0 && lq.length === 2 && lq.every(q => q.options.length === 2) && lq[0].answer === 'A' && lq[0].explanation === '入。' && lq[1].answer === 'B' && lq[1].explanation === '出。', `兼容 正确答案 / 【答案】 / 【解析】 / 答案解析 / 选项号与点之间留空格: ${JSON.stringify(lq.map(q => [q.answer, q.explanation]))}`);
+
+    /* --- 真实题库回归：doc/第三章 中药的炮制.md 原样零错误导入 ---
+       这份题库是 PDF 直接转出的原始格式，不改题库文件也要能读：裸标题「（一）A1型题（…）」、
+       裸题号「1.」、一行多个选项「A.润 B.漂 C.水飞」、组末合并答案「1.B 2.E」、
+       合并且被版面切断的「答案分析：…；水火 / 共制法…」，以及填空/简答/论述三种主观题。 */
+    const bankName = '第三章 中药的炮制.md';
+    const bankText = fs.readFileSync(`doc/${bankName}`, 'utf8');
+    const bp = new QuestionParser();
+    const bq = bp.parseMarkdown(bankText, bankName);
+    assert(bp.errors.length === 0, `第三章原题库零解析错误: ${JSON.stringify(bp.errors)}`);
+    assert(bq.length === 39, `第三章原题库共 39 题: ${bq.length}`);
+    assert(bq.filter(q => q.type === 'single').length === 14 && bq.filter(q => q.type === 'multiple').length === 6, `客观题 14 单选 + 6 多选: ${JSON.stringify(bq.reduce((a, q) => (a[q.type] = (a[q.type] || 0) + 1, a), {}))}`);
+    assert(JSON.stringify(bq.filter(q => q.type === 'subjective').reduce((a, q) => (a[q.subtype] = (a[q.subtype] || 0) + 1, a), {})) === JSON.stringify({ fill: 7, short: 9, essay: 3 }), '主观题 7 填空 + 9 简答 + 3 论述');
+    assert(bq.every(q => !!q.answer), '每题都有参考答案');
+    assert(bq.filter(q => q.type !== 'subjective').every(q => q.options.length >= 4 && q.explanation && [...q.answer].every(c => q.options.some(o => o.key === c))), '客观题选项/答案/解析齐备且答案字母都在选项内');
+    assert(bq.filter(q => q.options.some(o => !o.text)).length === 0, 'OCR 丢字造成的空选项已全部补全（无空选项文本）');
+    /* 一行多个选项：整行拆成 5 项，选项文本没有被切坏 */
+    assert(JSON.stringify(bq[0].options.map(o => o.text)) === JSON.stringify(['润', '漂', '水飞', '淬', '燀']), `一行多选项拆分为 5 项: ${JSON.stringify(bq[0].options)}`);
+    /* B/C 型题：小题共用组首的备选项，来源标注只贴一次；合并答案与合并解析按「第N题」分发 */
+    assert(bq[6].text === '【B型题·第1小题，备选项共用】为了增强药物的活血作用，宜采用：' && bq[6].options.length === 5 && bq[6].answer === 'B', `B 型题第 1 小题整题成型: ${bq[6].text}`);
+    assert(bq[6].explanation === '酒炙可增强药物的活血之功，故第1题答案应选B；' && bq[7].explanation === '盐炙可引药入肾和增强补肾作用，故第2题答案应选E。', `合并解析按「第N题」分回小题: ${bq[6].explanation} | ${bq[7].explanation}`);
+    assert(bq.filter(q => /^【/.test(q.text)).length === 8 && bq.every(q => !/】[^【]*【/.test(q.text)), '8 道共用选项小题各带一个来源标注，且没有重复贴标');
+    assert(bq[8].explanation.endsWith('故第3题答案应选B；') && bq[9].explanation.startsWith('水火共制法包括蒸、煮、炖、燀、淬等'), '被版面切断的合并解析续接后仍按题分发');
+    assert(JSON.stringify(bq.slice(10, 14).map(q => q.answer)) === JSON.stringify(['A', 'B', 'B', 'C']) && bq[10].text.includes('【C型题·第1小题'), `C 型题四小题的答案与标注: ${JSON.stringify(bq.slice(10, 14).map(q => [q.text.slice(0, 14), q.answer]))}`);
+    /* 「燀」字是 PDF 转出时系统性丢失的炮制术语，逐处点名验收（含 2 处按上下文推断补入的选项） */
+    const opt = (q, k) => bq[q].options.find(o => o.key === k)?.text;
+    assert(opt(0, 'E') === '燀' && opt(5, 'D') === '燀法' && /^燀法是将药物/.test(bq[5].explanation), 'A1 型题第 1/6 题的「燀」已补全（第 1 题 E 项为推断）');
+    assert(opt(16, 'D') === '燀' && bq[16].answer === 'BCD' && opt(17, 'E') === '燀' && bq[17].answer === 'BC', 'X 型题第 3/4 题的空选项按解析推断补作「燀」');
+    assert(bq[23].answer === '蒸，煮，炖，燀，淬。' && bq[35].text === '简述燀法的含义和主要目的。', '填空题第 4 题答案与简答题第 9 题题干的「燀」已补全');
+    /* 端到端：原始题库走 UI 导入，题数与主观题统计正确 */
+    els.fileInput.files = [{ name: bankName, text: async () => bankText }];
+    els.fileInput.trigger('change');
+    await flush();
+    assert(/成功加载 39 题/.test(els.fileStatus.innerText) && /含主观题 19 道（不批改）/.test(els.fileStatus.innerText), `原始题库导入结果: "${els.fileStatus.innerText}"`);
+    els.startQuizBtn.click();
+    await flush();
+    assert(String(els.totalQ.textContent) === '39', `原始题库开卷总题数 39: ${els.totalQ.textContent}`);
 
     console.log(failed ? `\n${failed} 项失败` : '\n全部通过 ✓');
     process.exit(failed ? 1 : 0);

@@ -755,6 +755,9 @@
             & .quiz-info-sep { color: var(--divider); user-select: none; }
         }
 
+        /* 主观题计数（填空/简答/论述）：不判对错，用主题色与对错计数区分 */
+        .quiz-info-item.stat-subjective { color: var(--primary); font-weight: 600; }
+
         /* Progress bar: thin, under info bar */
         .quiz-progress-wrap {
             margin-block-end: var(--sp-4);
@@ -854,6 +857,18 @@
             border-top: 1px solid var(--divider);
         }
 
+        /* 主观题（填空/简答/论述）：无选项、不批改，先自答再对照参考答案 */
+        .subjective-hint {
+            margin-block-start: var(--sp-3);
+            padding: var(--sp-3) var(--sp-4);
+            border-left: var(--bw-3) solid var(--divider);
+            border-radius: var(--radius);
+            background: var(--surface-alt);
+            color: var(--text-muted);
+            font-size: var(--text-xs);
+            line-height: 1.6;
+        }
+
         /* ============================================================
            FEEDBACK
            ============================================================ */
@@ -868,7 +883,16 @@
 
             &.correct .answer-feedback-header { background: var(--success); color: var(--on-success); padding: var(--sp-4) var(--sp-5); font-weight: 600; font-size: var(--text-sm); display: flex; align-items: center; gap: var(--sp-2); }
             &.incorrect .answer-feedback-header { background: var(--error); color: var(--on-error); padding: var(--sp-4) var(--sp-5); font-weight: 600; font-size: var(--text-sm); display: flex; align-items: center; gap: var(--sp-2); }
+            /* 主观题不判对错：中性表头 + 主题色描边，避免被读成「答对/答错」 */
+            &.subjective .answer-feedback-header { background: var(--surface-alt); color: var(--text); padding: var(--sp-4) var(--sp-5); font-weight: 600; font-size: var(--text-sm); display: flex; align-items: center; gap: var(--sp-2); border-block-end: var(--bw-1) solid var(--divider); }
             & .answer-feedback-content { padding: var(--sp-5); background: var(--surface); color: var(--text); font-size: var(--text-sm); }
+        }
+
+        /* 参考答案正文：与解析区分（解析仍是左侧主题色条的浅底块） */
+        .subjective-answer {
+            line-height: 1.8;
+            color: var(--text);
+            white-space: normal;
         }
 
         .explanation-content {
@@ -1228,12 +1252,15 @@
         .score-label { font-size: var(--text-sm); color: var(--text-muted); margin-top: var(--sp-1); }
 
         .result-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--space-related); margin: var(--sp-6) 0; }
+        /* 含主观题时多一枚统计磁贴：桌面 4 列，窄屏回落 2 列（见下方媒体查询） */
+        .result-grid.has-subjective { grid-template-columns: repeat(4, 1fr); }
         .result-stat { text-align: center; padding: var(--sp-4); border-radius: var(--radius-lg); background: var(--surface-alt); }
         .result-stat .stat-value { font-size: var(--text-lg); font-weight: 700; line-height: 1.2; }
         .result-stat .stat-label { font-size: var(--text-xs); color: var(--text-muted); margin-top: var(--sp-1); }
         .result-stat.correct    .stat-value { color: var(--success); }
         .result-stat.incorrect  .stat-value { color: var(--error); }
         .result-stat.unanswered .stat-value { color: var(--text-muted); }
+        .result-stat.subjective .stat-value { color: var(--primary); }
 
         .result-msg { font-size: var(--text-sm); color: var(--text-soft); margin: var(--sp-5) 0; font-style: italic; }
         .result-time { font-size: var(--text-sm); color: var(--text-muted); margin-bottom: var(--sp-5); text-align: center; }
@@ -1322,6 +1349,7 @@
             .result-grid { gap: var(--sp-2); }
             .result-stat { padding: var(--sp-2); }
             .result-stat .stat-value { font-size: var(--text-base); }
+            .result-grid.has-subjective { grid-template-columns: repeat(2, 1fr); }
             .card-content { padding: var(--sp-5); }
             .theme-selector { flex-wrap: wrap; }
             .theme-selector .theme-option { flex: 1 1 auto; padding: var(--sp-2) var(--sp-3); }
@@ -1366,6 +1394,7 @@
 <symbol id="icon-system" viewBox="0 0 24 24"><title>跟随系统</title><rect x="3" y="4" width="18" height="13" rx="2" fill="none" stroke="currentColor" stroke-width="2"/><path d="M9 21h6M12 17v4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></symbol>
 <symbol id="icon-check" viewBox="0 0 24 24"><title>正确</title><path d="M5 12l5 5L20 7" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></symbol>
 <symbol id="icon-cross" viewBox="0 0 24 24"><title>错误</title><path d="M6 6l12 12M18 6L6 18" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/></symbol>
+<symbol id="icon-info" viewBox="0 0 24 24"><title>参考答案</title><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 11v5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><circle cx="12" cy="7.6" r="1.2" fill="currentColor"/></symbol>
 <symbol id="icon-star" viewBox="0 0 24 24"><title>标记</title><path d="M12 2l3 6 7 1-5 5 1 7-6-3-6 3 1-7-5-5 7-1z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></symbol>
 <symbol id="icon-clock" viewBox="0 0 24 24"><title>计时</title><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 7v5l3 3" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></symbol>
 <symbol id="icon-prev" viewBox="0 0 24 24"><title>上一题</title><path d="M15 6l-6 6 6 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
@@ -1544,6 +1573,7 @@
                         <span class="quiz-info-sep" aria-hidden="true">|</span>
                         <span class="quiz-info-item stat-correct"><svg class="icon-sm" aria-hidden="true"><use href="#icon-check"/></svg> <span id="correctCount">0</span></span>
                         <span class="quiz-info-item stat-incorrect"><svg class="icon-sm" aria-hidden="true"><use href="#icon-cross"/></svg> <span id="incorrectCount">0</span></span>
+                        <span class="quiz-info-item stat-subjective hidden" id="subjectiveStat"><svg class="icon-sm" aria-hidden="true"><use href="#icon-info"/></svg> 主观 <span id="subjectiveCount">0</span></span>
                         <span class="quiz-info-item stat-unanswered">— <span id="unansweredCount">0</span></span>
                     </div>
                     <!-- 进度条 + 题号计数 -->
@@ -1586,9 +1616,10 @@
                     <div class="score"><span id="scoreValue">0</span>/<span id="totalScore">0</span></div>
                     <div class="score-label">最终得分</div>
                 </div>
-                <div class="result-grid">
+                <div class="result-grid" id="resultGrid">
                     <div class="result-stat correct"><div class="stat-value" id="resCorrect">0</div><div class="stat-label">正确</div></div>
                     <div class="result-stat incorrect"><div class="stat-value" id="resIncorrect">0</div><div class="stat-label">错误</div></div>
+                    <div class="result-stat subjective hidden" id="resSubjectiveStat"><div class="stat-value" id="resSubjective">0</div><div class="stat-label">主观</div></div>
                     <div class="result-stat unanswered"><div class="stat-value" id="resUnanswered">0</div><div class="stat-label">未答</div></div>
                 </div>
                 <div class="result-time">总用时 <span id="resultTotalTime">00:00</span> · 平均 <span id="avgTime">00:00</span></div>
@@ -1662,12 +1693,12 @@
                 <input type="number" id="retentionInput" value="0.90" step="0.01" min="0.1" max="0.99" inputmode="decimal" aria-describedby="retentionHint retentionNote">
                 <span class="menu-row-hint" id="retentionHint">0–1 开区间内自定义（留空或越界回落 0.90）</span>
             </div>
-            <p class="preset-dialog-hint" id="retentionNote">实测影响（连续「良好」的间隔，单位：天）——
-                0.80：38 / 308 / 1796（几乎不复习，遗忘风险高）·
-                0.85：15 / 98 / 454 ·
-                0.90（默认）：4.8 / 26 / 92 ·
-                0.92：2.4 / 14 / 43，复习失败会在当天再见 ·
-                0.95：新卡首答仅 7 小时 ·
+            <p class="preset-dialog-hint" id="retentionNote">实测影响（连续「良好」的间隔，单位：天）：
+                0.80：38 / 308 / 1796（几乎不复习，遗忘风险高）<br>
+                0.85：15 / 98 / 454 <br>
+                0.90（默认）：4.8 / 26 / 92 <br>
+                0.92：2.4 / 14 / 43，复习失败会在当天再见 <br>
+                0.95：新卡首答仅 7 小时 <br>
                 ≥0.96：首答退化为分钟级，复习量激增</p>
             <div class="menu-row">
                 <input type="checkbox" id="autoRateCustomToggle" aria-label="自定义自动评分标准阈值">
@@ -1677,7 +1708,7 @@
                     <option value="standard">标准</option>
                     <option value="relaxed">宽松</option>
                 </select>
-                <span class="menu-row-hint" id="autoRatePresetHint">自动评分始终开启：按用时与对错打分，评分后仍可改评价；<br>严格/标准/宽松为松紧档位，阈值按题干与选项总字数、题型动态调整（多选＞单选＞判断）；勾选左侧开关可自定义固定秒数</span>
+                <span class="menu-row-hint" id="autoRatePresetHint">自动评分按用时与对错打分，评分后仍可改评价；<br>评分阈值按题干与选项总字数、题型动态调整（多选＞单选＞判断）；勾选左侧开关可自定义固定秒数</span>
             </div>
             <div class="menu-row">
                 <label for="dailyNewInput">每日新卡上限</label>
@@ -1916,6 +1947,14 @@ const displayAnswer = (q, selections, shuffle) => {
     const toDisp = keys => [...new Set(keys.map(k => map[k] ?? k))].sort().join("、");
     return { us: selections.length ? toDisp(selections) : "未作答", correct: toDisp([...keySet(q.answer)]) };
 };
+/* 主观题（填空 / 简答 / 论述）：无选项、不批改 —— 提交后只给参考答案，
+   FSRS 下由用户手动评分（不参与自动评分）。type 统一为 "subjective"，
+   subtype 决定题面标签，二者都由小节标题推断（见 QuestionParser.detectType）。 */
+const SUBJECTIVE_LABELS = Object.freeze({ fill: "填空", short: "简答", essay: "论述" });
+const isSubjective = q => q?.type === "subjective";
+const subjectiveLabel = q => SUBJECTIVE_LABELS[q?.subtype] ?? "主观";
+/* 导入结果里点明主观题数量：让用户确认新题型被识别（无主观题时不加噪音） */
+const subjectiveNote = qs => { const n = (qs || []).filter(isSubjective).length; return n ? `，含主观题 ${n} 道（不批改）` : ""; };
 /* 读取文件文本：优先 File.text()（Chromium 系），缺失或超时降级 FileReader。
    部分 Android WebView 的 File.text() 永不 resolve，若无兜底会一直卡在“正在解析题库…” */
 const readFileText = (file, timeoutMs = 20000) => new Promise((resolve, reject) => {
@@ -2069,22 +2108,24 @@ class StorageAdapter {
     static toggleMastered(text) { const list = this.getMastered(); const h = hashStr(text); const idx = list.indexOf(h); idx > -1 ? list.splice(idx, 1) : list.push(h); this.saveMastered(list); return idx === -1; }
     static isMastered(text) { return this.getMastered().includes(hashStr(text)); }
     /* 累计统计（数据统计面板）：练习次数 / 答题 / 正确 / 用时 + 近 30 天每日明细 + 近几次会话记录（面板可在累计/近 3 次间切换） */
-    static getStats() { const s = this.#g("quiz_stats", null); return s && typeof s === "object" ? { sessions: 0, answered: 0, correct: 0, timeMs: 0, daily: {}, recent: [], ...s } : { sessions: 0, answered: 0, correct: 0, timeMs: 0, daily: {}, recent: [] }; }
+    static getStats() { const s = this.#g("quiz_stats", null); return s && typeof s === "object" ? { sessions: 0, answered: 0, correct: 0, subjective: 0, timeMs: 0, daily: {}, recent: [], ...s } : { sessions: 0, answered: 0, correct: 0, subjective: 0, timeMs: 0, daily: {}, recent: [] }; }
     static saveStats(s) { this.#s("quiz_stats", s); }
-    /* answered 为实际作答数（未答不计）；fsrs 会话的每日活动由卡片 lastReviewAt
+    /* answered 为实际作答数（未答不计，含主观题）；subjective 为其中不批改的主观题数，
+       正确率的分母是 answered − subjective（客观题）；旧记录没有 subjective 字段，按 0 处理，口径不变。
+       fsrs 会话的每日活动由卡片 lastReviewAt
        承载（可随备份导入/导出），不重复记入 daily，避免趋势图双重计数；
        recent 记录每次会话明细（累计与近 3 次切换共用，仅保留最近 10 次） */
-    static recordSession({ correct = 0, answered = 0, timeMs = 0, fsrs = false } = {}) {
+    static recordSession({ correct = 0, answered = 0, subjective = 0, timeMs = 0, fsrs = false } = {}) {
         const s = this.getStats();
-        s.sessions++; s.answered += answered; s.correct += correct; s.timeMs += timeMs;
+        s.sessions++; s.answered += answered; s.correct += correct; s.subjective += subjective; s.timeMs += timeMs;
         s.recent = Array.isArray(s.recent) ? s.recent : [];
-        s.recent.push({ answered, correct, timeMs, at: new Date().toISOString() });
+        s.recent.push({ answered, correct, subjective, timeMs, at: new Date().toISOString() });
         if (s.recent.length > 10) s.recent = s.recent.slice(-10);
         if (!fsrs) {
             const d = new Date();
             const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-            const day = s.daily[key] || { answered: 0, correct: 0 };
-            day.answered += answered; day.correct += correct;
+            const day = s.daily[key] || { answered: 0, correct: 0, subjective: 0 };
+            day.answered += answered; day.correct += correct; day.subjective = (day.subjective || 0) + subjective;
             s.daily[key] = day;
             /* 只保留近 30 天，防止存储无限增长 */
             const cutoff = new Date(d.getFullYear(), d.getMonth(), d.getDate() - 29).getTime();
@@ -2614,13 +2655,86 @@ var FsrsStore = class FsrsStore {
 class QuestionParser {
     errors = [];
     parseMarkdown(text, fileName = "") {
-        const questions = []; let section = null, cur = null;
-        const detectType = s => { s = s.toLowerCase(); if (s.includes("单选") || s.includes("a1") || s.includes("a2")) return "single"; if (s.includes("多选") || s.includes("x1") || s.includes("x2")) return "multiple"; if (s.includes("判断")) return "judgment"; return null; };
+        const questions = []; let section = null, sectionSub = null, sectionKeyword = null, cur = null;
+        /* B/C 型题：一组备选项印在小题之前，由随后的几道小题共用；答案写成组末的一行「1.B 2.E」。
+           故选项可能出现在 cur 为空时，先暂存在 groupOptions，等小题排队、合并答案到达后再分发。 */
+        let groupOptions = [], groupQueue = [], lastGroup = null;
+        const detectType = s => { s = s.toLowerCase(); if (s.includes("单选") || s.includes("a1") || s.includes("a2") || s.includes("b型题") || s.includes("c型题")) return "single"; if (s.includes("多选") || s.includes("x1") || s.includes("x2") || s.includes("x型题")) return "multiple"; if (s.includes("判断")) return "judgment"; if (s.includes("填空") || s.includes("简答") || s.includes("论述") || s.includes("主观")) return "subjective"; return null; };
+        /* 主观题细分（只影响题面标签）：小节标题里写的是哪个词就用哪个 */
+        const detectSubtype = s => s.includes("填空") ? "fill" : s.includes("简答") ? "short" : s.includes("论述") ? "essay" : null;
+        /* PDF 按版面硬换行：中文之间直接拼接，跨英文/数字时才补空格，避免「常 用方法」这类断字 */
+        const CJK = /[\u2e80-\u9fff\u3000-\u303f\uf900-\ufaff\uff00-\uffef]/;
+        const joinText = (a, b) => (a && CJK.test(a.slice(-1)) && CJK.test(b[0]) ? a + b : a ? a + " " + b : b);
+        /* 共用选项的小题加来源标注（用户要求保留出处），题干保持原文不动 */
+        const groupTag = q => `【${sectionKeyword ?? "共用选项"}·第${q.num || "?"}小题，备选项共用】`;
+        /* 一行塞多个选项：`A.润 B.漂 C.水飞`。只在空白之后、且后接 B-E 选项号处切，正文里的「B.」不受影响 */
+        const splitPacked = line => {
+            const parts = []; let last = 0;
+            for (const m of line.matchAll(/\s+(?=[B-E]\s*[.．、])/g)) { parts.push(line.slice(last, m.index)); last = m.index + m[0].length; }
+            parts.push(line.slice(last)); return parts.filter(s => s.trim());
+        };
+        const optOf = part => {
+            const mm = part.match(RE.optDot) || part.match(RE.optBr);
+            return mm ? { key: mm[1], text: mm[2].trim() } : null;
+        };
+        /* 合并答案：`1.B 2.E`（也接受 `1B 2E`、`1、B`）。普通答案只有字母，不会被误判 */
+        const groupPair = /^\d+\s*[.．、]?\s*[A-E]+(?:\s+\d+\s*[.．、]?\s*[A-E]+)*$/;
+        /* 组末的答案分析常把几道小题写在一起（「…故第1题答案应选B；…故第2题答案应选E。」），
+           按句读切开后依「第N题」分回各小题；没有编号的句子归到最近一次提到的题 */
+        const routeGroupExp = () => {
+            if (!lastGroup) return;
+            for (const q of lastGroup.list) q.explanation = "";
+            const buf = lastGroup.buf; let fallback = null, last = 0;
+            const take = chunk => {
+                chunk = chunk.trim(); if (!chunk) return;
+                const nm = chunk.match(/第\s*(\d+)\s*题/);
+                const target = (nm ? lastGroup.list.find(q => q.num === +nm[1]) : null) ?? fallback;
+                if (!target) return;
+                if (nm) fallback = target;
+                target.explanation += chunk;
+            };
+            for (const m of buf.matchAll(/[；;。]/g)) { take(buf.slice(last, m.index + 1)); last = m.index + 1; }
+            take(buf.slice(last));
+        };
+        const resetGroup = () => {
+            for (const q of groupQueue) this.errors.push({ file: fileName, line: q.text.slice(0, 30), reason: "缺少答案" });
+            groupOptions = []; groupQueue = []; lastGroup = null;
+        };
+        /* 合并答案到达：按题号把共用的选项与答案分给组内各小题，再一起入卷 */
+        const flushGroup = pairs => {
+            const pool = groupQueue.concat(cur ? [cur] : []);
+            groupQueue = []; cur = null;
+            const used = new Set();
+            for (const p of pairs) {
+                let q = pool.find(x => !used.has(x) && x.num === p.num) ?? pool.find(x => !used.has(x));
+                if (!q) break;
+                used.add(q);
+                q.answer = p.ans;
+                if (!q.options.length) q.options = groupOptions.map(o => ({ ...o }));
+                q.text = groupTag(q) + q.text;
+                q.type ??= p.ans.length > 1 ? "multiple" : section ?? "single";
+                questions.push(q);
+            }
+            for (const q of pool) if (!used.has(q)) this.errors.push({ file: fileName, line: q.text.slice(0, 30), reason: "缺少答案" });
+            lastGroup = { list: pool.filter(q => used.has(q)), buf: "" };
+        };
         const commit = () => {
             if (!cur) return;
+            /* 共用选项组里没有独立答案的小题：先排队，等组末的合并答案行到达再统一补选项、加标注 */
+            if (!cur.answer && cur.fromGroup) { groupQueue.push(cur); cur = null; return; }
+            /* 共用选项组里的普通小题（每道小题各带一行答案）：选项在题号之前，此处补回 */
+            if (cur.fromGroup && !cur.options.length && groupOptions.length) {
+                cur.options = groupOptions.map(o => ({ ...o }));
+                cur.text = groupTag(cur) + cur.text;
+            }
             if (cur.options.length && cur.answer) {
+                /* 主观题小节里混进带选项的题：按答案长度回落成客观题，避免选项被吞掉
+                   （细分标签只对主观题有意义，回落时一并清掉，免得客观题挂着 subtype） */
+                if (cur.type === "subjective") { cur.type = cur.answer.length > 1 ? "multiple" : "single"; cur.subtype = null; }
                 cur.type ??= cur.answer.length > 1 ? "multiple" : section ?? "single";
                 questions.push(cur);
+            } else if (cur.answer && cur.type === "subjective") {
+                questions.push(cur);   /* 主观题：没有选项是常态，只要有参考答案即成立 */
             } else if (!cur.answer) {
                 this.errors.push({ file: fileName, line: cur.text.slice(0, 30), reason: "缺少答案" });
             } else {
@@ -2629,29 +2743,66 @@ class QuestionParser {
             cur = null;
         };
         const RE = {
-            heading: /^#+\s*(?:[一二三四五六七八九十]+、\s*)?(单选题|多选题|判断题|A[12]型题|X[12]型题)/i,
+            /* 标题：`## 一、单选题` 与 PDF 题库的裸标题 `（一）B型题（…）`、`二 填空题` 都要认；
+               `一 选择题` 这类不指明题型的标题只起分节作用（detectType 返回 null） */
+            heading: /^(?:#+\s*)?(?:[（(]?[一二三四五六七八九十]+[)）]?[、.\s]*)?(单选题|多选题|判断题|填空题|简答题|论述题|主观题|选择题|A[12]型题|B型题|C型题|X[12]?型题)/i,
             secBreak: /^#+\s+[一二三四五六七八九十]+、/,
-            qStart: /^(?:### \d+[.．]\s*|\[Q\]\s*)(.*)/,
+            /* 题号行：`### 1.`（文档示例格式）、裸 `1.`（PDF 转出的题库常见）与 `[Q]`。
+               题号单独捕获：共用选项组的合并答案按它分发 */
+            qStart: /^(?:#{0,6}\s*(\d+)[.．]\s*(.*)|\[Q\]\s*(.*)$)/,
             optBr: /^\[([A-E])\]\s*(.*)/,
-            optDot: /^([A-E])[.．、]\s*(.*)/,
-            /* 兼容 `**答案： A**`（答案在星号内）与 `**答案：** A`（星号后）两种写法 */
-            answer: /^(?:\[T\]|\*\*答案[：:]\s*)[*\s]*(.*?)[*\s]*$/,
-            explain: /^\*\*解析[：:]\s*\*\*\s*(.*)/,
+            optDot: /^([A-E])\s*[.．、]\s*(.*)/,
+            /* 兼容 `**答案： A**`（答案在星号内）、`**答案：** A`（星号后）、`正确答案：`、`参考答案：`、`【答案】` */
+            answer: /^(?:\[T\]|\*\*\s*(?:正确|参考)?答案[：:]\s*|(?:正确|参考)?答案[：:]|【(?:正确|参考)?答案】)\s*[*\s]*(.*?)[*\s]*$/,
+            /* 解析行：`**解析：** 内容`（文档示例）、`**解析：**内容`、裸 `解析：内容`、`【解析】内容`，
+               以及 PDF 转出题库常见的 `答案分析：内容` / `答案解析：内容` 都要能把正文捕获出来。
+               注意用「可选星号 + 懒惰捕获」而不是多分支：分支写法容易只匹配前缀而丢掉捕获组。 */
+            explain: /^(?:\*\*|【)?\s*(?:解析|答案解析|答案分析|解释)\s*(?:】|[：:])\s*(?:\*\*)?\s*(.*?)[*\s]*$/,
         };
+        /* 普通正文行：排除 [..] 元数据行（[J]/[P]/[I]）、标题、代码围栏与分隔线 */
+        const isPlain = line => !line.startsWith("[") && !line.startsWith("#") && !line.startsWith("\`") && !/^[-=*_]{3,}$/.test(line);
         for (const raw of text.split(/\r?\n/)) {
             const line = raw.trim(); if (!line) continue; let m;
-            if      (m = line.match(RE.heading))  { commit(); section = detectType(m[1]) ?? section; }
-            else if (RE.secBreak.test(line))      { commit(); }
-            else if (m = line.match(RE.qStart))   { commit(); cur = { type: section, text: m[1].trim(), options: [], answer: "", explanation: "" }; }
-            else if (cur && (m = line.match(RE.optBr)))   { cur.options.push({ key: m[1], text: m[2].trim() }); }
-            else if (cur && (m = line.match(RE.optDot)))  { cur.options.push({ key: m[1], text: m[2].trim() }); }
-            else if (cur && (m = line.match(RE.answer)))  { cur.answer = m[1].trim(); cur.type ??= cur.answer.length > 1 ? "multiple" : "single"; }
-            else if (cur && (m = line.match(RE.explain))) { cur.explanation = m[1].trim(); }
-            /* 多行题干续行（如 [Q] 换行）：选项/答案出现前的普通文本续接当前题干；
-               排除 [..] 元数据行（[J]/[P]/[I]）、标题、代码围栏与分隔线 */
-            else if (cur && !cur.options.length && !cur.answer && !line.startsWith("[") && !line.startsWith("#") && !line.startsWith("\`") && !/^[-=*_]{3,}$/.test(line)) { cur.text += " " + line; }
+            if      (m = line.match(RE.heading))  { commit(); resetGroup(); sectionKeyword = m[1]; const t = detectType(m[1]); if (t) { section = t; sectionSub = t === "subjective" ? (detectSubtype(m[1]) ?? sectionSub) : null; } }
+            else if (RE.secBreak.test(line))      { commit(); resetGroup(); }
+            else if (m = line.match(RE.qStart))   {
+                commit();
+                const num = m[1] ? +m[1] : 0;
+                cur = { num, fromGroup: groupOptions.length > 0, type: section, subtype: sectionSub, text: (m[2] ?? m[3] ?? "").trim(), options: [], answer: "", explanation: "" };
+            }
+            else if (RE.optDot.test(line) || RE.optBr.test(line)) {
+                const parts = splitPacked(line).map(optOf).filter(Boolean);
+                if (cur) { cur.options.push(...parts); }
+                else {
+                    /* 题号之前就出现的选项 → 这一组备选项由后面的几道小题共用。
+                       新一组从 A 开始：先把上一组的遗留收尾（未答的记错、解析续行关闭） */
+                    if (!groupOptions.length || parts[0]?.key === "A") resetGroup();
+                    groupOptions.push(...parts);
+                }
+            }
+            else if (cur && (m = line.match(RE.answer))) {
+                const val = (m[1] ?? "").trim();
+                if (cur.fromGroup && groupPair.test(val)) {
+                    flushGroup(val.split(/\s+/).map(t => { const pm = t.match(/^(\d+)\s*[.．、]?\s*([A-E]+)$/); return { num: +pm[1], ans: pm[2] }; }));
+                } else { cur.answer = val; cur.type ??= cur.answer.length > 1 ? "multiple" : "single"; }
+            }
+            else if (m = line.match(RE.explain)) {
+                if (cur) cur.explanation = (m[1] ?? "").trim();
+                else if (lastGroup) { lastGroup.buf = (m[1] ?? "").trim(); routeGroupExp(); }
+            }
+            /* 多行续行：题干（如 [Q] 换行）、主观题的参考答案/解析，以及共用选项组的合并解析，
+               常被 PDF 按版面切断（如「常 / 用方法有…」「…；水火 / 共制法…」），按当前进度续接而不是丢弃。
+               合并解析只在上一段还没说完时续接，避免把紧随其后的正文/列表吞进解析。 */
+            else if (!cur && lastGroup && !/[。！？.]$/.test(lastGroup.buf) && !/^[-*+|]/.test(line) && isPlain(line)) { lastGroup.buf = joinText(lastGroup.buf, line); routeGroupExp(); }
+            else if (cur && isPlain(line)) {
+                if (cur.type === "subjective" && cur.explanation) cur.explanation = joinText(cur.explanation, line);
+                else if (cur.type === "subjective" && cur.answer) cur.answer = joinText(cur.answer, line);
+                else if (!cur.options.length && !cur.answer) cur.text = joinText(cur.text, line);
+            }
         }
-        commit(); return questions;
+        commit();
+        for (const q of groupQueue) this.errors.push({ file: fileName, line: q.text.slice(0, 30), reason: "缺少答案" });
+        return questions;
     }
     async loadFiles(files) {
         this.errors = [];
@@ -2678,16 +2829,21 @@ class QuizState {
     get(i) { return this.#map.get(i); }
     select(i, key, multi = false) { const s = this.get(i); if (!multi) s.selections = [key]; else { const p = s.selections.indexOf(key); p > -1 ? s.selections.splice(p, 1) : s.selections.push(key); } }
     submitMulti(i) { this.get(i).submitted = true; }
+    /* 主观题：提交 = 显示参考答案（不批改）；收起后可再自测一遍，不影响已记录的 FSRS 评分 */
+    submitSubjective(i) { this.get(i).submitted = true; }
+    unsubmit(i) { this.get(i).submitted = false; }
     toggleMark(i) { this.get(i).marked = !this.get(i).marked; }
     markRated(i, rating, nextDue) { const s = this.get(i); s.rated = true; s.rating = rating; s.nextDue = nextDue; }
     /* 队尾追加一题（FSRS 分钟级学习步：本题本次练习内还会再来） */
     append(i) { this.#map.set(i, { selections: [], submitted: false, marked: false, rated: false, rating: 0, nextDue: null }); }
     isRated(i) { return this.get(i)?.rated === true; }
-    /* 已作答（不带 ratedMode 门控）——用于判定真实对错 */
-    isAnsweredRaw(i) { const s = this.get(i), q = this.#questions[i]; return q.type === "multiple" ? s.submitted && s.selections.length > 0 : s.selections.length > 0; }
+    isSubjective(i) { return isSubjective(this.#questions[i]); }
+    /* 已作答（不带 ratedMode 门控）——用于判定真实对错；主观题「已作答」= 已提交（看过参考答案） */
+    isAnsweredRaw(i) { const s = this.get(i), q = this.#questions[i]; if (isSubjective(q)) return s.submitted; return q.type === "multiple" ? s.submitted && s.selections.length > 0 : s.selections.length > 0; }
     isAnswered(i) { return this.#ratedMode ? this.isRated(i) : this.isAnsweredRaw(i); }
-    isErrorAnswered(i) { return this.isAnswered(i) && !this.isCorrect(i); }
-    isCorrect(i) { const q = this.#questions[i], s = this.get(i); if (!this.isAnsweredRaw(i)) return false; if (q.type !== "multiple") return s.selections[0] === q.answer; return keySet(s.selections) === keySet(q.answer); }
+    /* 主观题不批改 → 永远不算错题（否则会进错题回顾、导航标红） */
+    isErrorAnswered(i) { return this.isAnswered(i) && !this.isSubjective(i) && !this.isCorrect(i); }
+    isCorrect(i) { const q = this.#questions[i], s = this.get(i); if (isSubjective(q)) return false; if (!this.isAnsweredRaw(i)) return false; if (q.type !== "multiple") return s.selections[0] === q.answer; return keySet(s.selections) === keySet(q.answer); }
     reset() { this.#questions.forEach((_, i) => this.#map.set(i, { selections: [], submitted: false, marked: false, rated: false, rating: 0, nextDue: null })); }
 }
 
@@ -2704,6 +2860,8 @@ class OptionRenderer {
         bus.on("feedback:hide", () => this.#clearFeedback());
     }
     #render(q, state) {
+        /* 主观题（填空/简答/论述）：题面只有题干 + 一个提交按钮，没有选项可点 */
+        if (isSubjective(q)) { this.#renderSubjective(q, state); return; }
         let html = `<div class="question-title">${esc(q.text)}${q.type === "multiple" ? ' <small>(多选)</small>' : q.type === "judgment" ? ' <small>(判断)</small>' : ""}</div><div class="options">`;
         /* 展示顺序来自缓存的稳定顺序：同一题在本次练习中多次 render 不会重排；
            按钮上的字母按展示位置重编（A、B、C…），data-key 仍是原始字母，判定空间不变。 */
@@ -2719,6 +2877,26 @@ class OptionRenderer {
         /* <button> 原生支持 Enter/Space 激活与键盘焦点；此处只需监听 click */
         this.#container.querySelectorAll(".option:not(.disabled)").forEach(el => { el.addEventListener("click", () => this.#bus.emit("option:clicked", { key: el.dataset.key, isMulti: q.type === "multiple" })); });
         const mb = this.#container.querySelector("#multiSubmitBtn"); if (mb) mb.addEventListener("click", () => this.#bus.emit("multi:submit"));
+    }
+    /* 主观题题面：提交前提示先自答；已提交时按钮变成「收起答案」，可再自测一遍。
+       参考答案与解析由 FeedbackPanel 渲染（与客观题共用同一块反馈区）。 */
+    #renderSubjective(q, state) {
+        const submitted = state.submitted;
+        /* FSRS 下已评分即视为完成：再「收起答案」会与已评分状态打架（面板仍显示评分结果），故不提供 */
+        const collapsible = submitted && !state.rated;
+        const hint = !submitted ? "主观题不批改：先在心里或纸上作答，再点「提交答案」对照参考答案（快捷键 Enter）。"
+            : collapsible ? "对照参考答案后，点「收起答案」可再自测一遍（评分不受影响）。"
+            : "主观题不批改：对照参考答案自评记忆即可。";
+        let html = `<div class="question-title">${esc(q.text)} <small>(${subjectiveLabel(q)})</small></div>`;
+        html += `<div class="subjective-hint">${hint}</div>`;
+        if (!submitted || collapsible) {
+            html += `<div class="multi-submit-bar"><button id="subjectiveSubmitBtn" class="btn btn-sm" aria-label="${collapsible ? "收起参考答案，再自测一遍" : "提交主观题答案，显示参考答案"}">${collapsible ? "收起答案" : "提交答案"}</button></div>`;
+        }
+        this.#container.innerHTML = html;
+        renderMath(this.#container);
+        const btn = this.#container.querySelector("#subjectiveSubmitBtn");
+        /* <button> 原生支持 Enter/Space 激活；全局 Enter 逻辑对按钮放行（见 #handleKey） */
+        if (btn) btn.addEventListener("click", () => this.#bus.emit(collapsible ? "subjective:hide" : "subjective:submit"));
     }
     #applyFeedback(q, state) {
         this.#container.querySelectorAll(".option").forEach(el => {
@@ -2765,18 +2943,34 @@ class FeedbackPanel {
     #bindRatingButtons() {
         this.#container.querySelectorAll(".rating-btn").forEach(el => el.addEventListener("click", () => this.#bus.emit("fsrs:rate", { rating: +el.dataset.rating })));
     }
+    /* 主观题（填空/简答/论述）：中性表头 + 参考答案，不出现「正确/错误」与您的答案对照 */
+    #subjectiveShell(inner) {
+        return `<div class="answer-feedback subjective"><div class="answer-feedback-header"><svg class="icon-sm" aria-hidden="true"><use href="#icon-info"/></svg> <span>参考答案</span></div><div class="answer-feedback-content">${inner}</div></div>`;
+    }
+    /* 参考答案正文 + 解析（解析仍是左侧主题色条的浅底块，与客观题一致） */
+    #subjectiveBody(q) {
+        return `<div class="subjective-answer">${MarkdownParser.parse(q.answer)}</div>${q.explanation ? `<div class="explanation-content">${MarkdownParser.parse(q.explanation)}</div>` : ""}`;
+    }
     show(q, state, correct) {
-        let html = `<div class="answer-feedback ${correct ? "correct" : "incorrect"}"><div class="answer-feedback-header">${this.#icon(correct)} <span>${correct ? "正确" : "错误"}</span></div>`;
-        if (!correct) html += `<div class="answer-feedback-content">${this.#answerRow(q, state)}${q.explanation ? `<div class="explanation-content">${MarkdownParser.parse(q.explanation)}</div>` : ""}</div>`;
-        html += "</div>";
+        let html;
+        if (isSubjective(q)) {
+            html = this.#subjectiveShell(this.#subjectiveBody(q));
+        } else {
+            html = `<div class="answer-feedback ${correct ? "correct" : "incorrect"}"><div class="answer-feedback-header">${this.#icon(correct)} <span>${correct ? "正确" : "错误"}</span></div>`;
+            if (!correct) html += `<div class="answer-feedback-content">${this.#answerRow(q, state)}${q.explanation ? `<div class="explanation-content">${MarkdownParser.parse(q.explanation)}</div>` : ""}</div>`;
+            html += "</div>";
+        }
         this.#container.innerHTML = html;
         renderMath(this.#container);
         this.#container.classList.remove("hidden");
     }
-    /* FSRS 复习模式：先显示对错 + 评分条，用户自评后安排下次复习（解析延后到评分后） */
+    /* FSRS 复习模式：先显示对错 + 评分条，用户自评后安排下次复习（解析延后到评分后）。
+       主观题没有对错，提交后直接给出参考答案 + 评分条（预选「良好」，由用户自行改档）。 */
     showRatingBar(q, state, correct, preselected = correct ? 3 : 1) {
-        let html = `<div class="answer-feedback ${correct ? "correct" : "incorrect"}"><div class="answer-feedback-header">${this.#icon(correct)} <span>${correct ? "正确" : "错误"}</span></div>`;
-        html += `<div class="answer-feedback-content">${this.#answerRow(q, state)}<div class="rating-bar" role="group" aria-label="记忆评分">${this.#ratingButtons(preselected)}</div><p class="rating-hint">这题记住了吗？评分后安排下次复习（快捷键 1–4，Enter 确认预选）</p></div></div>`;
+        const rating = `<div class="rating-bar" role="group" aria-label="记忆评分">${this.#ratingButtons(preselected)}</div><p class="rating-hint">这题记住了吗？评分后安排下次复习（快捷键 1–4，Enter 确认预选）</p>`;
+        const html = isSubjective(q)
+            ? this.#subjectiveShell(this.#subjectiveBody(q) + rating)
+            : `<div class="answer-feedback ${correct ? "correct" : "incorrect"}"><div class="answer-feedback-header">${this.#icon(correct)} <span>${correct ? "正确" : "错误"}</span></div><div class="answer-feedback-content">${this.#answerRow(q, state)}${rating}</div></div>`;
         this.#container.innerHTML = html;
         renderMath(this.#container);
         this.#bindRatingButtons();
@@ -2786,13 +2980,19 @@ class FeedbackPanel {
     showRated(q, state, correct, rating, timeSpent, relevelable = false) {
         const when = FeedbackPanel.formatDue(new Date(state.nextDue).getTime());
         const timeText = timeSpent != null ? ` · 用时 ${timeSpent < 60000 ? `${(timeSpent / 1000).toFixed(1)} 秒` : fmtTime(timeSpent)}` : "";
-        let html = `<div class="answer-feedback ${correct ? "correct" : "incorrect"}"><div class="answer-feedback-header">${this.#icon(correct)} <span>${correct ? "正确" : "错误"}</span></div>`;
-        html += `<div class="answer-feedback-content"><div class="rating-result">已评分「${FeedbackPanel.RATING_NAMES[rating]}」${timeText} · 下次复习：${when}</div>`;
+        const result = `<div class="rating-result">已评分「${FeedbackPanel.RATING_NAMES[rating]}」${timeText} · 下次复习：${when}</div>`;
         /* 重评：当前档高亮，点其它档从原始卡重算——UI 上明确“会重新计算” */
-        if (relevelable) html += `<div class="rating-bar rating-bar--relevel" role="group" aria-label="更改记忆评价">${this.#ratingButtons(rating)}</div><p class="rating-hint">评价不合适？点其它档即可更改（快捷键 1–4）；修改将重新计算下次复习</p>`;
-        if (!correct) html += this.#answerRow(q, state);
-        if (q.explanation) html += `<div class="explanation-content">${MarkdownParser.parse(q.explanation)}</div>`;
-        html += "</div></div>";
+        const relevel = relevelable ? `<div class="rating-bar rating-bar--relevel" role="group" aria-label="更改记忆评价">${this.#ratingButtons(rating)}</div><p class="rating-hint">评价不合适？点其它档即可更改（快捷键 1–4）；修改将重新计算下次复习</p>` : "";
+        let html;
+        if (isSubjective(q)) {
+            html = this.#subjectiveShell(result + relevel + this.#subjectiveBody(q));
+        } else {
+            html = `<div class="answer-feedback ${correct ? "correct" : "incorrect"}"><div class="answer-feedback-header">${this.#icon(correct)} <span>${correct ? "正确" : "错误"}</span></div>`;
+            html += `<div class="answer-feedback-content">${result}${relevel}`;
+            if (!correct) html += this.#answerRow(q, state);
+            if (q.explanation) html += `<div class="explanation-content">${MarkdownParser.parse(q.explanation)}</div>`;
+            html += "</div></div>";
+        }
         this.#container.innerHTML = html;
         renderMath(this.#container);
         if (relevelable) this.#bindRatingButtons();
@@ -2878,10 +3078,11 @@ class StatsPanel {
     #els;
     constructor(els, bus) {
         this.#els = els;
-        bus.on("stats:update", ({ correct, incorrect, unanswered }) => {
+        bus.on("stats:update", ({ correct, incorrect, unanswered, subjective }) => {
             if (this.#els.correct) this.#els.correct.textContent = correct;
             if (this.#els.incorrect) this.#els.incorrect.textContent = incorrect;
             if (this.#els.unanswered) this.#els.unanswered.textContent = unanswered;
+            if (this.#els.subjective) this.#els.subjective.textContent = subjective ?? 0;
         });
     }
 }
@@ -2907,18 +3108,26 @@ class TimerDisplay {
 
 class ResultPanel {
     #els; constructor(els, bus) { this.#els = els; bus.on("result:show", data => this.show(data)); }
-    show({ correct, incorrect, unanswered, total, totalTime, mode }) {
-        const avg = (total - unanswered) > 0 ? totalTime / (total - unanswered) : 0;
-        const pct = total > 0 ? (correct / total) * 100 : 0;
+    show({ correct, incorrect, unanswered, subjective = 0, objective, total, totalTime, mode }) {
+        const answered = total - unanswered;
+        const avg = answered > 0 ? totalTime / answered : 0;
+        /* 得分与评级只按客观题算：主观题不批改，进分母会把成绩压得失真 */
+        const scored = objective ?? total - subjective;
+        const pct = scored > 0 ? (correct / scored) * 100 : 0;
         const set = (el, v) => { if (el) el.textContent = v; };
         set(this.#els.scoreValue, correct);
-        set(this.#els.totalScore, total);
+        set(this.#els.totalScore, scored);
         set(this.#els.resCorrect, correct);
         set(this.#els.resIncorrect, incorrect);
+        set(this.#els.resSubjective, subjective);
         set(this.#els.resUnanswered, unanswered);
         set(this.#els.resultTotalTime, fmtTime(totalTime));
         set(this.#els.avgTime, fmtTime(avg));
-        set(this.#els.resultMsg, pct >= 90 ? "优秀！" : pct >= 70 ? "良好" : "继续加油");
+        set(this.#els.resultMsg, scored > 0 ? (pct >= 90 ? "优秀！" : pct >= 70 ? "良好" : "继续加油") : "本卷均为主观题，不计得分");
+        /* 「主观」磁贴与 4 列栅格只在本卷含主观题时出现，纯客观题的结果页保持原样 */
+        const hasSubj = subjective > 0;
+        this.#els.resSubjectiveStat?.classList.toggle("hidden", !hasSubj);
+        this.#els.grid?.classList.toggle("has-subjective", hasSubj);
     }
 }
 
@@ -2953,19 +3162,25 @@ class OverviewPanel {
             sessions: recent.length,
             answered: recent.reduce((a, r) => a + (r.answered || 0), 0),
             correct: recent.reduce((a, r) => a + (r.correct || 0), 0),
+            subjective: recent.reduce((a, r) => a + (r.subjective || 0), 0),
             timeMs: recent.reduce((a, r) => a + (r.timeMs || 0), 0),
         } : stats;
+        /* 累计答题含主观题；正确率的分母只算客观题（主观题不批改，进分母会失真） */
+        const subjective = s.subjective || 0;
+        const objective = Math.max(0, (s.answered || 0) - subjective);
         if (e.sessions) e.sessions.textContent = s.sessions;
         if (e.answered) e.answered.textContent = s.answered;
-        if (e.accuracy) e.accuracy.textContent = s.answered ? `${Math.round((s.correct / s.answered) * 100)}%` : "—";
+        if (e.accuracy) e.accuracy.textContent = objective ? `${Math.round((s.correct / objective) * 100)}%` : "—";
         if (e.mastered) e.mastered.textContent = mastered;
         if (e.reps) e.reps.textContent = fsrs.reps;
         if (e.lapses) e.lapses.textContent = fsrs.lapses;
         if (e.avgTime) e.avgTime.textContent = s.answered ? fmtTime(Math.round(s.timeMs / s.answered)) : "—";
-        /* UI 反馈：标签 / 模式胶囊 / 面板 aria 与高亮随模式切换 */
+        /* UI 反馈：标签 / 模式胶囊 / 面板 aria 与高亮随模式切换；
+           存在主观题时才在正确率标签上注明口径，纯客观题用户的文案保持原样 */
+        const scope = subjective ? "（客观题）" : "";
         if (e.sessionsLabel) e.sessionsLabel.textContent = useRecent ? "近 3 次练习" : "练习次数";
         if (e.answeredLabel) e.answeredLabel.textContent = useRecent ? "近 3 次答题" : "累计答题";
-        if (e.accuracyLabel) e.accuracyLabel.textContent = useRecent ? "近 3 次正确率" : "总正确率";
+        if (e.accuracyLabel) e.accuracyLabel.textContent = (useRecent ? "近 3 次正确率" : "总正确率") + scope;
         if (e.modeBtn) { e.modeBtn.textContent = useRecent ? "近 3 次" : "累计"; e.modeBtn.setAttribute("aria-pressed", String(useRecent)); }
         if (e.grid) {
             e.grid.setAttribute("aria-pressed", String(useRecent));
@@ -3052,7 +3267,7 @@ class OverviewPanel {
             col.className = "trend-col";
             col.setAttribute("aria-hidden", "true");
             const parts = [];
-            if (d.session?.answered) parts.push(`答题 ${d.session.answered}，正确 ${d.session.correct ?? 0}`);
+            if (d.session?.answered) parts.push(`答题 ${d.session.answered}${d.session.subjective ? `（含主观 ${d.session.subjective}）` : ""}，正确 ${d.session.correct ?? 0}`);
             if (d.rev) parts.push(`复习 ${d.rev}`);
             col.title = parts.length ? `${d.label}：${parts.join(" · ")}` : `${d.label}：无活动`;
             const val = document.createElement("span");
@@ -3203,9 +3418,11 @@ class QuizController {
             curTime: $("curTime"), totalTime: $("totalTime"), progressBar: $("progressBar"),
             currentQ: $("currentQ"), totalQ: $("totalQ"),
             correctCount: $("correctCount"), incorrectCount: $("incorrectCount"), unansweredCount: $("unansweredCount"),
+            subjectiveCount: $("subjectiveCount"), subjectiveStat: $("subjectiveStat"),
             scoreValue: $("scoreValue"), totalScore: $("totalScore"),
             resultTotalTime: $("resultTotalTime"), avgTime: $("avgTime"),
             resCorrect: $("resCorrect"), resIncorrect: $("resIncorrect"), resUnanswered: $("resUnanswered"),
+            resSubjective: $("resSubjective"), resSubjectiveStat: $("resSubjectiveStat"), resultGrid: $("resultGrid"),
             resultMsg: $("resultMsg"),
             touchSwipeZone: $("touchSwipeZone"), questionSlideWrap: $("questionSlideWrap"),
             swipeIndicatorLeft: document.querySelector(".swipe-indicator.left"),
@@ -3222,13 +3439,14 @@ class QuizController {
         new FeedbackPanel(this.#els.feedback, this.#bus, () => this.#settings.shuffleOptions);
         new NavigationBar(this.#els.questionNav, this.#bus);
         new ProgressBarComponent(this.#els.progressBar, this.#bus);
-        new StatsPanel({ correct: this.#els.correctCount, incorrect: this.#els.incorrectCount, unanswered: this.#els.unansweredCount }, this.#bus);
+        new StatsPanel({ correct: this.#els.correctCount, incorrect: this.#els.incorrectCount, unanswered: this.#els.unansweredCount, subjective: this.#els.subjectiveCount }, this.#bus);
         new TimerDisplay({ cur: this.#els.curTime, total: this.#els.totalTime }, this.#bus);
         new ResultPanel({
             scoreValue: this.#els.scoreValue, totalScore: this.#els.totalScore,
             resCorrect: this.#els.resCorrect, resIncorrect: this.#els.resIncorrect,
+            resSubjective: this.#els.resSubjective, resSubjectiveStat: this.#els.resSubjectiveStat,
             resUnanswered: this.#els.resUnanswered, resultTotalTime: this.#els.resultTotalTime,
-            avgTime: this.#els.avgTime, resultMsg: this.#els.resultMsg,
+            avgTime: this.#els.avgTime, resultMsg: this.#els.resultMsg, grid: this.#els.resultGrid,
         }, this.#bus);
         new HistoryPanel(this.#els.historyList, this.#bus);
         new OverviewPanel({
@@ -3374,6 +3592,18 @@ class QuizController {
 
         this.#bus.on("option:clicked", ({ key, isMulti }) => { if (!this.#quizState) return; this.#quizState.select(this.#currentIdx, key, isMulti); this.#afterAnswer(); });
         this.#bus.on("multi:submit", () => { if (!this.#quizState) return; this.#quizState.submitMulti(this.#currentIdx); this.#afterAnswer(); });
+        /* 主观题：提交=显示参考答案（不批改，FSRS 下等用户手动评分）；收起=回到未提交态再自测一遍 */
+        this.#bus.on("subjective:submit", () => { if (!this.#quizState) return; this.#quizState.submitSubjective(this.#currentIdx); this.#afterAnswer(); });
+        this.#bus.on("subjective:hide", () => {
+            if (!this.#quizState) return;
+            this.#quizState.unsubmit(this.#currentIdx);
+            this.#justAnswered = false;
+            if (this.#autoNextId) { clearTimeout(this.#autoNextId); this.#autoNextId = null; }
+            this.#refresh();
+            this.#bus.emit("feedback:hide");
+            /* 收起即重新自测：按「未完成」恢复计时（FSRS 已评分则保持暂停；考试模式本就不停表） */
+            if (this.#mode === "practice" && !this.#currentQuestionDone(this.#currentIdx)) this.#timer.resume();
+        });
         this.#bus.on("fsrs:rate", ({ rating }) => this.#rateCard(rating));
         this.#bus.on("nav:clicked", idx => { this.#justAnswered = false; this.#showQuestion(idx); });
 
@@ -3510,7 +3740,7 @@ class QuizController {
             }
             /* 解析成功后自动缓存，下次可一键加载（免文件选择器） */
             const cached = this.#saveToBankCache(questions, fl.map(f => f.name).join("、"));
-            this.#applyQuestions(questions, `成功加载 ${questions.length} 题${cached ? "，已缓存到本地" : ""}${errMsg ? `；${errMsg}` : ""}`);
+            this.#applyQuestions(questions, `成功加载 ${questions.length} 题${subjectiveNote(questions)}${cached ? "，已缓存到本地" : ""}${errMsg ? `；${errMsg}` : ""}`);
         } catch (e) {
             this.#els.fileStatus.innerText = `加载失败：${e?.message || e}`;
             /* 清除失败时残留的骨架屏：恢复上一份题库的渲染 */
@@ -3603,7 +3833,7 @@ class QuizController {
             return;
         }
         this.#timer.stop(); this.#timer.reset();
-        this.#applyQuestions(bank.questions, `已从缓存加载 ${bank.questions.length} 题（${bank.name}）`);
+        this.#applyQuestions(bank.questions, `已从缓存加载 ${bank.questions.length} 题（${bank.name}）${subjectiveNote(bank.questions)}`);
     }
 
     #removeCachedBank(id) {
@@ -3658,6 +3888,9 @@ class QuizController {
         this.#els.navFab?.classList.remove("hidden");
         this.#els.resultSection.classList.add("hidden");
         this.#els.totalQ.textContent = this.#questions.length;
+        /* 信息条上的「主观」计数只在本卷含主观题时出现（纯客观题不加噪音）；
+           FSRS 会重排队列，故放在 #buildFsrsQueue 之后判定 */
+        this.#els.subjectiveStat?.classList.toggle("hidden", !this.#questions.some(isSubjective));
         this.#computeMasteredSet();
         this.#timer.reset(); this.#timer.start();
         this.#bus.emit("nav:build", { total: this.#questions.length, quizState: this.#quizState, masteredSet: this.#masteredSet });
@@ -3742,10 +3975,12 @@ class QuizController {
 
     /* 作答完成后的统一出口：FSRS 刷题按用时与对错直接评分（用时此刻已定），否则渲染评分条。
        两条路径都在作答瞬间停表：解析/等待的时间不应计入本题与总用时。
-       考试模式允许改答案，故不在此停表。 */
+       考试模式允许改答案，故不在此停表。
+       主观题不批改 → 没有「对错」可喂给自动评分，一律走手动评分（FSRS）或只显示参考答案。 */
     #afterAnswer() {
         this.#justAnswered = true;
-        if (this.#fsrsActive && !this.#quizState.get(this.#currentIdx).rated && this.#quizState.isAnsweredRaw(this.#currentIdx)) {
+        const idx = this.#currentIdx;
+        if (this.#fsrsActive && !this.#quizState.get(idx).rated && this.#quizState.isAnsweredRaw(idx) && !this.#quizState.isSubjective(idx)) {
             this.#rateCard(this.#autoRating()); /* #rateCard 内部会 pause，保证自动评分用的是作答时长 */
         } else {
             this.#refresh();
@@ -3758,6 +3993,11 @@ class QuizController {
     /* 自动评分：对错 + 本题用时 → 四档评分（阈值随题干/选项字数与题型动态调整，或按自定义固定秒数） */
     #autoRating() {
         return autoRateFor(this.#quizState.isCorrect(this.#currentIdx), this.#timer.getQuestionTime(this.#currentIdx), resolveThresholds(this.#questions[this.#currentIdx], this.#settings));
+    }
+
+    /* 评分预选档：客观题按对错给「良好/忘记了」；主观题不批改，预选「良好」由用户自行改档 */
+    #defaultRating(idx) {
+        return this.#quizState.isSubjective(idx) || this.#quizState.isCorrect(idx) ? 3 : 1;
     }
 
     /* 复习数据摘要 + 数据统计面板：单次全表遍历（FsrsStore.snapshot）产出全部汇总 */
@@ -4336,7 +4576,7 @@ class QuizController {
             if (s.rated) {
                 this.#bus.emit("fsrs:rated", { question: q, state: s, correct: this.#quizState.isCorrect(idx), rating: s.rating, timeSpent: this.#timer.getQuestionTime(idx), relevelable: true });
             } else if (s.submitted || (q.type !== "multiple" && s.selections.length)) {
-                this.#bus.emit("fsrs:awaitRating", { question: q, state: s, correct: this.#quizState.isCorrect(idx), preselected: this.#quizState.isCorrect(idx) ? 3 : 1 });
+                this.#bus.emit("fsrs:awaitRating", { question: q, state: s, correct: this.#quizState.isCorrect(idx), preselected: this.#defaultRating(idx) });
             } else { this.#bus.emit("feedback:hide"); }
         } else { this.#bus.emit("feedback:hide"); }
         this.#bus.emit("nav:updateStyles", { currentIdx: idx, quizState: this.#quizState, mode: this.#mode, masteredSet: this.#masteredSet });
@@ -4345,7 +4585,9 @@ class QuizController {
         const wasJust = this.#justAnswered;
         this.#justAnswered = false;
         if (this.#autoNextId) { clearTimeout(this.#autoNextId); this.#autoNextId = null; }
-        if (wasJust && this.#settings.autoNext && this.#quizState.isAnswered(idx) && idx < this.#questions.length - 1) {
+        /* 主观题提交后需要读参考答案，不自动跳题；FSRS 下评完分（答案已读过）才恢复自动下一题 */
+        const mayAutoNext = this.#quizState.isAnswered(idx) && (!isSubjective(q) || this.#quizState.isRated(idx));
+        if (wasJust && this.#settings.autoNext && mayAutoNext && idx < this.#questions.length - 1) {
             /* FSRS 评分完成后至少停留 0.6s，保证「下次复习时间」可读 */
             const delay = this.#fsrsActive && this.#quizState.isRated(idx) ? Math.max(this.#settings.autoDelay, 0.6) : this.#settings.autoDelay;
             this.#autoNextId = setTimeout(() => { this.#navigate(1); this.#autoNextId = null; }, delay * 1000);
@@ -4408,14 +4650,25 @@ class QuizController {
     /* 单次遍历同时产出统计与进度（原为两遍 O(N) 扫描） */
     #updateStats() {
         if (!this.#quizState) return;
-        const { correct, incorrect, unanswered } = this.#countStats();
-        this.#bus.emit("stats:update", { correct, incorrect, unanswered });
+        const { correct, incorrect, unanswered, subjective } = this.#countStats();
+        this.#bus.emit("stats:update", { correct, incorrect, unanswered, subjective });
         this.#bus.emit("progress:update", { answered: this.#questions.length - unanswered, total: this.#questions.length });
     }
 
     #finish() { this.#timer.stop(); if (this.#autoNextId) { clearTimeout(this.#autoNextId); this.#autoNextId = null; } this.#saveHistory(); this.#showResults(); }
 
-    #countStats() { let c = 0, i = 0, u = 0; this.#questions.forEach((_, idx) => { if (!this.#quizState.isAnswered(idx)) u++; else if (this.#quizState.isCorrect(idx)) c++; else i++; }); return { correct: c, incorrect: i, unanswered: u }; }
+    /* subjective = 已完成的主观题数（计入答题数，不计对错）；objective = 本卷客观题总数（得分分母） */
+    #countStats() {
+        let c = 0, i = 0, u = 0, subj = 0, obj = 0;
+        this.#questions.forEach((q, idx) => {
+            if (!isSubjective(q)) obj++;
+            if (!this.#quizState.isAnswered(idx)) u++;
+            else if (isSubjective(q)) subj++;
+            else if (this.#quizState.isCorrect(idx)) c++;
+            else i++;
+        });
+        return { correct: c, incorrect: i, unanswered: u, subjective: subj, objective: obj };
+    }
 
     #showResults() {
         if (!this.#quizState) return;
@@ -4423,20 +4676,22 @@ class QuizController {
         this.#els.navFab?.classList.add("hidden");
         this.#closeNavOverlay(); // <dialog> close
         this.#els.resultSection.classList.remove("hidden");
-        const { correct, incorrect, unanswered } = this.#countStats();
-        this.#bus.emit("result:show", { correct, incorrect, unanswered, total: this.#questions.length, totalTime: this.#timer.getTotalTime(), mode: this.#mode });
+        const { correct, incorrect, unanswered, subjective, objective } = this.#countStats();
+        this.#bus.emit("result:show", { correct, incorrect, unanswered, subjective, objective, total: this.#questions.length, totalTime: this.#timer.getTotalTime(), mode: this.#mode });
         if (this.#mode === "exam") this.#showWrong();
     }
 
     #saveHistory() {
         if (!this.#quizState) return;
         const now = new Date();
-        const { correct, incorrect } = this.#countStats();
-        const answered = correct + incorrect; // 实际作答数，未答不计
-        this.#history.unshift({ date: now.toLocaleString(), isoDate: now.toISOString(), score: correct, total: this.#questions.length, percentage: Math.round((correct / this.#questions.length) * 100), mode: this.#fsrsActive ? "fsrs" : this.#mode, totalTime: this.#timer.getTotalTime() });
+        const { correct, incorrect, subjective, objective } = this.#countStats();
+        const answered = correct + incorrect + subjective; // 实际作答数（含主观题），未答不计
+        /* 历史记录里的分母与百分比都只按客观题算：主观题不批改，混进去会让 score/total 与 % 自相矛盾 */
+        const scored = objective;
+        this.#history.unshift({ date: now.toLocaleString(), isoDate: now.toISOString(), score: correct, total: scored, subjective, percentage: scored ? Math.round((correct / scored) * 100) : 0, mode: this.#fsrsActive ? "fsrs" : this.#mode, totalTime: this.#timer.getTotalTime() });
         if (this.#history.length > 10) this.#history = this.#history.slice(0, 10);
         StorageAdapter.saveHistory(this.#history);
-        StorageAdapter.recordSession({ correct, answered, timeMs: this.#timer.getTotalTime(), fsrs: this.#fsrsActive });
+        StorageAdapter.recordSession({ correct, answered, subjective, timeMs: this.#timer.getTotalTime(), fsrs: this.#fsrsActive });
         this.#refreshOverview();
         this.#bus.emit("history:updated", this.#history);
     }
@@ -4470,14 +4725,16 @@ class QuizController {
 
     #showWrong() {
         if (!this.#quizState) return;
-        const wrong = []; this.#questions.forEach((q, i) => { if (!this.#quizState.isCorrect(i)) wrong.push({ q, i }); });
+        /* 主观题不批改 → 不算错题，不进错题回顾；占比分母同样只算客观题 */
+        const objective = this.#questions.filter(q => !isSubjective(q)).length;
+        const wrong = []; this.#questions.forEach((q, i) => { if (!isSubjective(q) && !this.#quizState.isCorrect(i)) wrong.push({ q, i }); });
         /* 单次构建全部 HTML（避免 innerHTML += 的二次方拼接），结构与原 DOM 构建一致 */
         let html = '<div class="wrong-section-title">错题回顾</div>';
         if (!wrong.length) {
             html += '<div class="wrong-all-correct">✓ 全部正确！</div>';
         } else {
             const totalW = wrong.length;
-            html += `<p class="wrong-summary">共 ${totalW} 道错题，占总题数 ${this.#questions.length} 的 ${Math.round((totalW / this.#questions.length) * 100)}%</p>`;
+            html += `<p class="wrong-summary">共 ${totalW} 道错题，占总题数 ${objective} 的 ${Math.round((totalW / objective) * 100)}%</p>`;
             for (const { q, i } of wrong) {
                 const s = this.#quizState.get(i);
                 /* 与作答时看到的一致：随机排列开启时按同一缓存顺序展示，字母也按位置重编 */
@@ -4501,7 +4758,7 @@ class QuizController {
     #exportWrong() {
         if (!this.#quizState) return;
         const wrong = [];
-        this.#questions.forEach((q, i) => { if (!this.#quizState.isCorrect(i)) wrong.push({ q, i }); });
+        this.#questions.forEach((q, i) => { if (!isSubjective(q) && !this.#quizState.isCorrect(i)) wrong.push({ q, i }); });
         if (!wrong.length) {
             this.#bus.emit("toast:show", { message: "没有错题", isError: true });
             return;
@@ -4546,13 +4803,19 @@ class QuizController {
         else if (e.key === "m" && !e.shiftKey) { e.preventDefault(); this.#toggleMark(); }
         else if ((e.key === "M" || (e.key === "m" && e.shiftKey))) { e.preventDefault(); this.#toggleMaster(); }
         else if (e.key === "Enter") {
+            const st = this.#quizState.get(this.#currentIdx);
+            const subj = isSubjective(q);
             if (this.#fsrsActive) {
-                const st = this.#quizState.get(this.#currentIdx);
-                if (q.type === "multiple" && !st.submitted) { this.#quizState.submitMulti(this.#currentIdx); this.#afterAnswer(); }
-                else if (this.#quizState.isAnsweredRaw(this.#currentIdx) && !st.rated) this.#rateCard(this.#quizState.isCorrect(this.#currentIdx) ? 3 : 1);
+                /* 多选提交 / 主观题显示参考答案：都走同一个「已作答」出口 */
+                if ((q.type === "multiple" || subj) && !st.submitted) {
+                    if (subj) this.#quizState.submitSubjective(this.#currentIdx); else this.#quizState.submitMulti(this.#currentIdx);
+                    this.#afterAnswer();
+                }
+                else if (this.#quizState.isAnsweredRaw(this.#currentIdx) && !st.rated) this.#rateCard(this.#defaultRating(this.#currentIdx));
                 /* 已评分：Enter 不再改评价（避免误触），继续下一题；改评价用 1–4 或点击评分按钮 */
                 else if (this.#currentIdx < this.#questions.length - 1) this.#navigate(1);
-            } else if (q.type === "multiple" && this.#mode === "practice" && !this.#quizState.get(this.#currentIdx).submitted) { this.#quizState.submitMulti(this.#currentIdx); this.#justAnswered = true; this.#refresh(); this.#timer.pause(); }
+            } else if (subj && !st.submitted) { this.#quizState.submitSubjective(this.#currentIdx); this.#afterAnswer(); }
+            else if (q.type === "multiple" && this.#mode === "practice" && !st.submitted) { this.#quizState.submitMulti(this.#currentIdx); this.#justAnswered = true; this.#refresh(); this.#timer.pause(); }
             else if (this.#currentIdx < this.#questions.length - 1) this.#navigate(1);
         }
         else if (e.key === "Escape") { this.#closeNavOverlay(); }
