@@ -71,7 +71,8 @@ console.log(`[sync-web] KaTeX 版本注入：${katexVersion}`);
      "@capacitor/filesystem"          → filesystem/index.js（dist/esm/*）
      "@capacitor/synapse"             → synapse.mjs（filesystem 的 ESM 依赖）
      "@capgo/capacitor-share-target"  → share-target/index.js（dist/esm/*）
-     "com.quiztrainer.savefile"       → save-file/index.js（本地插件 dist/esm/*） */
+     "com.quiztrainer.savefile"       → save-file/index.js（本地插件 dist/esm/*）
+     "com.quiztrainer.folderimport"   → folder-import/index.js（本地插件 dist/esm/*） */
 const entries = [
     ['@capacitor/core', 'dist/index.js', 'core/index.js'],
     ['@capacitor/share', null, 'share'],
@@ -79,6 +80,7 @@ const entries = [
     ['@capacitor/synapse', 'dist/synapse.mjs', 'synapse.mjs'],
     ['@capgo/capacitor-share-target', null, 'share-target'],
     ['com.quiztrainer.savefile', null, 'save-file'],
+    ['com.quiztrainer.folderimport', null, 'folder-import'],
 ];
 /* 本地插件（package.json 里 file: 协议）解析到仓库原目录：
    pnpm 会把 file: 依赖复制进 node_modules/.pnpm 虚拟存储且不随源码更新，

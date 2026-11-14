@@ -1419,16 +1419,19 @@
                     <h3 class="menu-group-title">导入题库</h3>
                     <div class="menu-group-content">
                         <label class="file-drop" for="fileInput" id="fileDropZone">
-                            <input type="file" id="fileInput" accept=".md" multiple hidden aria-describedby="fileStatus fileHint">
+                            <input type="file" id="fileInput" accept=".md,.markdown,.txt" multiple hidden aria-describedby="fileStatus fileHint">
+                            <input type="file" id="folderInput" webkitdirectory multiple hidden tabindex="-1" aria-hidden="true">
                             <span class="file-drop-icon" aria-hidden="true"><svg class="icon"><use href="#icon-upload"/></svg></span>
                             <span class="file-drop-text">
                                 <span class="file-drop-title">选择或拖入 Markdown 题库</span>
-                                <span class="file-drop-hint" id="fileHint">选择后自动加载 · 支持多选 .md 文件 · 也可从其他应用「分享」.md 到本应用直接导入</span>
+                                <span class="file-drop-hint" id="fileHint">选择后自动加载 · 支持多选 .md / .txt 文件或整个文件夹 · 也可从其他应用「分享」题库到本应用直接导入</span>
                             </span>
                         </label>
                         <div class="file-toolbar">
                             <button type="button" id="clipboardImportBtn" class="btn btn-outline btn-sm" aria-describedby="clipboardImportHint">从剪贴板导入</button>
+                            <button type="button" id="folderImportBtn" class="btn btn-outline btn-sm" aria-describedby="folderImportHint">导入文件夹</button>
                             <span class="menu-row-hint" id="clipboardImportHint">一键读取剪贴板内容并自动识别类型（Markdown 题库 / FSRS 备份 JSON）；无读取权限时可手动粘贴</span>
+                            <span class="menu-row-hint" id="folderImportHint">递归导入所选文件夹内的全部 .md / .markdown / .txt 题库（含子文件夹）</span>
                         </div>
                         <div id="fileList" aria-label="已选文件列表"></div>
                         <div id="fileStatus" class="file-status" role="status" aria-live="polite" aria-busy="false"></div>
@@ -1800,9 +1803,10 @@
             <span class="preset-dialog-title" id="importFsrsDialogTitle">导入</span>
             <button type="button" id="importFsrsDialogClose" class="preset-dialog-close" aria-label="关闭">×</button>
         </div>
-        <p class="preset-dialog-hint" id="importFsrsDialogHint">选择题库文件或从剪贴板读取；备份 JSON 会自动识别（导入将覆盖现有复习数据）。</p>
+        <p class="preset-dialog-hint" id="importFsrsDialogHint">选择题库文件 / 文件夹，或从剪贴板读取；备份 JSON 会自动识别（导入将覆盖现有复习数据）。</p>
         <div class="preset-dialog-body" data-import-panel="merge">
-            <button type="button" id="importFileBtn" class="btn btn-outline" data-import-action="file">选择题库文件（.md）…</button>
+            <button type="button" id="importFileBtn" class="btn btn-outline" data-import-action="file">选择题库文件（.md / .txt，可多选）…</button>
+            <button type="button" id="importFolderBtn" class="btn btn-outline" data-import-action="folder">选择题库文件夹…</button>
             <button type="button" id="importClipboardBtn" class="btn btn-outline" data-import-action="clipboard">从剪贴板导入</button>
             <button type="button" id="importBackupBtn" class="btn btn-outline" data-import-action="backup">导入 FSRS 备份（.json）…</button>
         </div>
@@ -1830,7 +1834,8 @@
         "@capacitor/filesystem": "./vendor/capacitor/filesystem/index.js",
         "@capacitor/synapse": "./vendor/capacitor/synapse.mjs",
         "@capgo/capacitor-share-target": "./vendor/capacitor/share-target/index.js",
-        "com.quiztrainer.savefile": "./vendor/capacitor/save-file/index.js"
+        "com.quiztrainer.savefile": "./vendor/capacitor/save-file/index.js",
+        "com.quiztrainer.folderimport": "./vendor/capacitor/folder-import/index.js"
     }
 }
 </script>
@@ -1845,7 +1850,7 @@
 globalThis.CapacitorBridge = {
     isNative: () => false,
     Share: null, Filesystem: null, Directory: null, Encoding: null,
-    CapacitorShareTarget: null, SaveFile: null, App: null,
+    CapacitorShareTarget: null, SaveFile: null, FolderImport: null, App: null,
     ready: Promise.resolve(),
 };
 (async () => {
@@ -1860,17 +1865,18 @@ globalThis.CapacitorBridge = {
        “桥已加载（或已失败降级）”。 */
     const load = (async () => {
         try {
-            const [{ Capacitor }, { Share }, { Filesystem, Directory, Encoding }, { CapacitorShareTarget }, { SaveFile }] =
+            const [{ Capacitor }, { Share }, { Filesystem, Directory, Encoding }, { CapacitorShareTarget }, { SaveFile }, { FolderImport }] =
                 await Promise.all([
                     import("@capacitor/core"),
                     import("@capacitor/share"),
                     import("@capacitor/filesystem"),
                     import("@capgo/capacitor-share-target"),
                     import("com.quiztrainer.savefile"),
+                    import("com.quiztrainer.folderimport"),
                 ]);
             Object.assign(globalThis.CapacitorBridge, {
                 isNative: () => !!(Capacitor && Capacitor.isNativePlatform && Capacitor.isNativePlatform()),
-                Share, Filesystem, Directory, Encoding, CapacitorShareTarget, SaveFile,
+                Share, Filesystem, Directory, Encoding, CapacitorShareTarget, SaveFile, FolderImport,
             });
         } catch (e) {
             console.warn("[CapacitorBridge] 原生桥加载失败，使用 Web 降级模式:", e?.message || e);
@@ -1971,6 +1977,25 @@ const readFileText = (file, timeoutMs = 20000) => new Promise((resolve, reject) 
     fr.onerror = () => { clearTimeout(timer); reject(fr.error || new Error(`读取文件失败（${file.name}）`)); };
     fr.readAsText(file, "utf-8");
 });
+/* ===== 题库导入共用口径（文件选择 / 文件夹 / 拖放 / 分享 / 原生插件一致）=====
+   只认 .md / .markdown / .txt；文件夹导入会带相对路径（webkitRelativePath 或原生插件
+   返回的 path），同名文件靠路径区分，排序按路径自然序（第2章 排在 第10章 前）。 */
+const BANK_FILE_RE = /\.(md|markdown|txt)$/i;
+const isBankFile = name => BANK_FILE_RE.test(String(name || ""));
+const bankPath = f => f.webkitRelativePath || f.name || "";
+const byBankPath = (a, b) => bankPath(a).localeCompare(bankPath(b), undefined, { numeric: true, sensitivity: "base" });
+/* 导入前统一整理：按路径去重（同一文件不重复导入）+ 自然排序（章节顺序稳定）。
+   文件列表展示与解析共用同一份顺序，避免「看到的顺序 ≠ 导入的顺序」 */
+const prepareBankFiles = files => {
+    const seen = new Set();
+    return Array.from(files).filter(f => { const p = bankPath(f); if (seen.has(p)) return false; seen.add(p); return true; }).sort(byBankPath);
+};
+/* 缓存题库名：多文件时只列前 3 个 + 总数，避免几十个字的名字撑爆缓存列表 */
+const bankCacheName = files => {
+    const names = files.map(f => String(f.name || "").split("/").pop());
+    const head = names.slice(0, 3).join("、");
+    return names.length > 3 ? `${head} 等 ${names.length} 个文件` : head;
+};
 /* KaTeX 离线渲染（vendor/katex）：$...$ / $$...$$ / \(...\) / \[...\]；auto-render 默认忽略 <code>/<pre>，行内代码不受影响；渲染失败保持原文 */
 const MATH_OPTS = { delimiters: [
     { left: "$$", right: "$$", display: true },
@@ -3374,8 +3399,8 @@ class QuizController {
             themeOptions: document.querySelectorAll(".theme-option"),
             themeDrawer: $("themeDrawer"), themeDrawerBtn: $("themeDrawerBtn"),
             themeDrawerClose: $("themeDrawerClose"), themeCurrentValue: $("themeCurrentValue"),
-            fileInput: $("fileInput"), fileDropZone: $("fileDropZone"),
-            clipboardImportBtn: $("clipboardImportBtn"),
+            fileInput: $("fileInput"), folderInput: $("folderInput"), fileDropZone: $("fileDropZone"),
+            clipboardImportBtn: $("clipboardImportBtn"), folderImportBtn: $("folderImportBtn"),
             importFsrsDialog: $("importFsrsDialog"), importFsrsDialogClose: $("importFsrsDialogClose"),
             importFsrsDialogTitle: $("importFsrsDialogTitle"), importFsrsDialogHint: $("importFsrsDialogHint"),
             importPanels: document.querySelectorAll("[data-import-panel]"),
@@ -3465,8 +3490,10 @@ class QuizController {
         // The native <label for="fileInput"> handles click activation.
         this.#els.startBtn.addEventListener("click", () => this.#start());
         this.#els.fileInput.addEventListener("change", () => this.#onFileSelected());
+        this.#els.folderInput?.addEventListener("change", () => this.#onFolderSelected());
+        this.#els.folderImportBtn?.addEventListener("click", () => this.#importFolder());
         /* 导入入口（合并）：
-           - 题库文件选择 / 拖放 → 顶部拖放区（不变）
+           - 题库文件选择（可多选）/ 文件夹 / 拖放 → 顶部拖放区与「导入文件夹」按钮
            - 剪贴板 → 顶部「从剪贴板导入」按钮：先直接读，读不到才弹同一个对话框的粘贴面板
            - FSRS 备份 → 「复习数据」区的「导入备份」，打开同一对话框的合并面板 */
         this.#els.clipboardImportBtn?.addEventListener("click", () => this.#onClipboardImport());
@@ -3670,14 +3697,96 @@ class QuizController {
     }
 
     #onFileSelected(files = null) {
-        const fl = files ? Array.from(files) : Array.from(this.#els.fileInput.files || []);
-        if (!fl.length) { this.#els.fileList.innerHTML = ""; return; }
-        const ul = document.createElement("ul"); // <ul> has implicit role=list
-        fl.forEach(f => { const li = document.createElement("li"); li.textContent = f.name; ul.appendChild(li); });
-        this.#els.fileList.replaceChildren(ul);
+        const raw = files ? Array.from(files) : Array.from(this.#els.fileInput.files || []);
+        if (!raw.length) { this.#els.fileList.innerHTML = ""; return; }
+        const fl = prepareBankFiles(raw);
+        this.#showFileList(fl);
         // Auto-load (progressive: no manual “load” step → fewer decisions). Catch
         // unexpected rejections and surface them rather than failing silently.
         this.#load(fl).catch(err => this.#bus.emit("toast:show", { message: `加载失败：${err?.message || err}`, isError: true }));
+    }
+
+    /* 已选文件列表：文件夹导入可能一次上百个文件，只列前 20 个 + 总数，避免刷屏 */
+    #showFileList(files) {
+        const MAX_SHOW = 20;
+        const ul = document.createElement("ul"); // <ul> has implicit role=list
+        files.slice(0, MAX_SHOW).forEach(f => { const li = document.createElement("li"); li.textContent = bankPath(f); ul.appendChild(li); });
+        if (files.length > MAX_SHOW) { const li = document.createElement("li"); li.textContent = `… 等共 ${files.length} 个文件`; ul.appendChild(li); }
+        this.#els.fileList.replaceChildren(ul);
+    }
+
+    /* 文件夹导入（Web 端）：webkitdirectory 选择器返回扁平 FileList（带 webkitRelativePath），
+       过滤出题库文件后走与多选文件完全相同的 #load 管线。Android WebView 不支持
+       webkitdirectory，原生环境由 #importFolder 分流到 FolderImport 插件。 */
+    #onFolderSelected() {
+        const input = this.#els.folderInput;
+        const all = Array.from(input?.files || []);
+        const fl = prepareBankFiles(all.filter(f => isBankFile(f.name)));
+        if (!fl.length) {
+            this.#bus.emit("toast:show", { message: "文件夹中没有题库文件（.md / .markdown / .txt）", isError: true });
+            return;
+        }
+        const skipped = all.length - fl.length;
+        if (skipped) this.#bus.emit("toast:show", { message: `已跳过 ${skipped} 个非题库文件` });
+        this.#showFileList(fl);
+        this.#load(fl).catch(err => this.#bus.emit("toast:show", { message: `加载失败：${err?.message || err}`, isError: true }));
+    }
+
+    /* 文件夹导入入口：原生（APK）走 FolderImport 插件（系统文件夹选择器 + 递归读取）；
+       Web 走隐藏的 webkitdirectory 选择器。两条路径最终都汇入 #load。 */
+    async #importFolder() {
+        await CapacitorBridge.ready;
+        const fi = CapacitorBridge.FolderImport;
+        if (CapacitorBridge.isNative() && fi?.pickFolder) { await this.#importFolderNative(fi); return; }
+        this.#els.folderInput?.click();
+    }
+
+    /* 原生文件夹导入：插件返回 {files:[{name,path,text}], skipped, truncated, folderName}，
+       包成 File（名字带相对路径，同名文件可区分）后复用 #load 的解析/缓存/应用管线。 */
+    async #importFolderNative(fi) {
+        let res;
+        try { res = await fi.pickFolder({ maxFiles: 200 }); }
+        catch (e) { this.#bus.emit("toast:show", { message: `文件夹导入失败：${e?.message || e}`, isError: true }); return; }
+        if (!res || res.cancelled || res.success === false) return; /* 用户取消：静默 */
+        const prefix = res.folderName ? `${res.folderName}/` : "";
+        const files = (res.files || []).map(f => new File([f.text ?? ""], `${prefix}${f.path || f.name}`, { type: "text/markdown" }));
+        if (!files.length) { this.#bus.emit("toast:show", { message: "文件夹中没有题库文件（.md / .markdown / .txt）", isError: true }); return; }
+        const notes = [];
+        if (res.truncated) notes.push(`文件过多，仅导入前 ${files.length} 个`);
+        if (res.skipped) notes.push(`已跳过 ${res.skipped} 个过大或无法读取的文件`);
+        if (notes.length) this.#bus.emit("toast:show", { message: notes.join("；") });
+        this.#showFileList(files);
+        this.#load(files).catch(err => this.#bus.emit("toast:show", { message: `加载失败：${err?.message || err}`, isError: true }));
+    }
+
+    /* 拖入文件夹：DataTransferItem.webkitGetAsEntry 递归收集题库文件。
+       readEntries 每批最多 100 条，必须循环读到空；深度/数量封顶防失控。
+       返回的 File 以相对路径为名（与文件夹选择器口径一致）。 */
+    async #collectDroppedEntries(entries) {
+        const MAX_FILES = 200, MAX_DEPTH = 8;
+        const out = [];
+        let truncated = false;
+        const fileOf = en => new Promise((resolve, reject) => en.file(resolve, reject));
+        const walk = async (en, depth, prefix) => {
+            if (out.length >= MAX_FILES) { truncated = true; return; }
+            if (en.isFile) {
+                const f = await fileOf(en);
+                if (isBankFile(f.name)) out.push(prefix ? new File([f], `${prefix}/${f.name}`, { type: f.type }) : f);
+                return;
+            }
+            if (!en.isDirectory || depth >= MAX_DEPTH) return;
+            const reader = en.createReader();
+            for (;;) {
+                const batch = await new Promise((resolve, reject) => reader.readEntries(resolve, reject));
+                if (!batch.length) break;
+                for (const child of batch) {
+                    if (out.length >= MAX_FILES) { truncated = true; return; }
+                    await walk(child, depth + 1, prefix ? `${prefix}/${en.name}` : en.name);
+                }
+            }
+        };
+        for (const en of entries) await walk(en, 0, "");
+        return { files: out.sort(byBankPath), truncated };
     }
 
     #initFileDrop() {
@@ -3689,7 +3798,27 @@ class QuizController {
         zone.addEventListener("drop", e => {
             stop(e); zone.classList.remove("dragover");
             const dt = e.dataTransfer;
-            if (dt && dt.files && dt.files.length) {
+            if (!dt) return;
+            /* 文件夹拖入：items/entry 必须在 drop 事件内同步取出（事件返回后即失效）。
+               任一 entry 是目录就走递归收集；纯文件拖入保持原路径。 */
+            const entries = [];
+            if (dt.items && typeof DataTransferItem !== "undefined" && DataTransferItem.prototype.webkitGetAsEntry) {
+                for (const item of dt.items) {
+                    if (item.kind !== "file") continue;
+                    const en = item.webkitGetAsEntry?.();
+                    if (en) entries.push(en);
+                }
+            }
+            if (entries.some(en => en.isDirectory)) {
+                this.#collectDroppedEntries(entries).then(({ files, truncated }) => {
+                    if (!files.length) { this.#bus.emit("toast:show", { message: "拖入的文件夹中没有题库文件（.md / .markdown / .txt）", isError: true }); return; }
+                    if (truncated) this.#bus.emit("toast:show", { message: `文件过多，仅导入前 ${files.length} 个题库文件` });
+                    this.#showFileList(files);
+                    this.#load(files).catch(err => this.#bus.emit("toast:show", { message: `加载失败：${err?.message || err}`, isError: true }));
+                }).catch(err => this.#bus.emit("toast:show", { message: `读取拖入的文件夹失败：${err?.message || err}`, isError: true }));
+                return;
+            }
+            if (dt.files && dt.files.length) {
                 // `input.files = dt.files` isn’t supported in Safari; fall back to
                 // loading directly from the DataTransfer list.
                 try { this.#els.fileInput.files = dt.files; this.#onFileSelected(); }
@@ -3721,25 +3850,30 @@ class QuizController {
        保证“正在解析题库…”不会永久停留（Nielsen 系统状态可见）。 */
     async #load(files = null) {
         this.#timer.stop(); this.#timer.reset();
-        const fl = files ? Array.from(files) : Array.from(this.#els.fileInput.files || []);
+        let fl = files ? Array.from(files) : Array.from(this.#els.fileInput.files || []);
         if (!fl.length) { this.#bus.emit("toast:show", { message: "请选择文件", isError: true }); return; }
+        /* 多文件/文件夹：按路径去重（同一文件不重复导入）并自然排序，章节顺序稳定 */
+        fl = prepareBankFiles(fl);
         // System state visible (Nielsen): mark busy during async parse + skeleton.
         this.#els.fileDropZone?.setAttribute("aria-busy", "true");
         this.#els.fileStatus.setAttribute("aria-busy", "true");
-        this.#els.fileStatus.innerText = "正在解析题库…";
+        this.#els.fileStatus.innerText = fl.length > 1 ? `正在解析题库…（${fl.length} 个文件）` : "正在解析题库…";
         // Show skeleton if quiz area is already visible (reload scenario).
         if (!this.#els.quizSection.classList.contains("hidden")) this.#showSkeleton();
         try {
             const { questions, errors } = await this.#parser.loadFiles(fl);
-            /* 错误信息独立保留，后续成功/过滤提示拼接追加，避免被覆盖 */
-            const errMsg = errors.length ? `解析错误: ${errors.map(e => `${e.file}: ${e.error || e.reason}`).join("; ")}` : "";
+            /* 错误信息独立保留，后续成功/过滤提示拼接追加，避免被覆盖。
+               多文件导入错误可能很多：只列前 5 条 + 总数，避免状态区被刷屏 */
+            const errMsg = errors.length
+                ? `解析错误: ${errors.slice(0, 5).map(e => `${e.file}: ${e.error || e.reason}`).join("; ")}${errors.length > 5 ? `；…共 ${errors.length} 条` : ""}`
+                : "";
             if (!questions.length) {
                 this.#els.fileStatus.innerText = errMsg || "未解析到有效题目";
                 this.#bus.emit("toast:show", { message: "无有效题目", isError: true });
                 return;
             }
             /* 解析成功后自动缓存，下次可一键加载（免文件选择器） */
-            const cached = this.#saveToBankCache(questions, fl.map(f => f.name).join("、"));
+            const cached = this.#saveToBankCache(questions, bankCacheName(fl));
             this.#applyQuestions(questions, `成功加载 ${questions.length} 题${subjectiveNote(questions)}${cached ? "，已缓存到本地" : ""}${errMsg ? `；${errMsg}` : ""}`);
         } catch (e) {
             this.#els.fileStatus.innerText = `加载失败：${e?.message || e}`;
@@ -3749,8 +3883,9 @@ class QuizController {
         } finally {
             this.#els.fileDropZone?.setAttribute("aria-busy", "false");
             this.#els.fileStatus.setAttribute("aria-busy", "false");
-            /* 清空文件选择器：同一文件可再次选择并触发 change */
+            /* 清空文件/文件夹选择器：同一文件（夹）可再次选择并触发 change */
             this.#els.fileInput.value = "";
+            if (this.#els.folderInput) this.#els.folderInput.value = "";
         }
     }
 
@@ -4493,15 +4628,16 @@ class QuizController {
         if (this.#els.importFsrsDialogHint) {
             this.#els.importFsrsDialogHint.textContent = mode === "paste"
                 ? "当前环境无法自动读取剪贴板。请在下方长按粘贴（Markdown 题库与 FSRS 备份 JSON 均可）。"
-                : "选择题库文件或从剪贴板读取；备份 JSON 会自动识别（导入将覆盖现有复习数据）。";
+                : "选择题库文件 / 文件夹，或从剪贴板读取；备份 JSON 会自动识别（导入将覆盖现有复习数据）。";
         }
         if (mode === "paste" && this.#els.clipboardImportText) this.#els.clipboardImportText.value = "";
     }
 
-    /* 合并入口的三个动作：文件选择（原有 #fileInput） / 剪贴板 / FSRS 备份文件 */
+    /* 合并入口的四个动作：文件选择（原有 #fileInput）/ 文件夹 / 剪贴板 / FSRS 备份文件 */
     #onImportAction(action) {
         if (action === "backup") { this.#els.importFsrsDialog?.close(); this.#els.fsrsImportInput?.click(); return; }
         if (action === "file") { this.#els.importFsrsDialog?.close(); this.#els.fileInput?.click(); return; }
+        if (action === "folder") { this.#els.importFsrsDialog?.close(); this.#importFolder(); return; }
         /* 剪贴板：对话框先给出「读取中」反馈，读到内容即关闭并导入，读不到则切到粘贴面板 */
         this.#switchImportPanel("merge");
         if (this.#els.importFsrsDialogHint) this.#els.importFsrsDialogHint.textContent = "正在读取剪贴板…";

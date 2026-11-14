@@ -22,7 +22,7 @@ src = src.replace(/\/\* ===== Capacitor 原生桥[\s\S]*?\/\* ===== Capacitor �
 globalThis.__bridgeReady.promise = new Promise(r => { globalThis.__bridgeReady.resolve = r; });
 globalThis.CapacitorBridge = {
     isNative: () => true,
-    Share: null, Filesystem: null, Directory: {}, Encoding: {}, SaveFile: null,
+    Share: null, Filesystem: null, Directory: {}, Encoding: {}, SaveFile: null, FolderImport: null,
     CapacitorShareTarget: {
         _cb: null,
         addListener(ev, cb) { this._cb = cb; return Promise.resolve({ remove() {} }); },
@@ -126,9 +126,9 @@ class El {
 const els = {};
 const collections = { '.theme-option': [], '.mode-card': [], '.preset-row': [], '.swipe-indicator.left': [], '.swipe-indicator.right': [], '[data-import-panel]': [] };
 const byId = [
-    'menuPanel','fileInput','fileDropZone','fileList','fileStatus','bankCacheList','modeSection','startQuizBtn',
+    'menuPanel','fileInput','folderInput','folderImportBtn','fileDropZone','fileList','fileStatus','bankCacheList','modeSection','startQuizBtn',
     'clipboardImportBtn','importFsrsDialog','importFsrsDialogClose','importFsrsDialogTitle','importFsrsDialogHint',
-    'importFileBtn','importClipboardBtn','importBackupBtn',
+    'importFileBtn','importFolderBtn','importClipboardBtn','importBackupBtn',
     'clipboardImportText','clipboardImportConfirm','clipboardImportCancel',
     'shuffleOptionsToggle',
     'autoNextToggle','autoNextDelay','showHistoryToggle','hideMasteredToggle','fsrsEnabledToggle',
@@ -158,9 +158,10 @@ els.masterBtn._sel = 'masterBtn';
 // 合并导入对话框的三个动作按钮：真实 DOM 里带 data-import-action 且是对话框子节点
 // （桩不解析 HTML，故手动补 dataset 并把它们挂进对话框的 children——事件委托依赖冒泡路径）
 els.importFileBtn.dataset.importAction = 'file';
+els.importFolderBtn.dataset.importAction = 'folder';
 els.importClipboardBtn.dataset.importAction = 'clipboard';
 els.importBackupBtn.dataset.importAction = 'backup';
-els.importFsrsDialog.append(els.importFileBtn, els.importClipboardBtn, els.importBackupBtn);
+els.importFsrsDialog.append(els.importFileBtn, els.importFolderBtn, els.importClipboardBtn, els.importBackupBtn);
 els.importFsrsDialog.append(els.clipboardImportConfirm, els.clipboardImportCancel, els.importFsrsDialogClose);
 // 计时容器（真实 DOM 上的 data-timer-box）：TimerDisplay 把 .timer-paused 挂在其上
 els.curTime._sel = 'curTime';
@@ -284,7 +285,7 @@ const flush = () => new Promise(r => setTimeout(r, 30));
     /* ---------- 原生调用专项回归（见「原生调用完成度专项评价」） ---------- */
     const flushRounds = async n => { for (let i = 0; i < n; i++) await flush(); };
     const installBridge = stub => Object.assign(sandbox.CapacitorBridge, {
-        Share: null, Filesystem: null, SaveFile: null, App: null,
+        Share: null, Filesystem: null, SaveFile: null, FolderImport: null, App: null,
         Directory: {}, Encoding: {},
     }, stub);
 
@@ -1313,6 +1314,78 @@ const flush = () => new Promise(r => setTimeout(r, 30));
     els.startQuizBtn.click();
     await flush();
     assert(String(els.totalQ.textContent) === '39', `原始题库开卷总题数 39: ${els.totalQ.textContent}`);
+
+    console.log('== 21. 多文件 / 文件夹导入：多选合并、去重、错误聚合、Web 文件夹、原生文件夹 ==');
+    const q1 = '## 一、单选题\n\n### 1. 甲题\nA. 选项一\nB. 选项二\n**答案： A**\n';
+    const q2 = '## 一、单选题\n\n### 1. 乙题\nA. 选项一\nB. 选项二\n**答案： B**\n';
+    /* ① 一次多选：题量合并，缓存名按路径自然序列出文件名 */
+    els.fileInput.files = [
+        { name: '第2章.md', text: async () => q2 },
+        { name: '第1章.md', text: async () => q1 },
+    ];
+    els.fileInput.trigger('change');
+    await flush();
+    assert(/成功加载 2 题/.test(els.fileStatus.innerText), `多文件合并导入: "${els.fileStatus.innerText}"`);
+    assert(els.bankCacheList.children[0].querySelectorAll('.bank-cache-name')[0].textContent === '第1章.md、第2章.md', '缓存名按文件路径自然排序');
+    /* 同名文件去重：同一文件不重复导入 */
+    els.fileInput.files = [
+        { name: '第1章.md', text: async () => q1 },
+        { name: '第1章.md', text: async () => q1 },
+    ];
+    els.fileInput.trigger('change');
+    await flush();
+    assert(/成功加载 1 题/.test(els.fileStatus.innerText), `同名文件去重: "${els.fileStatus.innerText}"`);
+    /* ② 错误聚合：多文件解析错误只列前 5 条 + 总数，不刷屏 */
+    els.fileInput.files = Array.from({ length: 7 }, (_, i) => ({ name: `bad${i}.md`, text: async () => '这里没有题目' }));
+    els.fileInput.trigger('change');
+    await flush();
+    assert(/…共 7 条/.test(els.fileStatus.innerText), `错误过多时聚合显示: "${els.fileStatus.innerText}"`);
+    /* ③ Web 文件夹导入：按扩展名过滤 + 相对路径排序 + 跳过非题库文件提示 */
+    els.folderInput.files = [
+        { name: '图片.png', webkitRelativePath: '题库/图片.png', text: async () => '' },
+        { name: 'b.md', webkitRelativePath: '题库/b.md', text: async () => q2 },
+        { name: 'a.txt', webkitRelativePath: '题库/a.txt', text: async () => q1 },
+    ];
+    els.folderInput.trigger('change');
+    await flush();
+    assert(/成功加载 2 题/.test(els.fileStatus.innerText), `文件夹递归过滤导入: "${els.fileStatus.innerText}"`);
+    assert(els.snackbar.textContent.includes('已跳过 1 个非题库文件'), `非题库文件跳过提示: "${els.snackbar.textContent}"`);
+    assert(els.fileList.children[0]?.children[0]?.textContent === '题库/a.txt', '文件列表显示相对路径且按路径排序');
+    assert(els.folderInput.value === '', '导入后文件夹选择器已清空（可重选同一文件夹）');
+    /* 空文件夹（无题库文件）→ 明确提示 */
+    els.folderInput.files = [{ name: 'x.png', text: async () => '' }];
+    els.folderInput.trigger('change');
+    await flush();
+    assert(els.snackbar.textContent.includes('文件夹中没有题库文件'), `空文件夹提示: "${els.snackbar.textContent}"`);
+    /* ④ 原生文件夹导入（APK）：插件返回文本 → 包成 File 走同一管线；缓存名带文件夹前缀 */
+    let pickImpl = async () => ({ success: true, folderName: '题库', files: [
+        { name: 'b.md', path: '第一章/b.md', text: q2 },
+        { name: 'a.md', path: '第一章/a.md', text: q1 },
+    ], skipped: 1, truncated: false });
+    installBridge({ FolderImport: { pickFolder: async opts => pickImpl(opts) } });
+    els.folderImportBtn.trigger('click');
+    await flush();
+    assert(/成功加载 2 题/.test(els.fileStatus.innerText), `原生文件夹导入: "${els.fileStatus.innerText}"`);
+    assert(els.snackbar.textContent.includes('已跳过 1 个过大或无法读取的文件'), `原生跳过计数提示: "${els.snackbar.textContent}"`);
+    assert(els.bankCacheList.children[0].querySelectorAll('.bank-cache-name')[0].textContent === 'a.md、b.md', '原生文件夹导入缓存名（去目录前缀、按路径排序）');
+    /* 对话框「选择题库文件夹」入口同样路由到原生插件 */
+    pickImpl = async () => ({ success: true, files: [{ name: 'c.md', path: 'c.md', text: q1 }] });
+    els.importFsrsDialog.showModal();
+    els.importFolderBtn.trigger('click');
+    await flush();
+    assert(!els.importFsrsDialog.open && /成功加载 1 题/.test(els.fileStatus.innerText), '对话框文件夹入口路由正确');
+    /* 用户取消 → 静默，不改动状态、不提示错误 */
+    pickImpl = async () => ({ success: false, cancelled: true });
+    const statusBefore = els.fileStatus.innerText;
+    els.folderImportBtn.trigger('click');
+    await flush();
+    assert(els.fileStatus.innerText === statusBefore, '取消文件夹选择时状态不变');
+    /* 插件异常（如无系统选择器）→ 明确失败提示 */
+    pickImpl = async () => { throw new Error('no picker'); };
+    els.folderImportBtn.trigger('click');
+    await flush();
+    assert(els.snackbar.textContent.includes('文件夹导入失败'), `插件异常提示: "${els.snackbar.textContent}"`);
+    installBridge({}); /* 复位桥桩 */
 
     console.log(failed ? `\n${failed} 项失败` : '\n全部通过 ✓');
     process.exit(failed ? 1 : 0);

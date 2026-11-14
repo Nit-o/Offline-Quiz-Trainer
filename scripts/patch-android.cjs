@@ -152,6 +152,7 @@ const PROGUARD_RULES = `# patch-android: capacitor keep rules（R8 开启后必�
 -keep class com.getcapacitor.** { *; }
 -keep @com.getcapacitor.annotation.CapacitorPlugin class * { *; }
 -keep class com.quiztrainer.savefile.** { *; }
+-keep class com.quiztrainer.folderimport.** { *; }
 -keep class app.capgo.sharetarget.** { *; }
 -keep class com.capacitorjs.plugins.** { *; }
 -keep class com.quiztrainer.app.MainActivity { *; }

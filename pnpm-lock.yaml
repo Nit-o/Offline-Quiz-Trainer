@@ -23,6 +23,9 @@ importers:
       '@capgo/capacitor-share-target':
         specifier: ^8.0.54
         version: 8.0.54(@capacitor/core@8.5.2)
+      com.quiztrainer.folderimport:
+        specifier: file:native-plugins/folder-import
+        version: file:native-plugins/folder-import(@capacitor/core@8.5.2)
       com.quiztrainer.savefile:
         specifier: file:native-plugins/save-file
         version: file:native-plugins/save-file(@capacitor/core@8.5.2)
@@ -298,6 +301,11 @@ packages:
 
   color-name@1.1.4:
     resolution: {integrity: sha512-dOy+3AuW3a2wNbZHIuMZpTcgjGuLU/uBL/ubcZF9OXbDo8ff4O8yVp5Bf0efS8uEoYo5q4Fx7dY9OgQGXgAsQA==}
+
+  com.quiztrainer.folderimport@file:native-plugins/folder-import:
+    resolution: {directory: native-plugins/folder-import, type: directory}
+    peerDependencies:
+      '@capacitor/core': '>=8.0.0'
 
   com.quiztrainer.savefile@file:native-plugins/save-file:
     resolution: {directory: native-plugins/save-file, type: directory}
@@ -822,6 +830,10 @@ snapshots:
       color-name: 1.1.4
 
   color-name@1.1.4: {}
+
+  com.quiztrainer.folderimport@file:native-plugins/folder-import(@capacitor/core@8.5.2):
+    dependencies:
+      '@capacitor/core': 8.5.2
 
   com.quiztrainer.savefile@file:native-plugins/save-file(@capacitor/core@8.5.2):
     dependencies:

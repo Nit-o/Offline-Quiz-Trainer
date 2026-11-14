@@ -12,6 +12,8 @@ interface CapacitorBridgeShape {
     Encoding: any;
     CapacitorShareTarget: any;
     SaveFile: any;
+    /** 文件夹导入（本地插件 com.quiztrainer.folderimport） */
+    FolderImport: any;
     /** @capacitor/app（可选增强：返回键） */
     App: any;
 }

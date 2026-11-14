@@ -6,7 +6,7 @@
   "scripts": {
     "sync:web": "node scripts/sync-web.cjs",
     "cap": "cap",
-    "build:plugin": "tsc -p native-plugins/save-file/tsconfig.json",
+    "build:plugin": "tsc -p native-plugins/save-file/tsconfig.json && tsc -p native-plugins/folder-import/tsconfig.json",
     "extract:js": "node scripts/extract-inline-js.cjs",
     "typecheck": "node scripts/extract-inline-js.cjs && tsc -p tsconfig.json",
     "test:web": "node scripts/smoke_test.cjs",
@@ -20,6 +20,7 @@
     "@capacitor/share": "^8.0.2",
     "@capacitor/synapse": "^1.0.4",
     "@capgo/capacitor-share-target": "^8.0.54",
+    "com.quiztrainer.folderimport": "file:native-plugins/folder-import",
     "com.quiztrainer.savefile": "file:native-plugins/save-file"
   },
   "devDependencies": {
