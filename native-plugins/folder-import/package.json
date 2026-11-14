@@ -1,0 +1,32 @@
+{
+  "name": "com.quiztrainer.folderimport",
+  "version": "1.0.0",
+  "description": "本地 Capacitor 插件：ACTION_OPEN_DOCUMENT_TREE 调起系统文件夹选择器，递归读取题库文本（.md/.markdown/.txt）",
+  "main": "dist/esm/index.js",
+  "types": "dist/esm/index.d.ts",
+  "files": [
+    "dist/",
+    "android/"
+  ],
+  "scripts": {
+    "build": "tsc"
+  },
+  "keywords": [
+    "capacitor",
+    "plugin",
+    "native"
+  ],
+  "license": "MIT",
+  "capacitor": {
+    "android": {
+      "src": "android"
+    }
+  },
+  "peerDependencies": {
+    "@capacitor/core": ">=8.0.0"
+  },
+  "devDependencies": {
+    "@capacitor/core": "^8.5.0",
+    "typescript": "^5.6.0"
+  }
+}

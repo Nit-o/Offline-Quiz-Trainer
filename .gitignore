@@ -6,6 +6,7 @@
 /dist/
 /android/
 native-plugins/save-file/dist/
+native-plugins/folder-import/dist/
 
 # 构建缓存
 .gradle-home/
