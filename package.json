@@ -1,6 +1,6 @@
 {
   "name": "offline-quiz-trainer",
-  "version": "0.1.0",
+  "version": "0.4.0",
   "private": true,
   "description": "离线业余无线电题库训练器（Capacitor Android 打包）",
   "scripts": {

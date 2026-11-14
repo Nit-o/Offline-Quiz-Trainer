@@ -54,17 +54,19 @@ jobs:
       - name: 构建 Android 包
         id: build
         uses: ./.github/actions/android-release
+        with:
+          version-suffix: beta.${{ github.run_number }}
 
-      # 只做改名，不再拼接 APK 路径
+      # 只做改名，不再拼接 APK 路径（版本号已含 -beta.N，无需再补后缀）
       - name: 重命名 Beta 包
         run: |
           mkdir -p dist-apk
           cp "${{ steps.build.outputs.apk }}" \
-             "dist-apk/QuizTrainer-${{ steps.build.outputs.version }}-beta.apk"
+             "dist-apk/QuizTrainer-${{ steps.build.outputs.version }}.apk"
 
       - name: 上传 Beta APK
         uses: actions/upload-artifact@v7
         with:
           name: QuizTrainer-Beta-${{ github.run_number }}
-          path: dist-apk/QuizTrainer-*-beta.apk
+          path: dist-apk/QuizTrainer-*.apk
           if-no-files-found: error

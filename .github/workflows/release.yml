@@ -5,9 +5,22 @@ name: 发布 Release APK
 on:
   push:
     tags: [ "v*" ]
+  # 补发通道：标签已推送但流水线未触发或中途失败时，可在 Actions 页指定标签重跑，
+  # 无需删标签再重推（删推标签会污染已发布 Release 的历史）。
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 要发布的标签（如 v0.4.0）
+        required: true
+        type: string
 
 permissions:
   contents: write # 创建 GitHub Release
+
+# 发布不可中途取消：cancel-in-progress 会留下半个 Release。同一标签串行排队。
+concurrency:
+  group: release-${{ inputs.tag || github.ref }}
+  cancel-in-progress: false
 
 jobs:
   build:
@@ -15,6 +28,9 @@ jobs:
     steps:
       - name: 拉取代码
         uses: actions/checkout@v7
+        with:
+          # 标签推送时 github.ref 即标签；手动触发时检出指定标签，而非默认分支
+          ref: ${{ inputs.tag || github.ref }}
 
       - name: 安装 pnpm
         uses: pnpm/action-setup@v5
@@ -46,11 +62,15 @@ jobs:
       # 提前归一化并校验标签（v1.2.3 → 1.2.3）：避免跑完 cap add android 才在 sync-version 处失败，
       # 同时保证 package.json / versionName / 产物文件名三处用同一个值
       - name: 解析版本标签
+        env:
+          INPUT_TAG: ${{ inputs.tag }}
         run: |
-          V="${GITHUB_REF_NAME#v}"
+          REF="$INPUT_TAG"
+          if [ -z "$REF" ]; then REF="$GITHUB_REF_NAME"; fi
+          V="${REF#v}"
           case "$V" in
             [0-9]*.[0-9]*.[0-9]*) ;;
-            *) echo "::error::标签格式应为 v<major>.<minor>.<patch>，当前：$GITHUB_REF_NAME"; exit 1 ;;
+            *) echo "::error::标签格式应为 v<major>.<minor>.<patch>，当前：$REF"; exit 1 ;;
           esac
           echo "VERSION=$V" >> "$GITHUB_ENV"
           echo "版本：$V"

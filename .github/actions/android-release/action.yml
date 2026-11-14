@@ -9,6 +9,12 @@ inputs:
     description: 语义版本（如 1.2.3）。留空则沿用仓库 package.json 的 version（Beta 用）。
     required: false
     default: ""
+  version-suffix:
+    description: >-
+      追加到版本号后的预发布后缀（如 beta.12 → 0.4.0-beta.12）。留空则不加。
+      Beta 传 beta.<run_number>，使每次构建的 versionName 可区分且单调递增。
+    required: false
+    default: ""
   keystore-b64:
     description: >-
       release.keystore 的 base64。提供时走 assembleRelease + R8 + 该密钥签名（正式版）；
@@ -62,19 +68,22 @@ runs:
       shell: bash
       env:
         INPUT_VERSION: ${{ inputs.version }}
+        INPUT_SUFFIX: ${{ inputs.version-suffix }}
       run: |
         if [ -n "$INPUT_VERSION" ]; then V="$INPUT_VERSION"; else V=$(node -p "require('./package.json').version"); fi
+        if [ -n "$INPUT_SUFFIX" ]; then V="$V-$INPUT_SUFFIX"; fi
         echo "version=$V" >> "$GITHUB_OUTPUT"
         echo "构建版本：$V"
 
     # 必须在 cap add android 之后（需要 android/app/build.gradle 存在）
+    # 不传 CAP_VERSION_CODE：run_number 是各工作流独立计数，Beta 与 Release 混用会让
+    # 后发的正式包 versionCode 低于 Beta，覆盖安装时报 INSTALL_FAILED_VERSION_DOWNGRADE。
+    # 交由 sync-version.cjs 的 Unix 时间戳兜底 —— 跨工作流天然单调递增。
     - name: 同步版本号到 build.gradle
-      if: inputs.version != ''
       shell: bash
       env:
-        INPUT_VERSION: ${{ inputs.version }}
-        CAP_VERSION_CODE: ${{ github.run_number }}
-      run: node scripts/sync-version.cjs "$INPUT_VERSION"
+        RESOLVED_VERSION: ${{ steps.ver.outputs.version }}
+      run: node scripts/sync-version.cjs "$RESOLVED_VERSION"
 
     - name: 应用平台补丁
       shell: bash
