@@ -126,7 +126,7 @@ class El {
 const els = {};
 const collections = { '.theme-option': [], '.mode-card': [], '.preset-row': [], '.swipe-indicator.left': [], '.swipe-indicator.right': [], '[data-import-panel]': [] };
 const byId = [
-    'menuPanel','fileInput','folderInput','folderImportBtn','fileDropZone','fileList','fileStatus','bankCacheList','modeSection','startQuizBtn',
+    'menuPanel','fileInput','folderInput','folderImportBtn','fileDropZone','fileList','fileStatus','bankCacheList','bankCacheCount','modeSection','startQuizBtn',
     'clipboardImportBtn','importFsrsDialog','importFsrsDialogClose','importFsrsDialogTitle','importFsrsDialogHint',
     'importFileBtn','importFolderBtn','importClipboardBtn','importBackupBtn',
     'clipboardImportText','clipboardImportConfirm','clipboardImportCancel',
@@ -134,6 +134,7 @@ const byId = [
     'autoNextToggle','autoNextDelay','showHistoryToggle','hideMasteredToggle','fsrsEnabledToggle',
     'fsrsSettingsRow','fsrsSettingsBtn','fsrsSettingsDialog','fsrsSettingsDialogClose',
     'themeDrawer','themeDrawerBtn','themeDrawerClose','themeCurrentValue',
+    'settingsDrawer','settingsDrawerBtn','settingsDrawerClose','settingsSummary',
     'autoRatePresetSelect','autoRateCustomToggle','presetDialog','presetDialogClose',
     'presetResetBtn','presetSaveBtn','retentionInput','dailyNewInput','resetFsrsBtn','exportFsrsBtn','copyFsrsBtn',
     'importFsrsBtn','fsrsImportInput','fsrsTotalCards','fsrsDueToday','fsrsAvgStability','ovSessions','ovAnswered',
@@ -405,6 +406,7 @@ const flush = () => new Promise(r => setTimeout(r, 30));
     assert(!!loadBtn && !!delBtn, '条目含加载/删除按钮');
     assert(item.querySelectorAll('.bank-cache-name')[0].textContent === 'B类题库_origin.md', '缓存名称正确');
     assert(/1143 题/.test(item.querySelectorAll('.bank-cache-sub')[0].textContent), '缓存题数正确');
+    assert(/^1\/\d+$/.test(els.bankCacheCount.textContent), `缓存计数回显「已存/上限」: "${els.bankCacheCount.textContent}"`);
 
     console.log('== 3. 从缓存加载（免选文件）==');
     loadBtn.click();
@@ -695,6 +697,37 @@ const flush = () => new Promise(r => setTimeout(r, 30));
     els.themeDrawer.trigger('click');
     assert(!els.themeDrawer.open, '点击遮罩关闭主题抽屉');
     assert(els.themeCurrentValue.textContent === '跟随系统', '选择器收进抽屉后菜单入口仍回显当前主题');
+
+    console.log('== 13.2 设置抽屉：菜单只留入口 + 摘要，开关在抽屉里照常生效 ==');
+    els.settingsDrawerBtn.trigger('click');
+    assert(els.settingsDrawer.open, '「打开设置」打开右侧抽屉');
+    els.autoNextToggle.checked = true;
+    els.autoNextToggle.trigger('change');
+    els.autoNextDelay.value = '1.2';
+    els.autoNextDelay.trigger('change');
+    els.showHistoryToggle.checked = true;
+    els.showHistoryToggle.trigger('change');
+    assert(JSON.parse(store.get('quiz_settings')).autoDelay === 1.2, '抽屉内改延迟即时持久化');
+    assert(els.settingsSummary.textContent === '自动下一题 1.2s · 显示历史', `菜单入口回显已开启项: "${els.settingsSummary.textContent}"`);
+    els.fsrsEnabledToggle.checked = true;
+    els.fsrsEnabledToggle.trigger('change');
+    assert(!els.fsrsSettingsRow.hidden, 'FSRS 启用后抽屉内出现「FSRS 设置」入口');
+    assert(/FSRS$/.test(els.settingsSummary.textContent), `启用 FSRS 后摘要追加: "${els.settingsSummary.textContent}"`);
+    /* 抽屉之上再叠居中模态：子弹窗关闭不能连带关掉设置抽屉 */
+    els.fsrsSettingsBtn.trigger('click');
+    assert(els.fsrsSettingsDialog.open && els.settingsDrawer.open, 'FSRS 设置弹窗叠在设置抽屉之上');
+    els.fsrsSettingsDialogClose.trigger('click');
+    assert(!els.fsrsSettingsDialog.open && els.settingsDrawer.open, '关闭子弹窗后设置抽屉仍打开');
+    els.fsrsEnabledToggle.checked = false;
+    els.fsrsEnabledToggle.trigger('change');
+    els.autoNextDelay.value = '0.5';
+    els.autoNextDelay.trigger('change');
+    assert(els.settingsSummary.textContent === '自动下一题 0.5s · 显示历史', `关闭项从摘要移除: "${els.settingsSummary.textContent}"`);
+    els.settingsDrawerClose.trigger('click');
+    assert(!els.settingsDrawer.open, '× 按钮关闭设置抽屉');
+    els.settingsDrawerBtn.trigger('click');
+    els.settingsDrawer.trigger('click');
+    assert(!els.settingsDrawer.open, '点击遮罩关闭设置抽屉');
 
     console.log('== 14. 多行题干续行 + 代码块内容保护 ==');
     els.fileInput.files = [{ name: 'multi.md', text: async () => [
@@ -1386,6 +1419,82 @@ const flush = () => new Promise(r => setTimeout(r, 30));
     await flush();
     assert(els.snackbar.textContent.includes('文件夹导入失败'), `插件异常提示: "${els.snackbar.textContent}"`);
     installBridge({}); /* 复位桥桩 */
+
+    console.log('== 22. 题库缓存上限：份数提高、淘汰最旧、配额腾挪 ==');
+    /* BankCache 是纯存储逻辑：抽出类源码注入不同的 localStorage 桩，
+       用「总预算」模型模拟真实配额（真实 localStorage 限的是总量，不是单条） */
+    const bankSrc = html.slice(html.indexOf('class BankCache {'), html.indexOf('/* ===== FSRS Engine'));
+    const BankCacheClass = new Function('localStorage', `${bankSrc}\nreturn BankCache;`);
+    const makeStore = (budget = Infinity) => {
+        const m = new Map();
+        const size = (k, v) => k.length + v.length;
+        const used = () => [...m.entries()].reduce((n, [k, v]) => n + size(k, v), 0);
+        return {
+            map: m,
+            getItem: k => (m.has(k) ? m.get(k) : null),
+            setItem: (k, v) => {
+                const s = String(v);
+                const next = used() - (m.has(k) ? size(k, m.get(k)) : 0) + size(k, s);
+                if (next > budget) { const e = new Error('QuotaExceededError'); e.name = 'QuotaExceededError'; throw e; }
+                m.set(k, s);
+            },
+            removeItem: k => m.delete(k),
+        };
+    };
+    const mkBank = (i, chars = 8) => ({ id: `b${i}`, name: `第${i}章.md`, importedAt: i, count: 1, questions: [{ text: 'x'.repeat(chars) }] });
+    const CACHE_MAX = BankCacheClass(makeStore()).MAX;
+    const payloadKeys = s => [...s.map.keys()].filter(k => k.startsWith('quiz_bank_') && k !== 'quiz_bank_index');
+    const consistent = (C, s) => C.list().every(b => s.map.has(`quiz_bank_${b.id}`)) && payloadKeys(s).length === C.list().length;
+
+    assert(CACHE_MAX === 20, `缓存份数上限由 3 提高到 ${CACHE_MAX}`);
+    {
+        const s = makeStore(); const C = BankCacheClass(s);
+        let allOk = true;
+        for (let i = 1; i <= C.MAX; i++) allOk = C.save(mkBank(i)).ok && allOk;
+        assert(allOk && C.list().length === C.MAX && consistent(C, s), `连续存满 ${C.MAX} 份，索引与本体一一对应`);
+        const over = C.save(mkBank(C.MAX + 1));
+        assert(over.ok && over.evicted.length === 1 && over.evicted[0] === '第1章.md', `超出上限时淘汰最旧的一份并如实回报: ${JSON.stringify(over.evicted)}`);
+        assert(C.list().length === C.MAX && C.list()[0].id === `b${C.MAX + 1}` && C.get('b1') === null, '新缓存排在最前，最旧的本体已删除');
+        assert(consistent(C, s), '淘汰后无孤儿数据（索引里的每条都还在）');
+        /* 同 id 覆盖写不占额外名额 */
+        const again = C.save(mkBank(C.MAX + 1));
+        assert(again.ok && again.evicted.length === 0 && C.list().length === C.MAX, '同一份重复保存不挤掉其它缓存');
+    }
+    {
+        /* 配额腾挪：预算只够两份大题库，写第三份时必须先挤掉最旧的再写，而不是直接失败 */
+        const s = makeStore(1500); const C = BankCacheClass(s);
+        assert(C.save(mkBank(1, 400)).ok, '预算内第 1 份写入成功');
+        assert(C.save(mkBank(2, 400)).ok, '预算内第 2 份写入成功');
+        const third = C.save(mkBank(3, 400));
+        assert(third.ok && third.evicted.length >= 1, `配额不足时淘汰最旧的腾空间: ${JSON.stringify(third.evicted)}`);
+        assert(C.get('b3') && consistent(C, s), '新题库确实存下来了，且索引与本体一致');
+        /* 单份就超预算：如实失败，不留半条数据 */
+        const huge = C.save(mkBank(99, 5000));
+        assert(huge.ok === false && C.get('b99') === null && consistent(C, s), '单份超出全部预算时失败且不残留孤儿数据');
+    }
+    {
+        /* 真实应用链路：缓存已满 → 再导入一份，自动挤掉最旧的并提示，计数标记为已满 */
+        const seed = [];
+        for (let i = 1; i <= CACHE_MAX; i++) {
+            const b = mkBank(i);
+            store.set(`quiz_bank_${b.id}`, JSON.stringify(b));
+            seed.push({ id: b.id, name: b.name, importedAt: b.importedAt, count: b.count });
+        }
+        store.set('quiz_bank_index', JSON.stringify(seed.reverse())); /* 新的在前 */
+        els.fileInput.files = [{ name: '新题库.md', text: async () => q1 }];
+        els.fileInput.trigger('change');
+        await flush();
+        const idx = JSON.parse(store.get('quiz_bank_index'));
+        assert(idx.length === CACHE_MAX && idx[0].name === '新题库.md', `导入后仍是 ${CACHE_MAX} 份，新题库在最前`);
+        assert(!store.has('quiz_bank_b1') && !idx.some(b => b.id === 'b1'), '最旧的一份连同本体一起移除');
+        assert(els.snackbar.textContent.includes('已自动移除最旧的 1 份缓存'), `淘汰提示: "${els.snackbar.textContent}"`);
+        assert(els.bankCacheCount.textContent === `${CACHE_MAX}/${CACHE_MAX}` && els.bankCacheCount.classList.contains('full'), `计数回显并标记已满: "${els.bankCacheCount.textContent}"`);
+        assert(els.bankCacheList.children.length === CACHE_MAX, '列表渲染全部缓存条目');
+        /* 删除一份后计数回落、full 标记消失 */
+        els.bankCacheList.children[0].querySelectorAll('button').find(b => b.dataset.bankDel).click();
+        await flush();
+        assert(els.bankCacheCount.textContent === `${CACHE_MAX - 1}/${CACHE_MAX}` && !els.bankCacheCount.classList.contains('full'), '删除后计数与已满标记同步回落');
+    }
 
     console.log(failed ? `\n${failed} 项失败` : '\n全部通过 ✓');
     process.exit(failed ? 1 : 0);
