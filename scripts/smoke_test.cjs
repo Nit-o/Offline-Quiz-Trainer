@@ -781,6 +781,21 @@ const flush = () => new Promise(r => setTimeout(r, 30));
     assert(parsed.includes('<pre><code>js\n# 注释不是标题\n**不是加粗**\n</code></pre>'), '代码块内容原样保留（无 <h3>/加粗/<br>）');
     assert(!parsed.includes('<h3>'), '代码块内 # 行未被转为标题');
 
+    console.log('== 15. MarkdownParser：XSS 白名单（题库文本整体转义，仅放行 br/sub/sup） ==');
+    /* 回归：曾经只转义 markdown 捕获组，组外 <img onerror> 原样进 innerHTML（CSP 含 unsafe-inline 拦不住） */
+    const xss = MarkdownParser.parse('<img src=x onerror=alert(1)> 与 <script>alert(2)</script> 及 <b onclick=alert(3)>粗</b>');
+    assert(!/<(img|script|b)[\s>]/i.test(xss), `白名单外标签全部转义（无原生 <img>/<script>/<b>）: ${xss}`);
+    assert(xss.includes('&lt;img') && xss.includes('&lt;script&gt;'), '危险标签以纯文本显示');
+    const wl = MarkdownParser.parse('H<sub>2</sub>O 与 E=mc<sup>2</sup>，1<br>2 换行 <BR/> 大写');
+    assert(wl.includes('<sub>2</sub>') && wl.includes('<sup>2</sup>'), '化学式上下标 <sub>/<sup> 仍渲染');
+    assert((wl.match(/<br>/g) || []).length === 2, '白名单 <br>（含大写自闭合 <BR/>）仍渲染');
+    const attr = MarkdownParser.parse('<sub onclick=alert(1)>x</sub>');
+    assert(attr.includes('&lt;sub') && !attr.includes('<sub '), '带属性的白名单标签不放行');
+    const codeWl = MarkdownParser.parse('`<br>` 与 <br>');
+    assert(codeWl.includes('<code>&lt;br&gt;</code>'), '行内代码里的 <br> 按字面显示');
+    const boldWl = MarkdownParser.parse('**H<sub>2</sub>O**');
+    assert(boldWl.includes('<strong>H<sub>2</sub>O</strong>'), '加粗与白名单标签可嵌套');
+
     console.log('== 15. 随机选项排列：顺序稳定（多次 render 不跳位）、开关恢复、序号按位置重编 ==');
     /* 反馈面板同样是 innerHTML 字符串：按 data-rating 解析四档按钮及其高亮状态 */
     const ratingButtons = () => [...els.answerFeedback.innerHTML.matchAll(/<button[^>]*data-rating="(\d)"[^>]*>/g)]

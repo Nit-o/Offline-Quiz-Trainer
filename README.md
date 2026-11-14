@@ -5,7 +5,7 @@
 An HTML renderer that reads Markdown files and converts them into a quiz.
 
 ##### Standards baseline：
-- HTML Living Standard — Last Updated 20 July 2026
+- HTML Living Standard — Last Updated 14 November 2026
 - ECMAScript 2026（ES2026）
 - CSS Snapshot 2026（含 CSS Color 5）
 - minSdk = 33（Android）
