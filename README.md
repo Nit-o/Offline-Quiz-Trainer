@@ -4,12 +4,6 @@
 
 An HTML renderer that reads Markdown files and converts them into a quiz.
 
-##### Standards baseline：
-- HTML Living Standard — Last Updated 14 November 2026
-- ECMAScript 2026（ES2026）
-- CSS Snapshot 2026（含 CSS Color 5）
-- minSdk = 33（Android）
-
 ## 它能做什么
 
 最开始的目的是用它刷题度过期末。
@@ -190,12 +184,12 @@ README 里显示的版本号不是手写的装饰，而是由测试守住的单�
 |---|---|---|---|
 | [ts-fsrs](https://github.com/open-spaced-repetition/ts-fsrs) | **v6.0.0** | `index.html` 的 `FSRS_TS_VERSION` 常量 | `fsrs_logic_test.cjs` 第 10 节（比对 README）；`fsrs_compare.cjs` 第 8 节（比对官方包版本） |
 | [KaTeX](https://github.com/KaTeX/KaTeX) | **v0.19.1** | `vendor/katex/VERSION` | `fsrs_logic_test.cjs` 第 10 节（比对 README）；`sync-web.cjs` 注入 `__KATEX_VERSION__` 时校验格式 |
-| [Capacitor](https://capacitorjs.com/) | **8.5.2** | `package.json`（`capacitor.config.json` 不写版本） | `sync-web.cjs` 自检 importmap 指向的产物是否齐全 |
+| [Capacitor](https://capacitorjs.com/) | **8.6.2** | `package.json`（`capacitor.config.json` 不写版本） | `sync-web.cjs` 自检 importmap 指向的产物是否齐全 |
 
 Capacitor 是按包各自发版的，`package.json` 里当前声明的版本为：
-`@capacitor/core`/`cli`/`android` **8.5.2**、`@capacitor/filesystem` **8.1.3**、`@capacitor/share` **8.0.2**、
-`@capacitor/synapse` **1.0.4**、`@capgo/capacitor-share-target` **8.0.54**。
-表格里的 8.5.2 指 Capacitor 平台主线（core/cli/android）版本。
+`@capacitor/core`/`cli`/`android` **8.6.2**、`@capacitor/filesystem` **8.1.5**、`@capacitor/share` **8.0.3**、
+`@capacitor/synapse` **1.0.4**、`@capgo/capacitor-share-target` **8.0.68**。
+表格里的 8.6.2 指 Capacitor 平台主线（core/cli/android）版本。
 
 `ts-fsrs` 只用于对拍：`FsrsEngine` 是**离线移植**（不含任何 npm 运行时依赖），
 对拍脚本会把官方包装进 `.tmp-fsrs/`（已 gitignore），永远不会进 `dist/` 或 APK。

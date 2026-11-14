@@ -15,17 +15,17 @@
     "test": "node scripts/smoke_test.cjs && node scripts/fsrs_logic_test.cjs"
   },
   "dependencies": {
-    "@capacitor/core": "^8.5.2",
-    "@capacitor/filesystem": "^8.1.3",
-    "@capacitor/share": "^8.0.2",
+    "@capacitor/core": "^8.6.2",
+    "@capacitor/filesystem": "^8.1.5",
+    "@capacitor/share": "^8.0.3",
     "@capacitor/synapse": "^1.0.4",
-    "@capgo/capacitor-share-target": "^8.0.54",
+    "@capgo/capacitor-share-target": "^8.0.68",
     "com.quiztrainer.folderimport": "file:native-plugins/folder-import",
     "com.quiztrainer.savefile": "file:native-plugins/save-file"
   },
   "devDependencies": {
-    "@capacitor/android": "^8.5.2",
-    "@capacitor/cli": "^8.5.2",
+    "@capacitor/android": "^8.6.2",
+    "@capacitor/cli": "^8.6.2",
     "typescript": "^7.0.2"
   }
 }
