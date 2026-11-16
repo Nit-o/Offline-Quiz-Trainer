@@ -984,6 +984,13 @@ const flush = () => new Promise(r => setTimeout(r, 30));
     assert(ratingBtns[2].accent && ratingBtns[2].pressed, '当前档（良好）高亮且 aria-pressed=true');
     assert(!ratingBtns[0].accent, '非当前档不高亮');
     assert(els.answerFeedback.innerHTML.includes('修改将重新计算下次复习'), '提示重评会重新计算');
+    /* 记录沙箱定时器：验证分钟级学习步「到点才入队」——延迟≈10 分钟的入队定时器是否被排定/取消/触发。
+       包装仍委托真实 setTimeout（其余用例行为不变），仅额外记录；用例末尾恢复真实定时器。 */
+    const realSetTimeout = sandbox.setTimeout, realClearTimeout = sandbox.clearTimeout;
+    const requeueLog = [];
+    sandbox.setTimeout = (cb, delay, ...rest) => { const id = realSetTimeout(cb, delay, ...rest); requeueLog.push({ id, delay, cb, cleared: false }); return id; };
+    sandbox.clearTimeout = (id) => { const e = requeueLog.find(x => x.id === id); if (e) e.cleared = true; return realClearTimeout(id); };
+    const activeRequeueTimer = () => requeueLog.find(e => !e.cleared && e.delay > 300000);
     /* 键盘改评价：1 = 忘记了 → FSRS-7 给出 10 分钟的学习步（未到毕业间隔） */
     dispatchKey('1');
     await flush();
@@ -993,18 +1000,21 @@ const flush = () => new Promise(r => setTimeout(r, 30));
     assert(cardAfter1.dueAt === expect1.dueAt && cardAfter1.dueAt < cardAfter3.dueAt, '改评价后下次复习时间随之重算（更早）');
     assert(/已改为/.test(els.snackbar.textContent), `改评价提示: "${els.snackbar.textContent}"`);
     assert(ratingButtons()[0].accent, '改评价后高亮切到新档位（忘记了）');
-    /* FSRS-7 分钟级语义：10 分钟后再见 → 面板按「分钟后」表述，且本题追加一份到队尾（本次练习内重逢） */
+    /* FSRS-7 分钟级语义：10 分钟后再见 → 面板按「分钟后」表述；副本「到点才入队」，未到点不出现在待答区 */
     assert(cardAfter1.scheduledDays < 1 && Math.abs(cardAfter1.scheduledDays * 1440 - 10) < 1e-6, `复习失败的间隔为 10 分钟（${cardAfter1.scheduledDays} 天）`);
     assert(cardAfter1.state === 3 && cardAfter1.lapses === 1, '复习态 + 忘记了 → 进入重学并计一次遗忘');
     assert(els.answerFeedback.innerHTML.includes('下次复习：10 分钟后'), `下次复习按分钟表述: ${(els.answerFeedback.innerHTML.match(/下次复习：[^<]*/) ?? [''])[0]}`);
-    assert(String(els.totalQ.textContent) === '2' && navButtons() === navBefore + 1, `分钟级学习步把本题追加到队尾（总题数 1→2，导航按钮 +1）: totalQ=${els.totalQ.textContent} nav=${navButtons()}`);
-    /* 再次改评价为「简单」（≥1 天）不会重复追加：队尾只留一份未做的副本 */
+    assert(String(els.totalQ.textContent) === '1' && navButtons() === navBefore, `未到复习时间不追加副本（总题数仍 1，导航不变）: totalQ=${els.totalQ.textContent} nav=${navButtons()}`);
+    const againTimer = activeRequeueTimer();
+    assert(againTimer && Math.abs(againTimer.delay - 600000) < 5000, `已排定 10 分钟后入队的定时器（delay≈600000ms）: ${againTimer && againTimer.delay}`);
+    /* 改评价为「简单」（≥1 天）→ 毕业：取消未到点的入队定时器，待答区仍无副本 */
     dispatchKey('4');
     await flush();
     const cardAfter4 = JSON.parse(store.get('fsrs_cards_v2'))['重评题'];
     const expect4 = cardShape(simEngine.next(baseCard, new Date(cardAfter4.lastReviewAt), 4));
     assert(cardAfter4.stability === expect4.stability && cardAfter4.reps === 4, `改评价为「简单」同样从原始卡重算: ${JSON.stringify(cardAfter4)}`);
-    assert(String(els.totalQ.textContent) === '2' && navButtons() === navBefore + 1, '改回 ≥1 天的档位不再追加副本（去重）');
+    assert(String(els.totalQ.textContent) === '1' && navButtons() === navBefore, '毕业档（≥1 天）不追加副本，待答区仍无副本');
+    assert(againTimer.cleared && !activeRequeueTimer(), '改回毕业档后取消未到点的入队定时器');
     /* 刷新后的「下次复习/用时」面板：档位文案与 due 一致（QuizState 的 rating/nextDue 私有，
        这里用渲染结果验证它确实被同步刷新） */
     assert(els.answerFeedback.innerHTML.includes('已评分「简单」'), `面板显示当前评分: ${els.answerFeedback.innerHTML.slice(0, 200)}`);
@@ -1028,6 +1038,17 @@ const flush = () => new Promise(r => setTimeout(r, 30));
     assert(cardBack3.lastReviewAt >= baseCard.lastReviewAt, 'reps 与 lastReviewAt 由原始卡 + 当前时刻决定');
     /* 答对可改评价；答错同理，且判定仍以原始答案为准 */
     assert(els.answerFeedback.innerHTML.includes('正确'), '改评价不影响对错判定');
+    /* 到点才入队：再评「忘记了」排定 10 分钟定时器，手动触发（模拟到点）后副本才追加到队尾 */
+    dispatchKey('1');
+    await flush();
+    assert(String(els.totalQ.textContent) === '1' && navButtons() === navBefore, '到点前仍不追加副本');
+    const dueTimer = activeRequeueTimer();
+    assert(dueTimer, '再次评「忘记了」重新排定入队定时器');
+    realClearTimeout(dueTimer.id); dueTimer.cleared = true; dueTimer.cb(); /* 模拟 10 分钟到点 */
+    await flush();
+    assert(String(els.totalQ.textContent) === '2' && navButtons() === navBefore + 1, `到点后副本追加到队尾（总题数 1→2，导航 +1）: totalQ=${els.totalQ.textContent} nav=${navButtons()}`);
+    /* 恢复真实定时器，避免影响后续用例 */
+    sandbox.setTimeout = realSetTimeout; sandbox.clearTimeout = realClearTimeout;
 
     console.log('== 19. Timer 自动暂停：答题后停表 / 切题恢复 / 后台不累计 / 重复事件幂等 ==');
     /* 假时钟：Timer 通过全局 performance.now() 取时，替换沙箱里的 performance 即可精确驱动 */

@@ -3432,6 +3432,9 @@ class QuizController {
     /* 重评用的原始卡快照（key = 题干全文）与随机选项顺序由题目对象上的 _order 缓存；
        换题库 / 重新开始 / 导入备份时清空 */
     #fsrsBaseCards = new Map();
+    /* 分钟级学习步的「到点入队」定时器（key = 题干全文）：评分后延迟到 dueAt 才把副本追加到队尾，
+       避免「下次复习：x 分钟后」的题未到点就出现在待答区。换题库 / 重新开始 / 完成练习 / 导入备份时清空 */
+    #fsrsRequeueTimers = new Map();
     /* FSRS 生效条件：总开关开启 + 刷题模式（考试模式不受影响） */
     get #fsrsActive() { return this.#settings.fsrsEnabled && this.#mode === "practice"; }
     get #shuffleOptions() { return this.#settings.shuffleOptions === true; }
@@ -4197,10 +4200,25 @@ class QuizController {
         if (isRelevel) this.#bus.emit("toast:show", { message: `已改为「${FeedbackPanel.RATING_NAMES[rating]}」，下次复习已重新计算` });
     }
 
-    /* 分钟级学习步（<1 天）意味着「本题稍后还要再见」——追加一份到队尾，本次练习内即可重逢，
-       对齐上游 learn 队列；队里已有未做的副本时不重复追加（重评也只保留一份）。 */
+    /* 分钟级学习步（<1 天）意味着「本题稍后还要再见」——但必须等到 dueAt 才入队，
+       否则「下次复习：x 分钟后」的题会未到点就出现在待答区。到点前只排定定时器、不追加；
+       到点后才追加一份到队尾。重评会取消旧定时器并按新档位重排（毕业档 ≥1 天则不再追加）；
+       队里已有未做副本时不重复追加。 */
     #requeueIfNeeded(q, nextCard) {
-        if (nextCard.scheduledDays >= 1 || !this.#quizState) return;
+        if (!this.#quizState) return;
+        this.#cancelRequeue(q.text);
+        if (nextCard.scheduledDays >= 1) return; /* 毕业：本次练习内不再重逢 */
+        for (let i = this.#currentIdx + 1; i < this.#questions.length; i++)
+            if (this.#questions[i].text === q.text && !this.#quizState.get(i).rated) return; /* 已有未做副本 */
+        const dueMs = nextCard.dueAt instanceof Date ? nextCard.dueAt.getTime() : nextCard.dueAt;
+        const delay = Math.max(0, dueMs - Date.now());
+        const id = setTimeout(() => { this.#fsrsRequeueTimers.delete(q.text); this.#appendRequeue(q); }, delay);
+        this.#fsrsRequeueTimers.set(q.text, id);
+    }
+
+    /* 到点追加一份到队尾（导航 +1、总题数 +1），并提示有一题到期可复习 */
+    #appendRequeue(q) {
+        if (!this.#quizState) return;
         for (let i = this.#currentIdx + 1; i < this.#questions.length; i++)
             if (this.#questions[i].text === q.text && !this.#quizState.get(i).rated) return;
         const i = this.#questions.length;
@@ -4208,6 +4226,17 @@ class QuizController {
         this.#quizState.append(i);
         this.#bus.emit("nav:append", { index: i });
         if (this.#els.totalQ) this.#els.totalQ.textContent = String(this.#questions.length);
+        this.#bus.emit("toast:show", { message: "有一题到期，已加入待答区" });
+    }
+
+    #cancelRequeue(text) {
+        const id = this.#fsrsRequeueTimers.get(text);
+        if (id !== undefined) { clearTimeout(id); this.#fsrsRequeueTimers.delete(text); }
+    }
+
+    #clearRequeueTimers() {
+        for (const id of this.#fsrsRequeueTimers.values()) clearTimeout(id);
+        this.#fsrsRequeueTimers.clear();
     }
 
     /* 作答完成后的统一出口：FSRS 刷题按用时与对错直接评分（用时此刻已定），否则渲染评分条。
@@ -4768,8 +4797,9 @@ class QuizController {
         }
         this.#refreshMenuData();
         this.#updateDailyNewEstimate();
-        /* 导入的卡片与当前题库无关：清掉原始卡快照，避免用旧快照重评出新结果 */
+        /* 导入的卡片与当前题库无关：清掉原始卡快照与未到点的入队定时器，避免用旧快照/旧到期时间重评重排 */
         this.#fsrsBaseCards.clear();
+        this.#clearRequeueTimers();
         this.#els.fsrsImportInput.value = "";
         this.#bus.emit("toast:show", { message: `已导入 ${count} 张卡` });
         return true;
@@ -4856,9 +4886,10 @@ class QuizController {
     #invalidateOptionOrders() {
         for (const q of this.#questions) { if (q && q._order) delete q._order; }
     }
-    /* 清空本会话的派生缓存：原始卡快照 + 选项顺序 */
+    /* 清空本会话的派生缓存：原始卡快照 + 选项顺序 + 未到点的入队定时器 */
     #clearSessionCaches() {
         this.#fsrsBaseCards.clear();
+        this.#clearRequeueTimers();
         this.#invalidateOptionOrders();
     }
     /* 答题区可见时按当前题状态定表：
@@ -4893,7 +4924,7 @@ class QuizController {
         this.#bus.emit("progress:update", { answered: this.#questions.length - unanswered, total: this.#questions.length });
     }
 
-    #finish() { this.#timer.stop(); if (this.#autoNextId) { clearTimeout(this.#autoNextId); this.#autoNextId = null; } this.#saveHistory(); this.#showResults(); }
+    #finish() { this.#timer.stop(); if (this.#autoNextId) { clearTimeout(this.#autoNextId); this.#autoNextId = null; } this.#clearRequeueTimers(); this.#saveHistory(); this.#showResults(); }
 
     /* subjective = 已完成的主观题数（计入答题数，不计对错）；objective = 本卷客观题总数（得分分母） */
     #countStats() {
