@@ -1387,7 +1387,7 @@ const flush = () => new Promise(r => setTimeout(r, 30));
     console.log('== 21. 多文件 / 文件夹导入：多选合并、去重、错误聚合、Web 文件夹、原生文件夹 ==');
     const q1 = '## 一、单选题\n\n### 1. 甲题\nA. 选项一\nB. 选项二\n**答案： A**\n';
     const q2 = '## 一、单选题\n\n### 1. 乙题\nA. 选项一\nB. 选项二\n**答案： B**\n';
-    /* ① 一次多选：题量合并，缓存名按路径自然序列出文件名 */
+    /* ① 一次多选：按文件拆分缓存（每个文件一份加载项），文件顺序按路径自然序 */
     els.fileInput.files = [
         { name: '第2章.md', text: async () => q2 },
         { name: '第1章.md', text: async () => q1 },
@@ -1395,7 +1395,9 @@ const flush = () => new Promise(r => setTimeout(r, 30));
     els.fileInput.trigger('change');
     await flush();
     assert(/成功加载 2 题/.test(els.fileStatus.innerText), `多文件合并导入: "${els.fileStatus.innerText}"`);
-    assert(els.bankCacheList.children[0].querySelectorAll('.bank-cache-name')[0].textContent === '第1章.md、第2章.md', '缓存名按文件路径自然排序');
+    assert(/已按文件拆分缓存 2 份/.test(els.fileStatus.innerText), `拆分缓存提示: "${els.fileStatus.innerText}"`);
+    const names = els.bankCacheList.children.slice(0, 2).map(c => c.querySelectorAll('.bank-cache-name')[0].textContent);
+    assert(names[0] === '第2章.md' && names[1] === '第1章.md', `缓存按文件拆分、新的在前（文件按路径自然序保存）: "${names.join('、')}"`);
     /* 同名文件去重：同一文件不重复导入 */
     els.fileInput.files = [
         { name: '第1章.md', text: async () => q1 },
@@ -1426,7 +1428,7 @@ const flush = () => new Promise(r => setTimeout(r, 30));
     els.folderInput.trigger('change');
     await flush();
     assert(els.snackbar.textContent.includes('文件夹中没有题库文件'), `空文件夹提示: "${els.snackbar.textContent}"`);
-    /* ④ 原生文件夹导入（APK）：插件返回文本 → 包成 File 走同一管线；缓存名带文件夹前缀 */
+    /* ④ 原生文件夹导入（APK）：插件返回文本 → 包成 File 走同一管线；缓存按文件拆分、名称去目录前缀 */
     let pickImpl = async () => ({ success: true, folderName: '题库', files: [
         { name: 'b.md', path: '第一章/b.md', text: q2 },
         { name: 'a.md', path: '第一章/a.md', text: q1 },
@@ -1436,7 +1438,8 @@ const flush = () => new Promise(r => setTimeout(r, 30));
     await flush();
     assert(/成功加载 2 题/.test(els.fileStatus.innerText), `原生文件夹导入: "${els.fileStatus.innerText}"`);
     assert(els.snackbar.textContent.includes('已跳过 1 个过大或无法读取的文件'), `原生跳过计数提示: "${els.snackbar.textContent}"`);
-    assert(els.bankCacheList.children[0].querySelectorAll('.bank-cache-name')[0].textContent === 'a.md、b.md', '原生文件夹导入缓存名（去目录前缀、按路径排序）');
+    const nativeNames = els.bankCacheList.children.slice(0, 2).map(c => c.querySelectorAll('.bank-cache-name')[0].textContent);
+    assert(nativeNames[0] === 'b.md' && nativeNames[1] === 'a.md', `原生文件夹导入缓存按文件拆分（去目录前缀、新的在前）: "${nativeNames.join('、')}"`);
     /* 对话框「选择题库文件夹」入口同样路由到原生插件 */
     pickImpl = async () => ({ success: true, files: [{ name: 'c.md', path: 'c.md', text: q1 }] });
     els.importFsrsDialog.showModal();
@@ -1523,7 +1526,7 @@ const flush = () => new Promise(r => setTimeout(r, 30));
         const idx = JSON.parse(store.get('quiz_bank_index'));
         assert(idx.length === CACHE_MAX && idx[0].name === '新题库.md', `导入后仍是 ${CACHE_MAX} 份，新题库在最前`);
         assert(!store.has('quiz_bank_b1') && !idx.some(b => b.id === 'b1'), '最旧的一份连同本体一起移除');
-        assert(els.snackbar.textContent.includes('已自动移除最旧的 1 份缓存'), `淘汰提示: "${els.snackbar.textContent}"`);
+        assert(els.fileStatus.innerText.includes('为腾出空间已移除最旧的 1 份缓存'), `淘汰提示写入状态摘要: "${els.fileStatus.innerText}"`);
         assert(els.bankCacheCount.textContent === `${CACHE_MAX}/${CACHE_MAX}` && els.bankCacheCount.classList.contains('full'), `计数回显并标记已满: "${els.bankCacheCount.textContent}"`);
         assert(els.bankCacheList.children.length === CACHE_MAX, '列表渲染全部缓存条目');
         /* 删除一份后计数回落、full 标记消失 */

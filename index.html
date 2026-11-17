@@ -2022,12 +2022,6 @@ const prepareBankFiles = files => {
     const seen = new Set();
     return Array.from(files).filter(f => { const p = bankPath(f); if (seen.has(p)) return false; seen.add(p); return true; }).sort(byBankPath);
 };
-/* 缓存题库名：多文件时只列前 3 个 + 总数，避免几十个字的名字撑爆缓存列表 */
-const bankCacheName = files => {
-    const names = files.map(f => String(f.name || "").split("/").pop());
-    const head = names.slice(0, 3).join("、");
-    return names.length > 3 ? `${head} 等 ${names.length} 个文件` : head;
-};
 /* KaTeX 离线渲染（vendor/katex）：$...$ / $$...$$ / \(...\) / \[...\]；auto-render 默认忽略 <code>/<pre>，行内代码不受影响；渲染失败保持原文 */
 const MATH_OPTS = { delimiters: [
     { left: "$$", right: "$$", display: true },
@@ -2898,18 +2892,19 @@ class QuestionParser {
     }
     async loadFiles(files) {
         this.errors = [];
+        const perFile = []; /* 按文件分组：多文件导入时缓存逐文件拆分（不合并成一份） */
         const all = [];
         for (const file of files) {
             try {
                 const text = await readFileText(file);
                 const qs = this.parseMarkdown(text, file.name);
                 if (!qs.length) this.errors.push({ file: file.name, error: "无有效题目" });
-                all.push(...qs);
+                else { perFile.push({ file, questions: qs }); all.push(...qs); }
             } catch (e) {
                 this.errors.push({ file: file.name, error: e.message });
             }
         }
-        return { questions: all, errors: this.errors };
+        return { questions: all, perFile, errors: this.errors };
     }
 }
 
@@ -3958,7 +3953,7 @@ class QuizController {
         // Show skeleton if quiz area is already visible (reload scenario).
         if (!this.#els.quizSection.classList.contains("hidden")) this.#showSkeleton();
         try {
-            const { questions, errors } = await this.#parser.loadFiles(fl);
+            const { questions, perFile, errors } = await this.#parser.loadFiles(fl);
             /* 错误信息独立保留，后续成功/过滤提示拼接追加，避免被覆盖。
                多文件导入错误可能很多：只列前 5 条 + 总数，避免状态区被刷屏 */
             const errMsg = errors.length
@@ -3969,9 +3964,20 @@ class QuizController {
                 this.#bus.emit("toast:show", { message: "无有效题目", isError: true });
                 return;
             }
-            /* 解析成功后自动缓存，下次可一键加载（免文件选择器） */
-            const cached = this.#saveToBankCache(questions, bankCacheName(fl));
-            this.#applyQuestions(questions, `成功加载 ${questions.length} 题${subjectiveNote(questions)}${cached ? "，已缓存到本地" : ""}${errMsg ? `；${errMsg}` : ""}`);
+            /* 解析成功后按文件拆分缓存（每个文件一份加载项），下次可单独加载；
+               单文件时保持原语义。失败/无题目的文件不生成缓存条目 */
+            const cachedNote = (() => {
+                if (!perFile.length) return "";
+                const { okCount, total, evicted } = this.#saveToBankCache(perFile.map(({ file, questions }) => ({
+                    name: bankPath(file).split("/").pop() || file.name, questions,
+                })));
+                const parts = [];
+                if (total === 1) { if (okCount) parts.push("已缓存到本地"); }
+                else if (okCount) parts.push(okCount === total ? `已按文件拆分缓存 ${total} 份` : `已缓存 ${okCount}/${total} 份`);
+                if (evicted.length) parts.push(`为腾出空间已移除最旧的 ${evicted.length} 份缓存（最早：「${evicted[0]}」）`);
+                return parts.length ? `，${parts.join("；")}` : "";
+            })();
+            this.#applyQuestions(questions, `成功加载 ${questions.length} 题${subjectiveNote(questions)}${cachedNote}${errMsg ? `；${errMsg}` : ""}`);
         } catch (e) {
             this.#els.fileStatus.innerText = `加载失败：${e?.message || e}`;
             /* 清除失败时残留的骨架屏：恢复上一份题库的渲染 */
@@ -4015,16 +4021,25 @@ class QuizController {
     }
 
     /* 缓存解析结果；配额不足时仅提示，不影响本次使用。
-       份数超上限或空间不足会自动淘汰最旧的缓存，淘汰了就如实告知，不静默丢数据。 */
-    #saveToBankCache(questions, names) {
-        const { ok, evicted } = BankCache.save({
-            id: `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`,
-            name: names, importedAt: Date.now(), count: questions.length, questions,
-        });
+       banks: [{ name, questions }]，多文件导入逐文件各存一份。
+       份数超上限或空间不足会自动淘汰最旧的缓存；淘汰与写入失败不弹 toast
+       （会覆盖导入前刚弹的「已跳过 N 个」等提示），由调用方写进状态摘要常驻可见。 */
+    #saveToBankCache(banks) {
+        const evicted = [];
+        let okCount = 0;
+        for (const bank of banks) {
+            const { ok, evicted: ev } = BankCache.save({
+                id: `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`,
+                name: bank.name, importedAt: Date.now(), count: bank.questions.length, questions: bank.questions,
+            });
+            if (ok) okCount++;
+            evicted.push(...ev);
+        }
         this.#renderBankCache();
-        if (!ok) this.#bus.emit("toast:show", { message: "缓存题库失败（本地存储空间不足），本次仍可使用", isError: true });
-        else if (evicted.length) this.#bus.emit("toast:show", { message: `为腾出空间，已自动移除最旧的 ${evicted.length} 份缓存（最早：「${evicted[0]}」）` });
-        return ok;
+        if (okCount < banks.length) {
+            this.#bus.emit("toast:show", { message: banks.length === 1 ? "缓存题库失败（本地存储空间不足），本次仍可使用" : `有 ${banks.length - okCount} 份题库缓存失败（本地存储空间不足）`, isError: true });
+        }
+        return { okCount, total: banks.length, evicted };
     }
 
     /* 缓存列表渲染：名称 / 题数 / 导入时间 + 加载、删除操作；标题右侧回显「已存/上限」 */
