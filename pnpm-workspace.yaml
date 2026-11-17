@@ -1,0 +1,7 @@
+# pnpm 12 起设置统一收在本文件（package.json 的 pnpm 字段已不再读取）。
+# esbuild 的 postinstall 校验脚本需显式放行，否则 install 直接报 ERR_PNPM_IGNORED_BUILDS。
+# 两个键并存：onlyBuiltDependencies 为旧版（CI 用 pnpm 11.x）兼容写法。
+onlyBuiltDependencies:
+  - esbuild
+allowBuilds:
+  esbuild: true
