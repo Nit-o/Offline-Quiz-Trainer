@@ -603,7 +603,7 @@
             font-weight: 600;
             color: var(--text-muted);
         }
-        /* 已存/上限计数：达到上限时转琥珀色，提示「再导入会挤掉最旧的一份」 */
+        /* 已存份数计数 */
         .bank-cache-count {
             font-variant-numeric: tabular-nums;
             padding: 0 var(--sp-2);
@@ -612,10 +612,9 @@
             background: var(--surface-alt);
             color: var(--text-soft);
             &:empty { display: none; }
-            &.full { color: var(--accent); border-color: var(--accent); }
         }
         .bank-cache-empty { margin: 0; font-size: var(--text-xs); color: var(--text-muted); }
-        /* 上限提高后列表可能有十几条：自身滚动，不把菜单撑成长条 */
+        /* 份数不限，列表可能很长：自身滚动，不把菜单撑成长条 */
         #bankCacheList {
             max-height: 20rem;
             overflow-y: auto;
@@ -1867,7 +1866,8 @@
         "@capacitor/synapse": "./vendor/capacitor/synapse.mjs",
         "@capgo/capacitor-share-target": "./vendor/capacitor/share-target/index.js",
         "com.quiztrainer.savefile": "./vendor/capacitor/save-file/index.js",
-        "com.quiztrainer.folderimport": "./vendor/capacitor/folder-import/index.js"
+        "com.quiztrainer.folderimport": "./vendor/capacitor/folder-import/index.js",
+        "@capgo/capacitor-fast-sql": "./vendor/capacitor/fast-sql/index.js"
     }
 }
 </script>
@@ -1882,7 +1882,7 @@
 globalThis.CapacitorBridge = {
     isNative: () => false,
     Share: null, Filesystem: null, Directory: null, Encoding: null,
-    CapacitorShareTarget: null, SaveFile: null, FolderImport: null, App: null,
+    CapacitorShareTarget: null, SaveFile: null, FolderImport: null, App: null, FastSQL: null,
     ready: Promise.resolve(),
 };
 (async () => {
@@ -1922,6 +1922,15 @@ globalThis.CapacitorBridge = {
             globalThis.CapacitorBridge.App = App ?? null;
         } catch (e) {
             console.warn("[CapacitorBridge] @capacitor/app 不可用（返回键处理降级）:", e?.message || e);
+        }
+        /* @capgo/capacitor-fast-sql 为可选增强（原生 SQLite 持久化）。单独 import：
+           加载失败时仅存储层降级回 localStorage（PersistKV 处理），不影响上面的必需插件。 */
+        const fastSqlPkg = "@capgo/capacitor-fast-sql";
+        try {
+            const { CapgoCapacitorFastSql } = await import(fastSqlPkg);
+            globalThis.CapacitorBridge.FastSQL = CapgoCapacitorFastSql ?? null;
+        } catch (e) {
+            console.warn("[CapacitorBridge] @capgo/capacitor-fast-sql 不可用（存储层降级 localStorage）:", e?.message || e);
         }
     })();
     globalThis.CapacitorBridge.ready = load;
@@ -2140,25 +2149,131 @@ class Timer {
 }
 
 /* ===== Storage ===== */
+/* ===== PersistKV — 统一持久化 KV 后端（Repository 隔离层） =====
+   所有存储类（StorageAdapter / BankCache / FsrsStore）一律经此类读写，不直接触碰 localStorage：
+     - Web / file:// 直开：localStorage（同步语义与旧版完全一致）。
+     - APK 原生：@capgo/capacitor-fast-sql → Android 原生 SQLite（kv 单表，JSON 字符串原样存），
+       摆脱 WebView localStorage 约 5MB 配额；init 时预载全表到内存，读同步走缓存、写异步写穿。
+       存储单元仍是 JSON 字符串（与旧版同构），未来如需规范化表结构只需替换本类实现。
+   首次启动自动把 localStorage 旧数据迁入 SQLite（事务 + 成功后清空旧键），失败则整体降级回
+   localStorage，旧数据原样保留，绝不因迁移失败丢数据。 */
+class PersistKV {
+    static mode = "local";      /* "local" | "sqlite" */
+    static #db = null;
+    static #cache = null;       /* sqlite 模式：全表内存缓存 Map<string,string> */
+    static #queue = Promise.resolve(); /* 写穿队列：串行化落盘，防两次快速写乱序旧值覆盖新值 */
+    static lastMigration = 0;   /* 本次启动迁移的旧数据条数（0=无迁移），供 UI 提示 */
+    static degraded = false;    /* SQLite 初始化失败，已回退 localStorage */
+    /* 异步落盘失败回调（sqlite 模式）：由 UI 注册提示用户，绝不静默丢失 */
+    static onAsyncPersistError = null;
+
+    static isSqlite() { return this.mode === "sqlite"; }
+    static #fast() { return CapacitorBridge.FastSQL; }
+
+    /* 启动时调用一次（App Entry 保证先于任何存储读）。任何失败都降级回 localStorage。 */
+    static async init() {
+        if (this.mode !== "local") return;
+        try {
+            await CapacitorBridge.ready;
+            const fast = this.#fast();
+            if (!CapacitorBridge.isNative() || !fast) return; /* Web / 桥未加载：保持 localStorage */
+            await fast.connect({ database: "quiztrainer" });
+            this.#db = "quiztrainer";
+            await fast.execute({ database: this.#db, statement: "CREATE TABLE IF NOT EXISTS kv (k TEXT PRIMARY KEY NOT NULL, v TEXT NOT NULL)" });
+            const res = await fast.execute({ database: this.#db, statement: "SELECT k, v FROM kv" });
+            this.#cache = new Map((res?.rows || []).map(r => [String(r.k), String(r.v)]));
+            await this.#migrateLegacy();
+            this.mode = "sqlite";
+        } catch (e) {
+            console.warn("[PersistKV] SQLite 初始化失败，回退 localStorage:", e?.message || e);
+            this.degraded = true;
+            this.#cache = null;
+            this.#db = null;
+        }
+    }
+
+    /* 旧数据迁移：quiz_/fsrs_ 前缀的 localStorage 键 → SQLite（单事务），成功后清空旧键。
+       标记键防重复扫描；迁移中途失败旧键未清，下次启动重试。 */
+    static async #migrateLegacy() {
+        if (this.#cache.has("kv_migrated")) return;
+        const legacy = [];
+        try {
+            for (let i = 0; i < localStorage.length; i++) {
+                const k = localStorage.key(i);
+                if (k && /^(quiz_|fsrs_)/.test(k)) legacy.push([k, localStorage.getItem(k)]);
+            }
+        } catch { /* localStorage 不可读：跳过迁移 */ }
+        if (legacy.length) {
+            const fast = this.#fast();
+            await fast.beginTransaction({ database: this.#db });
+            try {
+                for (const [k, v] of legacy) await this.#put(k, v ?? "");
+                await fast.commitTransaction({ database: this.#db });
+            } catch (e) {
+                await fast.rollbackTransaction({ database: this.#db }).catch(() => { /* 回滚失败交由降级 */ });
+                throw e;
+            }
+            for (const [k] of legacy) { try { localStorage.removeItem(k); } catch { /* ignore */ } }
+            this.lastMigration = legacy.length;
+        }
+        await this.#put("kv_migrated", "1");
+    }
+
+    static async #put(k, v) {
+        await this.#fast().execute({ database: this.#db, statement: "INSERT OR REPLACE INTO kv (k, v) VALUES (?, ?)", params: [k, v] });
+        if (this.#cache) this.#cache.set(k, v);
+    }
+
+    static #reportError(k, e) {
+        if (typeof this.onAsyncPersistError === "function") this.onAsyncPersistError(k, e);
+    }
+    static #enqueuePut(k, v) {
+        this.#queue = this.#queue.then(() => this.#put(k, v)).catch(e => this.#reportError(k, e));
+        return this.#queue;
+    }
+    static #enqueueRemove(k) {
+        this.#queue = this.#queue.then(() => this.#fast().execute({ database: this.#db, statement: "DELETE FROM kv WHERE k = ?", params: [k] })).catch(e => this.#reportError(k, e));
+        return this.#queue;
+    }
+
+    /* 同步读：sqlite 模式读预载缓存；local 模式直读 localStorage。
+       init 未完成的窗口期不会出现——App Entry 保证 init 先于任何存储读。 */
+    static get(k) {
+        if (this.isSqlite()) return this.#cache?.has(k) ? this.#cache.get(k) : null;
+        try { return localStorage.getItem(k); } catch { return null; }
+    }
+    /* 同步写：local 模式保持旧语义（配额错误同步抛出，调用方照旧捕获上报）；
+       sqlite 模式更新缓存后异步写穿（失败经 onAsyncPersistError 上报，不阻塞 UI）。 */
+    static set(k, v) {
+        if (this.isSqlite()) { this.#cache?.set(k, v); this.#enqueuePut(k, v); return; }
+        localStorage.setItem(k, v);
+    }
+    static remove(k) {
+        if (this.isSqlite()) { this.#cache?.delete(k); this.#enqueueRemove(k); return; }
+        try { localStorage.removeItem(k); } catch { /* ignore */ }
+    }
+}
+
 const DEFAULTS = Object.freeze({ autoNext: true, autoDelay: 0.5, showHistory: true, shuffleOptions: false, hideMastered: false, fsrsEnabled: false, retention: 0.9, dailyNew: 20, autoRatePreset: "standard", autoRateCustom: false, autoRatePresets: null, statsMode: "cumulative" });
 class StorageAdapter {
     /* Storage write failures (private mode, quota) are surfaced via onPersistError
-       so the UI can notify the user — never silently swallow (Nielsen error prevention). */
+       so the UI can notify the user — never silently swallow (Nielsen error prevention).
+       PersistKV 写穿失败的异步上报见 PersistKV.onAsyncPersistError。 */
     static onPersistError = null;
-    static #g(k, fb) { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : fb; } catch { return fb; } }
+    static #g(k, fb) { try { const v = PersistKV.get(k); return v ? JSON.parse(v) : fb; } catch { return fb; } }
     static #s(k, v) {
-        try { localStorage.setItem(k, JSON.stringify(v)); }
+        try { PersistKV.set(k, JSON.stringify(v)); }
         catch (e) { if (typeof this.onPersistError === "function") this.onPersistError(k, e); }
     }
-    static getHistory() { try { const raw = localStorage.getItem("quiz_history"); return raw ? JSON.parse(raw).filter(e => e?.date && typeof e.score === "number").slice(0, 10) : []; } catch { return []; } }
+    static getHistory() { try { const raw = PersistKV.get("quiz_history"); return raw ? JSON.parse(raw).filter(e => e?.date && typeof e.score === "number").slice(0, 10) : []; } catch { return []; } }
     static saveHistory(h) { this.#s("quiz_history", h.slice(0, 10)); }
     static getSettings() { return { ...DEFAULTS, ...this.#g("quiz_settings", DEFAULTS) }; }
     static saveSettings(s) { this.#s("quiz_settings", s); }
-    static getTheme() { try { return localStorage.getItem("quiz_theme"); } catch { return null; } }
-    static saveTheme(t) { try { localStorage.setItem("quiz_theme", t); } catch (e) { if (typeof this.onPersistError === "function") this.onPersistError("quiz_theme", e); } }
+    static getTheme() { return PersistKV.get("quiz_theme"); }
+    static saveTheme(t) { try { PersistKV.set("quiz_theme", t); } catch (e) { if (typeof this.onPersistError === "function") this.onPersistError("quiz_theme", e); } }
     /* 已掌握列表内存缓存：大题库下避免每次 isMastered() 都重新 JSON.parse 全表 */
     static #masteredCache = null;
-    static getMastered() { if (this.#masteredCache) return this.#masteredCache; try { const raw = localStorage.getItem("quiz_mastered"); this.#masteredCache = raw ? JSON.parse(raw) : []; } catch { this.#masteredCache = []; } return this.#masteredCache; }
+    static getMastered() { if (this.#masteredCache) return this.#masteredCache; try { const raw = PersistKV.get("quiz_mastered"); this.#masteredCache = raw ? JSON.parse(raw) : []; } catch { this.#masteredCache = []; } return this.#masteredCache; }
     static saveMastered(m) { this.#masteredCache = m; this.#s("quiz_mastered", m); }
     static toggleMastered(text) { const list = this.getMastered(); const h = hashStr(text); const idx = list.indexOf(h); idx > -1 ? list.splice(idx, 1) : list.push(h); this.saveMastered(list); return idx === -1; }
     static isMastered(text) { return this.getMastered().includes(hashStr(text)); }
@@ -2196,62 +2311,60 @@ class StorageAdapter {
 
 /* ===== BankCache — 题库本地缓存 =====
    导入解析成功后自动缓存（存解析结果），之后可一键加载，免去在文件选择器中重新查找；
-   沿用 localStorage（与应用现有存储一致）；配额不足时 save 返回 ok:false，由调用方提示降级。 */
+   经 PersistKV 持久化（Web=localStorage，APK=原生 SQLite）；配额不足时 save 返回 ok:false，
+   由调用方提示降级。 */
 class BankCache {
     static #INDEX = "quiz_bank_index";
-    /* 份数上限（唯一来源，UI 计数与提示都读它）。localStorage 约 5MB，
-       真正能存几份取决于题库大小：超出份数或写不下时，都按「最旧的先走」腾空间。 */
-    static MAX = 20;
+    /* 份数不设上限（列表可无限增长，由用户手动删除）。localStorage 约 5MB，
+       空间写不下时按「最旧的先走」腾空间，腾无可腾才失败；
+       SQLite 模式下写入不会抛错，淘汰逻辑天然不触发。 */
     static #key(id) { return `quiz_bank_${id}`; }
     /* 索引只存元信息（名称/时间/题数），题目本体单独存储，列表渲染不读大题量数据 */
-    static list() { try { const raw = localStorage.getItem(this.#INDEX); const arr = raw ? JSON.parse(raw) : []; return Array.isArray(arr) ? arr : []; } catch { return []; } }
-    static get(id) { try { const raw = localStorage.getItem(this.#key(id)); return raw ? JSON.parse(raw) : null; } catch { return null; } }
-    static #drop(id) { try { localStorage.removeItem(this.#key(id)); } catch { /* ignore */ } }
+    static list() { try { const raw = PersistKV.get(this.#INDEX); const arr = raw ? JSON.parse(raw) : []; return Array.isArray(arr) ? arr : []; } catch { return []; } }
+    static get(id) { try { const raw = PersistKV.get(this.#key(id)); return raw ? JSON.parse(raw) : null; } catch { return null; } }
+    static #drop(id) { PersistKV.remove(this.#key(id)); }
     /* 保存一份缓存，返回 { ok, evicted }：evicted 是本次自动移除的缓存名（供调用方如实提示）。
-       顺序很关键：先按上限淘汰、再写本体——旧实现先写后淘汰，
-       新题库会被待淘汰的旧缓存挤占配额而白白失败。 */
-    static save(bank, max = this.MAX) {
-        const limit = Math.max(1, max);
+       淘汰只发生在配额不足时：先写失败再淘汰最旧的，新题库不会被旧缓存挤占份数。 */
+    static save(bank) {
         const evicted = [];
         const list = this.list().filter(b => b.id !== bank.id);
         const dropOldest = () => { const old = list.pop(); if (!old) return false; this.#drop(old.id); evicted.push(old.name); return true; };
-        while (list.length >= limit) dropOldest();
         let payload;
         try { payload = JSON.stringify(bank); } catch { return { ok: false, evicted }; }
         /* 配额不足：继续淘汰最旧的直到写得下；无缓存可淘汰时如实失败（不影响本次练习） */
         let written = false;
         for (;;) {
-            try { localStorage.setItem(this.#key(bank.id), payload); written = true; break; }
+            try { PersistKV.set(this.#key(bank.id), payload); written = true; break; }
             catch { if (!dropOldest()) break; }
         }
         if (!written) {
             /* 腾无可腾仍写不下：已淘汰的条目必须同步剔出索引，否则索引会指向已删掉的本体 */
-            try { localStorage.setItem(this.#INDEX, JSON.stringify(list)); }
+            try { PersistKV.set(this.#INDEX, JSON.stringify(list)); }
             catch {
                 list.forEach(b => this.#drop(b.id));
-                try { localStorage.removeItem(this.#INDEX); } catch { /* ignore */ }
+                try { PersistKV.remove(this.#INDEX); } catch { /* ignore */ }
             }
             return { ok: false, evicted };
         }
         const meta = { id: bank.id, name: bank.name, importedAt: bank.importedAt, count: bank.count };
         try {
-            localStorage.setItem(this.#INDEX, JSON.stringify([meta, ...list]));
+            PersistKV.set(this.#INDEX, JSON.stringify([meta, ...list]));
             return { ok: true, evicted };
         } catch {
             /* 索引写入失败：回滚本体，并把已淘汰条目同步剔出索引，避免留下指向空数据的僵尸条目 */
             this.#drop(bank.id);
-            try { localStorage.setItem(this.#INDEX, JSON.stringify(list)); }
+            try { PersistKV.set(this.#INDEX, JSON.stringify(list)); }
             catch {
                 /* 连精简索引都写不下：整表清空（缓存只是便利副本，题库随时可重新导入） */
                 list.forEach(b => this.#drop(b.id));
-                try { localStorage.removeItem(this.#INDEX); } catch { /* ignore */ }
+                try { PersistKV.remove(this.#INDEX); } catch { /* ignore */ }
             }
             return { ok: false, evicted };
         }
     }
     static remove(id) {
         this.#drop(id);
-        try { localStorage.setItem(this.#INDEX, JSON.stringify(this.list().filter(b => b.id !== id))); } catch { /* ignore */ }
+        try { PersistKV.set(this.#INDEX, JSON.stringify(this.list().filter(b => b.id !== id))); } catch { /* ignore */ }
     }
 }
 
@@ -2636,8 +2749,10 @@ class FsrsEngine {
     #toDate(v) { return v instanceof Date ? v : new Date(v); }
 }
 
-/* ===== FsrsStore — 复习卡持久化（localStorage，题干全文为键） =====
-   用 var（而非 const）声明：便于测试注入预置卡表（vm 沙箱里 var 会挂到 globalThis）。 */
+/* ===== FsrsStore — 复习卡持久化（经 PersistKV，题干全文为键） =====
+   用 var（而非 const）声明：便于测试注入预置卡表（vm 沙箱里 var 会挂到 globalThis）。
+   local 模式写入失败（配额）同步抛错/返回 false，调用方据此阻止评分落空；
+   sqlite 模式写穿异步落盘，失败经 PersistKV.onAsyncPersistError 上报（磁盘配额实际不会触发）。 */
 var FsrsStore = class FsrsStore {
     /* v2：FSRS-7 双轨迹卡表（键名与字段均与旧的 FSRS-6 表不兼容，故直接换键、不迁移） */
     static KEY = "fsrs_cards_v2";
@@ -2646,16 +2761,17 @@ var FsrsStore = class FsrsStore {
     static #cache = null;
     static load() {
         if (this.#cache) return this.#cache;
-        try { const raw = localStorage.getItem(this.KEY); this.#cache = raw ? JSON.parse(raw) : {}; }
+        try { const raw = PersistKV.get(this.KEY); this.#cache = raw ? JSON.parse(raw) : {}; }
         catch { this.#cache = {}; }
         return this.#cache;
     }
-    /* 返回是否真正落盘。失败时同步回滚内存缓存，保证「内存态 == 已持久化态」，
-        避免调用方/UI 以为已保存而重启后丢失（配额耗尽、隐私模式）。 */
+    /* 返回是否真正落盘。同步失败时回滚内存缓存，保证「内存态 == 已持久化态」，
+        避免调用方/UI 以为已保存而重启后丢失（localStorage 配额耗尽、隐私模式）。
+        sqlite 模式写穿失败为异步事件，经 PersistKV.onAsyncPersistError 上报。 */
     static save(map) {
         const prev = this.#cache;
         try {
-            localStorage.setItem(this.KEY, JSON.stringify(map));
+            PersistKV.set(this.KEY, JSON.stringify(map));
             this.#cache = map;
             return true;
         } catch (e) {
@@ -3453,6 +3569,13 @@ class QuizController {
             this.#bus.emit("toast:show", { message: `设置未能持久化（存储不可用或已满）`, isError: true });
             console.warn(`[Storage] persist failed for "${k}"`);
         };
+        // sqlite 写穿失败（磁盘）与迁移结果提示
+        PersistKV.onAsyncPersistError = (k, _e) => {
+            this.#bus.emit("toast:show", { message: `数据未能持久化（磁盘写入失败）`, isError: true });
+            console.warn(`[PersistKV] async persist failed for "${k}"`);
+        };
+        if (PersistKV.degraded) this.#bus.emit("toast:show", { message: "原生数据库不可用，存储已回退 WebView 本地存储（容量受限）", isError: true });
+        else if (PersistKV.lastMigration) this.#bus.emit("toast:show", { message: `已将 ${PersistKV.lastMigration} 项本地数据迁移到 SQLite 存储` });
         this.#refreshMenuData();
         this.#renderBankCache();
     }
@@ -4022,7 +4145,7 @@ class QuizController {
 
     /* 缓存解析结果；配额不足时仅提示，不影响本次使用。
        banks: [{ name, questions }]，多文件导入逐文件各存一份。
-       份数超上限或空间不足会自动淘汰最旧的缓存；淘汰与写入失败不弹 toast
+       空间不足会自动淘汰最旧的缓存；淘汰与写入失败不弹 toast
        （会覆盖导入前刚弹的「已跳过 N 个」等提示），由调用方写进状态摘要常驻可见。 */
     #saveToBankCache(banks) {
         const evicted = [];
@@ -4042,21 +4165,20 @@ class QuizController {
         return { okCount, total: banks.length, evicted };
     }
 
-    /* 缓存列表渲染：名称 / 题数 / 导入时间 + 加载、删除操作；标题右侧回显「已存/上限」 */
+    /* 缓存列表渲染：名称 / 题数 / 导入时间 + 加载、删除操作；标题右侧回显已存份数 */
     #renderBankCache() {
         const listEl = this.#els.bankCacheList; if (!listEl) return;
         const banks = BankCache.list();
         const counter = this.#els.bankCacheCount;
         if (counter) {
-            counter.textContent = `${banks.length}/${BankCache.MAX}`;
-            counter.title = `最多缓存 ${BankCache.MAX} 份；超出份数或本地空间不足时，自动移除最旧的一份`;
-            counter.classList.toggle("full", banks.length >= BankCache.MAX);
+            counter.textContent = `${banks.length} 份`;
+            counter.title = "份数不限，仅受本地存储空间限制；空间不足时自动移除最旧的缓存";
         }
         listEl.replaceChildren();
         if (!banks.length) {
             const empty = document.createElement("p");
             empty.className = "bank-cache-empty";
-            empty.textContent = `暂无缓存：导入 .md 题库后自动缓存（最多 ${BankCache.MAX} 份），下次可直接加载`;
+            empty.textContent = "暂无缓存：导入 .md 题库后自动缓存，下次可直接加载";
             listEl.appendChild(empty);
             return;
         }
@@ -5143,7 +5265,13 @@ class QuizController {
 }
 
 /* ===== App Entry ===== */
-new QuizController();
+/* PersistKV.init 必须先于主逻辑：native 下完成 SQLite 连接/预载/旧数据迁移，
+   controller 构造函数才会同步读到正确数据；Web/file:// 下 init 立即完成，行为与旧版一致。
+   （vm 沙箱按非模块脚本执行不支持顶层 await，故包 IIFE。） */
+(async () => {
+    await PersistKV.init();
+    new QuizController();
+})();
 </script>
 </body>
 </html>

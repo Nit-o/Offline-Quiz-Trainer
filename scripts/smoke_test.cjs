@@ -406,7 +406,7 @@ const flush = () => new Promise(r => setTimeout(r, 30));
     assert(!!loadBtn && !!delBtn, '条目含加载/删除按钮');
     assert(item.querySelectorAll('.bank-cache-name')[0].textContent === 'B类题库_origin.md', '缓存名称正确');
     assert(/1143 题/.test(item.querySelectorAll('.bank-cache-sub')[0].textContent), '缓存题数正确');
-    assert(/^1\/\d+$/.test(els.bankCacheCount.textContent), `缓存计数回显「已存/上限」: "${els.bankCacheCount.textContent}"`);
+    assert(els.bankCacheCount.textContent === '1 份', `缓存计数回显份数: "${els.bankCacheCount.textContent}"`);
 
     console.log('== 3. 从缓存加载（免选文件）==');
     loadBtn.click();
@@ -1459,7 +1459,7 @@ const flush = () => new Promise(r => setTimeout(r, 30));
     assert(els.snackbar.textContent.includes('文件夹导入失败'), `插件异常提示: "${els.snackbar.textContent}"`);
     installBridge({}); /* 复位桥桩 */
 
-    console.log('== 22. 题库缓存上限：份数提高、淘汰最旧、配额腾挪 ==');
+    console.log('== 22. 题库缓存：份数不限、配额腾挪 ==');
     /* BankCache 是纯存储逻辑：抽出类源码注入不同的 localStorage 桩，
        用「总预算」模型模拟真实配额（真实 localStorage 限的是总量，不是单条） */
     const bankSrc = html.slice(html.indexOf('class BankCache {'), html.indexOf('/* ===== FSRS Engine'));
@@ -1481,23 +1481,19 @@ const flush = () => new Promise(r => setTimeout(r, 30));
         };
     };
     const mkBank = (i, chars = 8) => ({ id: `b${i}`, name: `第${i}章.md`, importedAt: i, count: 1, questions: [{ text: 'x'.repeat(chars) }] });
-    const CACHE_MAX = BankCacheClass(makeStore()).MAX;
     const payloadKeys = s => [...s.map.keys()].filter(k => k.startsWith('quiz_bank_') && k !== 'quiz_bank_index');
     const consistent = (C, s) => C.list().every(b => s.map.has(`quiz_bank_${b.id}`)) && payloadKeys(s).length === C.list().length;
 
-    assert(CACHE_MAX === 20, `缓存份数上限由 3 提高到 ${CACHE_MAX}`);
     {
+        /* 份数不限：远超旧上限的份数全部保留，最旧的也不被挤掉 */
         const s = makeStore(); const C = BankCacheClass(s);
+        const N = 30;
         let allOk = true;
-        for (let i = 1; i <= C.MAX; i++) allOk = C.save(mkBank(i)).ok && allOk;
-        assert(allOk && C.list().length === C.MAX && consistent(C, s), `连续存满 ${C.MAX} 份，索引与本体一一对应`);
-        const over = C.save(mkBank(C.MAX + 1));
-        assert(over.ok && over.evicted.length === 1 && over.evicted[0] === '第1章.md', `超出上限时淘汰最旧的一份并如实回报: ${JSON.stringify(over.evicted)}`);
-        assert(C.list().length === C.MAX && C.list()[0].id === `b${C.MAX + 1}` && C.get('b1') === null, '新缓存排在最前，最旧的本体已删除');
-        assert(consistent(C, s), '淘汰后无孤儿数据（索引里的每条都还在）');
-        /* 同 id 覆盖写不占额外名额 */
-        const again = C.save(mkBank(C.MAX + 1));
-        assert(again.ok && again.evicted.length === 0 && C.list().length === C.MAX, '同一份重复保存不挤掉其它缓存');
+        for (let i = 1; i <= N; i++) allOk = C.save(mkBank(i)).ok && allOk;
+        assert(allOk && C.list().length === N && C.get('b1') !== null && consistent(C, s), `份数不限：连续保存 ${N} 份全部成功，最旧的仍保留`);
+        /* 同 id 覆盖写不占额外名额、不淘汰其它缓存 */
+        const again = C.save(mkBank(N));
+        assert(again.ok && again.evicted.length === 0 && C.list().length === N, '同一份重复保存不挤掉其它缓存');
     }
     {
         /* 配额腾挪：预算只够两份大题库，写第三份时必须先挤掉最旧的再写，而不是直接失败 */
@@ -1512,9 +1508,9 @@ const flush = () => new Promise(r => setTimeout(r, 30));
         assert(huge.ok === false && C.get('b99') === null && consistent(C, s), '单份超出全部预算时失败且不残留孤儿数据');
     }
     {
-        /* 真实应用链路：缓存已满 → 再导入一份，自动挤掉最旧的并提示，计数标记为已满 */
+        /* 真实应用链路：已存 20 份 → 再导入一份不淘汰，计数照常增长、无「已满」状态 */
         const seed = [];
-        for (let i = 1; i <= CACHE_MAX; i++) {
+        for (let i = 1; i <= 20; i++) {
             const b = mkBank(i);
             store.set(`quiz_bank_${b.id}`, JSON.stringify(b));
             seed.push({ id: b.id, name: b.name, importedAt: b.importedAt, count: b.count });
@@ -1524,15 +1520,15 @@ const flush = () => new Promise(r => setTimeout(r, 30));
         els.fileInput.trigger('change');
         await flush();
         const idx = JSON.parse(store.get('quiz_bank_index'));
-        assert(idx.length === CACHE_MAX && idx[0].name === '新题库.md', `导入后仍是 ${CACHE_MAX} 份，新题库在最前`);
-        assert(!store.has('quiz_bank_b1') && !idx.some(b => b.id === 'b1'), '最旧的一份连同本体一起移除');
-        assert(els.fileStatus.innerText.includes('为腾出空间已移除最旧的 1 份缓存'), `淘汰提示写入状态摘要: "${els.fileStatus.innerText}"`);
-        assert(els.bankCacheCount.textContent === `${CACHE_MAX}/${CACHE_MAX}` && els.bankCacheCount.classList.contains('full'), `计数回显并标记已满: "${els.bankCacheCount.textContent}"`);
-        assert(els.bankCacheList.children.length === CACHE_MAX, '列表渲染全部缓存条目');
-        /* 删除一份后计数回落、full 标记消失 */
+        assert(idx.length === 21 && idx[0].name === '新题库.md', `导入后 21 份，新题库在最前: ${idx.length}`);
+        assert(store.has('quiz_bank_b1') && idx.some(b => b.id === 'b1'), '份数不限：最旧的未被挤掉');
+        assert(!els.fileStatus.innerText.includes('移除最旧'), `无淘汰提示: "${els.fileStatus.innerText}"`);
+        assert(els.bankCacheCount.textContent === '21 份', `计数回显份数: "${els.bankCacheCount.textContent}"`);
+        assert(els.bankCacheList.children.length === 21, '列表渲染全部缓存条目');
+        /* 删除一份后计数回落 */
         els.bankCacheList.children[0].querySelectorAll('button').find(b => b.dataset.bankDel).click();
         await flush();
-        assert(els.bankCacheCount.textContent === `${CACHE_MAX - 1}/${CACHE_MAX}` && !els.bankCacheCount.classList.contains('full'), '删除后计数与已满标记同步回落');
+        assert(els.bankCacheCount.textContent === '20 份', `删除后计数回落: "${els.bankCacheCount.textContent}"`);
     }
 
     console.log(failed ? `\n${failed} 项失败` : '\n全部通过 ✓');

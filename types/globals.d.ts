@@ -16,6 +16,8 @@ interface CapacitorBridgeShape {
     FolderImport: any;
     /** @capacitor/app（可选增强：返回键） */
     App: any;
+    /** @capgo/capacitor-fast-sql（可选增强：原生 SQLite 持久化） */
+    FastSQL: any;
 }
 declare var CapacitorBridge: CapacitorBridgeShape;
 /** 同名 interface 与上面的 var 声明合并，使 globalThis.CapacitorBridge 也通过类型检查 */

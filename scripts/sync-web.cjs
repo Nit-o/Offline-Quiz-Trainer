@@ -2,11 +2,13 @@
    产物：
      dist/index.html
      dist/vendor/katex/            （KaTeX 离线渲染，原样拷贝）
-     dist/vendor/capacitor/        （@capacitor/core 及各插件的 ESM 运行库，由 index.html 的 importmap 引用）
+     dist/vendor/capacitor/        （@capacitor/core 及各插件的 ESM 运行库，esbuild 打包，
+                                    由 index.html 的 importmap 引用）
    dist/ 由 index.html 中的 <script type="importmap"> 决定解析关系；同步新增依赖时需同步更新 importmap。 */
 'use strict';
 const fs = require('fs');
 const path = require('path');
+const esbuild = require('esbuild');
 
 const ROOT = path.resolve(__dirname, '..');
 const DIST = path.join(ROOT, 'dist');
@@ -65,22 +67,26 @@ distHtml = distHtml.split('__KATEX_VERSION__').join(katexVersion);
 fs.writeFileSync(distHtmlPath, distHtml);
 console.log(`[sync-web] KaTeX 版本注入：${katexVersion}`);
 
-/* 2. Capacitor ESM 运行库（importmap 键 → 文件）：
+/* 2. Capacitor ESM 运行库（importmap 键 → 文件）：esbuild 逐包打包，
+      裸包名（跨包引用，如 filesystem → @capacitor/synapse）保持 external，
+      由 index.html 的 importmap 解析到各自 bundle，保证单例（core 不能被内联两份）：
      "@capacitor/core"                → core/index.js（dist/index.js，单文件自包含 ESM）
-     "@capacitor/share"               → share/index.js（dist/esm/*，含相对动态 import ./web）
-     "@capacitor/filesystem"          → filesystem/index.js（dist/esm/*）
+     "@capacitor/share"               → share/index.js（dist/esm/index.js 打包）
+     "@capacitor/filesystem"          → filesystem/index.js（dist/esm/index.js 打包）
      "@capacitor/synapse"             → synapse.mjs（filesystem 的 ESM 依赖）
-     "@capgo/capacitor-share-target"  → share-target/index.js（dist/esm/*）
-     "com.quiztrainer.savefile"       → save-file/index.js（本地插件 dist/esm/*）
-     "com.quiztrainer.folderimport"   → folder-import/index.js（本地插件 dist/esm/*） */
+     "@capgo/capacitor-share-target"  → share-target/index.js（dist/esm/index.js 打包）
+     "com.quiztrainer.savefile"       → save-file/index.js（本地插件 dist/esm/index.js 打包）
+     "com.quiztrainer.folderimport"   → folder-import/index.js（本地插件 dist/esm/index.js 打包）
+     "@capgo/capacitor-fast-sql"      → fast-sql/index.js（原生 SQLite 持久化，dist/esm/index.js 打包） */
 const entries = [
     ['@capacitor/core', 'dist/index.js', 'core/index.js'],
-    ['@capacitor/share', null, 'share'],
-    ['@capacitor/filesystem', null, 'filesystem'],
+    ['@capacitor/share', null, 'share/index.js'],
+    ['@capacitor/filesystem', null, 'filesystem/index.js'],
     ['@capacitor/synapse', 'dist/synapse.mjs', 'synapse.mjs'],
-    ['@capgo/capacitor-share-target', null, 'share-target'],
-    ['com.quiztrainer.savefile', null, 'save-file'],
-    ['com.quiztrainer.folderimport', null, 'folder-import'],
+    ['@capgo/capacitor-share-target', null, 'share-target/index.js'],
+    ['com.quiztrainer.savefile', null, 'save-file/index.js'],
+    ['com.quiztrainer.folderimport', null, 'folder-import/index.js'],
+    ['@capgo/capacitor-fast-sql', null, 'fast-sql/index.js'],
 ];
 /* 本地插件（package.json 里 file: 协议）解析到仓库原目录：
    pnpm 会把 file: 依赖复制进 node_modules/.pnpm 虚拟存储且不随源码更新，
@@ -95,49 +101,32 @@ const localDeps = (() => {
     } catch { /* 读取失败则全部走 node_modules */ }
     return map;
 })();
+const IMPORTMAP_KEYS = entries.map(([pkg]) => pkg);
 for (const [pkg, file, dst] of entries) {
     const srcDir = localDeps[pkg] || path.join(NM, pkg);
     if (!exists(srcDir)) fail(`缺少依赖 ${pkg}，请先执行 npm install`);
-    if (file) {
-        if (!exists(path.join(srcDir, file))) fail(`${pkg} 缺少 ${file}`);
-        cp(path.join(srcDir, file), path.join(VC, dst));
-    } else {
-        const esm = path.join(srcDir, 'dist', 'esm');
-        if (!exists(esm)) fail(`${pkg} 缺少 dist/esm`);
-        cpDir(esm, path.join(VC, dst));
+    /* dir 条目：包的 ESM 入口 dist/esm/index.js；file 条目：包内指定的产物文件 */
+    const entry = path.join(srcDir, file ?? path.join('dist', 'esm', 'index.js'));
+    if (!exists(entry)) fail(`${pkg} 缺少入口 ${path.relative(srcDir, entry)}`);
+    const outfile = path.join(VC, dst);
+    try {
+        esbuild.buildSync({
+            entryPoints: [entry],
+            outfile,
+            bundle: true,
+            format: 'esm',
+            target: 'es2022',
+            charset: 'utf8',
+            logLevel: 'warning',
+            /* 裸包名一律 external：跨包依赖经 importmap 解析（core 必须全局单例），
+               fast-sql 的 @sqlite.org/sqlite-wasm 仅 Web 平台动态触发，原生不加载 */
+            external: IMPORTMAP_KEYS,
+        });
+    } catch (e) {
+        fail(`esbuild 打包 ${pkg} 失败：${e?.message || e}`);
     }
 }
-
-/* 2.5 原生 ESM 兼容：npm 包的 dist/esm 是 bundler 格式（import './web' 无扩展名），
-   浏览器原生 ESM 不会自动补扩展名，会 404 导致整个 <script type="module"> 失效。
-   此处把 vendor/capacitor/ 下所有相对导入补上 .js 扩展名（缺文件时保持原样并警告）。 */
-const fixEsmSpecifiers = (dir) => {
-    const RE = /(\bfrom\s*|import\(\s*)(['"])(\.{1,2}\/[^'"]*?)\2/g;
-    let fixed = 0, warned = 0;
-    const walk = (d) => {
-        for (const e of fs.readdirSync(d, { withFileTypes: true })) {
-            const p = path.join(d, e.name);
-            if (e.isDirectory()) { walk(p); continue; }
-            if (!/\.(js|mjs)$/.test(e.name)) continue;
-            let src = fs.readFileSync(p, 'utf8');
-            let changed = false;
-            src = src.replace(RE, (m, pre, quote, spec) => {
-                const resolved = path.resolve(path.dirname(p), spec);
-                if (exists(resolved)) return m;                       /* 已是完整文件路径 */
-                let next = null;
-                if (exists(resolved + '.js')) next = spec + '.js';
-                else if (exists(path.join(resolved, 'index.js'))) next = spec + '/index.js';
-                else { warned++; return m; }                          /* 无法解析，保持原样 */
-                changed = true; fixed++;
-                return pre + quote + next + quote;
-            });
-            if (changed) fs.writeFileSync(p, src);
-        }
-    };
-    walk(dir);
-    console.log(`[sync-web] ESM 相对导入补全：${fixed} 处修改${warned ? `，${warned} 处无法解析（保持原样）` : ''}`);
-};
-fixEsmSpecifiers(VC);
+console.log(`[sync-web] esbuild 打包 ${entries.length} 个 Capacitor 模块 → vendor/capacitor/`);
 
 /* 3. 自检：index.html 的 importmap 与产物一一对应 */
 const html = fs.readFileSync(path.join(DIST, 'index.html'), 'utf8');
