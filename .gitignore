@@ -4,9 +4,21 @@
 # 依赖与打包产物（CI/本地生成，不入库；仅忽略根目录，避免误伤 native-plugins 内同名目录）
 /node_modules/
 /dist/
-/android/
 native-plugins/save-file/dist/
 native-plugins/folder-import/dist/
+
+# 忽略 android 下所有内容
+/android/*
+# 放行 android/app 目录以便继续向下匹配
+!/android/app/
+# 忽略 android/app 下所有内容
+/android/app/*
+!/android/app/src/
+/android/app/src/*
+!/android/app/src/main/
+/android/app/src/main/*
+# 保留该文件
+!/android/app/src/main/AndroidManifest.xml
 
 # 构建缓存
 .gradle-home/
