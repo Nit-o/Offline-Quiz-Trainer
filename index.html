@@ -640,9 +640,11 @@
             align-items: center;
             justify-content: space-between;
             gap: var(--sp-3);
-            padding: var(--sp-3) 0;
+            padding: var(--sp-3) var(--sp-2);
+            margin-inline: calc(var(--sp-2) * -1);
             border-bottom: var(--bw-1) solid var(--divider);
             &:last-child { border-bottom: none; }
+            &.is-selected { background: var(--surface-alt); border-radius: var(--radius); }
         }
         .bank-cache-meta { min-width: 0; }
         .bank-cache-name {
@@ -656,6 +658,42 @@
         }
         .bank-cache-sub { display: block; font-size: var(--text-xs); color: var(--text-muted); margin-top: 2px; }
         .bank-cache-actions { display: flex; gap: var(--sp-2); flex-shrink: 0; }
+        /* 复选框 + 行文字区域包在同一个 <label> 里：点击命中区远大于 18px 方框 */
+        .bank-cache-main {
+            display: flex;
+            align-items: center;
+            gap: var(--sp-3);
+            flex: 1;
+            min-width: 0;
+            cursor: pointer;
+        }
+        .bank-cache-check {
+            width: 18px;
+            height: 18px;
+            margin: 0;
+            accent-color: var(--primary);
+            flex-shrink: 0;
+            cursor: pointer;
+        }
+        /* 批量操作条：勾选任一条目后才出现（渐进披露，平时不占位） */
+        .bank-cache-bar {
+            display: flex;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: var(--sp-2);
+            margin: 0 0 var(--sp-2);
+            padding: var(--sp-2) var(--sp-3);
+            border: var(--bw-1) solid var(--divider);
+            border-radius: var(--radius);
+            background: var(--surface-alt);
+            &[hidden] { display: none; }
+        }
+        .bank-cache-bar-count {
+            font-size: var(--text-xs);
+            color: var(--text-soft);
+            font-variant-numeric: tabular-nums;
+            margin-inline-end: auto;
+        }
 
         /* Theme selector — ARIA radiogroup; arrow-key navigation handled in JS. */
         .theme-selector {
@@ -1154,7 +1192,7 @@
             &:focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; }
         }
         .preset-dialog-hint { font-size: var(--text-xs); color: var(--text-muted); margin-block-end: var(--sp-4); }
-        .preset-dialog-body { display: flex; flex-direction: column; gap: var(--sp-4); }
+        .preset-dialog-body { display: flex; flex-direction: column; gap: var(--sp-4); &[hidden] { display: none; } }
         .preset-dialog-body .btn { width: 100%; }
         .preset-row {
             display: flex;
@@ -1180,6 +1218,7 @@
             margin-block-start: var(--sp-5);
             padding-block-start: var(--sp-4);
             border-block-start: 1px solid var(--divider);
+            &[hidden] { display: none; }
         }
 
         /* ============================================================
@@ -1449,19 +1488,23 @@
                             <span class="file-drop-icon" aria-hidden="true"><svg class="icon"><use href="#icon-upload"/></svg></span>
                             <span class="file-drop-text">
                                 <span class="file-drop-title">选择或拖入 Markdown 题库</span>
-                                <span class="file-drop-hint" id="fileHint">选择后自动加载 · 支持多选 .md / .txt 文件或整个文件夹 · 也可从其他应用「分享」题库到本应用直接导入</span>
+                                <span class="file-drop-hint" id="fileHint">点击选择或拖入 .md / .txt 文件（可多选，可拖入整个文件夹）· 选择后自动加载 · 也可从其他应用「分享」题库到本应用直接导入</span>
                             </span>
                         </label>
                         <div class="file-toolbar">
-                            <button type="button" id="clipboardImportBtn" class="btn btn-outline btn-sm" aria-describedby="clipboardImportHint">从剪贴板导入</button>
-                            <button type="button" id="folderImportBtn" class="btn btn-outline btn-sm" aria-describedby="folderImportHint">导入文件夹</button>
-                            <span class="menu-row-hint" id="clipboardImportHint">一键读取剪贴板内容并自动识别类型（Markdown 题库 / FSRS 备份 JSON）；无读取权限时可手动粘贴</span>
-                            <span class="menu-row-hint" id="folderImportHint">递归导入所选文件夹内的全部 .md / .markdown / .txt 题库（含子文件夹）</span>
+                            <button type="button" id="openImportDialogBtn" class="btn btn-outline btn-sm" aria-haspopup="dialog" aria-describedby="importDialogHint">更多导入方式…</button>
+                            <span class="menu-row-hint" id="importDialogHint">文件夹 / 剪贴板 / FSRS 备份 JSON 等其余导入入口统一在导入对话框中</span>
                         </div>
                         <div id="fileList" aria-label="已选文件列表"></div>
                         <div id="fileStatus" class="file-status" role="status" aria-live="polite" aria-busy="false"></div>
                         <div class="bank-cache" aria-label="缓存的题库">
                             <h4 class="bank-cache-title">缓存题库 · 免重新选文件 <span class="bank-cache-count" id="bankCacheCount"></span></h4>
+                            <div class="bank-cache-bar" id="bankCacheBar" hidden>
+                                <span class="bank-cache-bar-count" id="bankCacheSelCount" role="status"></span>
+                                <button type="button" id="bankCacheSelAll" class="btn btn-outline btn-sm" aria-pressed="false">全选</button>
+                                <button type="button" id="bankCacheSelLoad" class="btn btn-sm">加载所选</button>
+                                <button type="button" id="bankCacheSelDel" class="btn btn-outline btn-sm">删除所选</button>
+                            </div>
                             <div id="bankCacheList"></div>
                         </div>
                     </div>
@@ -3552,7 +3595,7 @@ class ToastComponent {
 class QuizController {
     #bus = new EventBus(); #quizState = null; #currentIdx = 0; #mode = "practice";
     #questions = []; #masteredSet = new Set(); #settings; #history;
-    #justAnswered = false; #autoNextId = null;
+    #justAnswered = false; #autoNextId = null; #bankSel = new Set();
     #parser = new QuestionParser(); #timer; #els;
     #fsrsEngine = new FsrsEngine();
     /* 重评用的原始卡快照（key = 题干全文）与随机选项顺序由题目对象上的 _order 缓存；
@@ -3605,13 +3648,15 @@ class QuizController {
             settingsDrawer: $("settingsDrawer"), settingsDrawerBtn: $("settingsDrawerBtn"),
             settingsDrawerClose: $("settingsDrawerClose"), settingsSummary: $("settingsSummary"),
             fileInput: $("fileInput"), folderInput: $("folderInput"), fileDropZone: $("fileDropZone"),
-            clipboardImportBtn: $("clipboardImportBtn"), folderImportBtn: $("folderImportBtn"),
+            openImportDialogBtn: $("openImportDialogBtn"),
             importFsrsDialog: $("importFsrsDialog"), importFsrsDialogClose: $("importFsrsDialogClose"),
             importFsrsDialogTitle: $("importFsrsDialogTitle"), importFsrsDialogHint: $("importFsrsDialogHint"),
             importPanels: document.querySelectorAll("[data-import-panel]"),
             clipboardImportConfirm: $("clipboardImportConfirm"), clipboardImportCancel: $("clipboardImportCancel"),
             clipboardImportText: $("clipboardImportText"),
             fileList: $("fileList"), fileStatus: $("fileStatus"), bankCacheList: $("bankCacheList"), bankCacheCount: $("bankCacheCount"),
+            bankCacheBar: $("bankCacheBar"), bankCacheSelCount: $("bankCacheSelCount"),
+            bankCacheSelAll: $("bankCacheSelAll"), bankCacheSelLoad: $("bankCacheSelLoad"), bankCacheSelDel: $("bankCacheSelDel"),
             modeSection: $("modeSection"), modeCards: document.querySelectorAll(".mode-card"),
             startBtn: $("startQuizBtn"),
             autoNextToggle: $("autoNextToggle"), autoNextDelay: $("autoNextDelay"),
@@ -3696,13 +3741,12 @@ class QuizController {
         this.#els.startBtn.addEventListener("click", () => this.#start());
         this.#els.fileInput.addEventListener("change", () => this.#onFileSelected());
         this.#els.folderInput?.addEventListener("change", () => this.#onFolderSelected());
-        this.#els.folderImportBtn?.addEventListener("click", () => this.#importFolder());
-        /* 导入入口（合并）：
-           - 题库文件选择（可多选）/ 文件夹 / 拖放 → 顶部拖放区与「导入文件夹」按钮
-           - 剪贴板 → 顶部「从剪贴板导入」按钮：先直接读，读不到才弹同一个对话框的粘贴面板
-           - FSRS 备份 → 「复习数据」区的「导入备份」，打开同一对话框的合并面板 */
-        this.#els.clipboardImportBtn?.addEventListener("click", () => this.#onClipboardImport());
-        this.#els.importFsrsBtn?.addEventListener("click", () => this.#openImportDialog("merge"));
+        /* 导入入口唯一化：
+           - 拖放区 = 题库文件的快捷路径（点击选择 / 拖入文件或文件夹，自动加载）
+           - 「更多导入方式…」= 统一导入对话框（题库文件 / 文件夹 / 剪贴板 / FSRS 备份）
+           - 「复习数据」区的「导入备份」直接弹 .json 选择器，不绕对话框 */
+        this.#els.openImportDialogBtn?.addEventListener("click", () => this.#openImportDialog("merge"));
+        this.#els.importFsrsBtn?.addEventListener("click", () => this.#els.fsrsImportInput?.click());
         this.#els.importFsrsDialog?.addEventListener("click", e => {
             const action = e.target?.closest?.("[data-import-action]")?.dataset?.importAction;
             if (action) { this.#onImportAction(action); return; }
@@ -3814,6 +3858,23 @@ class QuizController {
             const delBtn = e.target.closest("[data-bank-del]");
             if (delBtn) this.#removeCachedBank(delBtn.dataset.bankDel);
         });
+        // 缓存题库批量选择：复选框勾选 → 更新行选中态与批量操作条
+        this.#els.bankCacheList?.addEventListener("change", e => {
+            const check = e.target.closest?.("[data-bank-check]");
+            if (!check) return;
+            if (check.checked) this.#bankSel.add(check.dataset.bankCheck); else this.#bankSel.delete(check.dataset.bankCheck);
+            check.closest(".bank-cache-item")?.classList.toggle("is-selected", check.checked);
+            this.#updateBankCacheBar();
+        });
+        this.#els.bankCacheSelAll?.addEventListener("click", () => {
+            const banks = BankCache.list();
+            if (banks.length && banks.every(b => this.#bankSel.has(b.id))) this.#bankSel.clear();
+            else banks.forEach(b => this.#bankSel.add(b.id));
+            this.#syncBankCacheChecks();
+            this.#updateBankCacheBar();
+        });
+        this.#els.bankCacheSelLoad?.addEventListener("click", () => this.#loadSelectedBanks());
+        this.#els.bankCacheSelDel?.addEventListener("click", () => this.#removeSelectedBanks());
         // 菜单打开时刷新复习数据摘要与数据统计（<details> toggle 事件）
         this.#els.menuPanel?.addEventListener("toggle", () => { this.#refreshMenuData(); });
         /* 主题抽屉：入口在菜单；×/ESC/点击遮罩关闭 */
@@ -4180,7 +4241,8 @@ class QuizController {
         return { okCount, total: banks.length, evicted };
     }
 
-    /* 缓存列表渲染：名称 / 题数 / 导入时间 + 加载、删除操作；标题右侧回显已存份数 */
+    /* 缓存列表渲染：复选框 + 名称 / 题数 / 导入时间 + 加载、删除操作；
+       勾选进入批量模式（操作条出现），标题右侧回显已存份数 */
     #renderBankCache() {
         const listEl = this.#els.bankCacheList; if (!listEl) return;
         const banks = BankCache.list();
@@ -4189,6 +4251,10 @@ class QuizController {
             counter.textContent = `${banks.length} 份`;
             counter.title = "份数不限，仅受本地存储空间限制；空间不足时自动移除最旧的缓存";
         }
+        /* 剔除已不存在的选择（条目被删除 / 自动淘汰后保持状态一致） */
+        const valid = new Set(banks.map(b => b.id));
+        for (const id of [...this.#bankSel]) if (!valid.has(id)) this.#bankSel.delete(id);
+        this.#updateBankCacheBar();
         listEl.replaceChildren();
         if (!banks.length) {
             const empty = document.createElement("p");
@@ -4199,21 +4265,90 @@ class QuizController {
         }
         banks.forEach(b => {
             const item = document.createElement("div"); item.className = "bank-cache-item";
+            if (this.#bankSel.has(b.id)) item.classList.add("is-selected");
+            const main = document.createElement("label"); main.className = "bank-cache-main";
+            const check = document.createElement("input");
+            check.type = "checkbox"; check.className = "bank-cache-check";
+            check.dataset.bankCheck = b.id;
+            check.checked = this.#bankSel.has(b.id);
+            check.setAttribute("aria-label", `选择「${b.name}」`);
             const meta = document.createElement("div"); meta.className = "bank-cache-meta";
             const name = document.createElement("span"); name.className = "bank-cache-name";
             name.textContent = b.name; name.title = b.name;
             const sub = document.createElement("span"); sub.className = "bank-cache-sub";
             sub.textContent = `${b.count} 题 · ${new Date(b.importedAt).toLocaleString()}`;
             meta.append(name, sub);
+            main.append(check, meta);
             const actions = document.createElement("div"); actions.className = "bank-cache-actions";
             const load = document.createElement("button");
             load.type = "button"; load.className = "btn btn-sm"; load.dataset.bankLoad = b.id; load.textContent = "加载";
             const del = document.createElement("button");
             del.type = "button"; del.className = "btn btn-outline btn-sm"; del.dataset.bankDel = b.id; del.textContent = "删除";
             actions.append(load, del);
-            item.append(meta, actions);
+            item.append(main, actions);
             listEl.appendChild(item);
         });
+    }
+
+    /* 批量操作条：仅在勾选 ≥1 项时显示；「全选」在全部勾选时变为「全不选」 */
+    #updateBankCacheBar() {
+        const bar = this.#els.bankCacheBar; if (!bar) return;
+        const total = BankCache.list().length;
+        const sel = this.#bankSel.size;
+        bar.hidden = sel === 0;
+        if (this.#els.bankCacheSelCount) this.#els.bankCacheSelCount.textContent = `已选 ${sel} 份`;
+        const all = this.#els.bankCacheSelAll;
+        if (all) {
+            const allSel = total > 0 && sel === total;
+            all.textContent = allSel ? "全不选" : "全选";
+            all.setAttribute("aria-pressed", String(allSel));
+        }
+    }
+
+    #syncBankCacheChecks() {
+        this.#els.bankCacheList?.querySelectorAll("[data-bank-check]").forEach(check => {
+            check.checked = this.#bankSel.has(check.dataset.bankCheck);
+            check.closest(".bank-cache-item")?.classList.toggle("is-selected", check.checked);
+        });
+    }
+
+    #clearBankSel() {
+        this.#bankSel.clear();
+        this.#syncBankCacheChecks();
+        this.#updateBankCacheBar();
+    }
+
+    /* 批量加载：按导入时间升序合并所选题库为一次加载，走与文件导入相同的 #applyQuestions 管线 */
+    #loadSelectedBanks() {
+        const banks = BankCache.list().filter(b => this.#bankSel.has(b.id)).sort((a, b) => a.importedAt - b.importedAt);
+        if (!banks.length) { this.#bus.emit("toast:show", { message: "请先勾选要加载的缓存题库", isError: true }); return; }
+        const loaded = [];
+        let failed = 0;
+        for (const meta of banks) {
+            const bank = BankCache.get(meta.id);
+            if (bank && Array.isArray(bank.questions) && bank.questions.length) loaded.push(bank);
+            else failed++;
+        }
+        if (failed) {
+            this.#renderBankCache();
+            this.#bus.emit("toast:show", { message: `${failed} 份缓存已失效，已跳过`, isError: true });
+        }
+        if (!loaded.length) return;
+        const questions = loaded.flatMap(b => b.questions);
+        this.#timer.stop(); this.#timer.reset();
+        this.#clearBankSel();
+        this.#applyQuestions(questions, `已从缓存加载 ${questions.length} 题（合并 ${loaded.length} 份）${subjectiveNote(questions)}`);
+    }
+
+    #removeSelectedBanks() {
+        const banks = BankCache.list().filter(b => this.#bankSel.has(b.id));
+        if (!banks.length) { this.#bus.emit("toast:show", { message: "请先勾选要删除的缓存题库", isError: true }); return; }
+        const total = banks.reduce((s, b) => s + b.count, 0);
+        if (!confirm(`删除所选 ${banks.length} 份缓存题库（共 ${total} 题）？`)) return;
+        banks.forEach(b => BankCache.remove(b.id));
+        this.#clearBankSel();
+        this.#renderBankCache();
+        this.#bus.emit("toast:show", { message: `已删除 ${banks.length} 份缓存题库` });
     }
 
     /* 从缓存一键加载：跳过文件选择与解析（同步读取，无加载闪烁） */

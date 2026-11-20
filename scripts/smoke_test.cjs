@@ -126,8 +126,9 @@ class El {
 const els = {};
 const collections = { '.theme-option': [], '.mode-card': [], '.preset-row': [], '.swipe-indicator.left': [], '.swipe-indicator.right': [], '[data-import-panel]': [] };
 const byId = [
-    'menuPanel','fileInput','folderInput','folderImportBtn','fileDropZone','fileList','fileStatus','bankCacheList','bankCacheCount','modeSection','startQuizBtn',
-    'clipboardImportBtn','importFsrsDialog','importFsrsDialogClose','importFsrsDialogTitle','importFsrsDialogHint',
+    'menuPanel','fileInput','folderInput','openImportDialogBtn','fileDropZone','fileList','fileStatus','bankCacheList','bankCacheCount','modeSection','startQuizBtn',
+    'bankCacheBar','bankCacheSelCount','bankCacheSelAll','bankCacheSelLoad','bankCacheSelDel',
+    'importFsrsDialog','importFsrsDialogClose','importFsrsDialogTitle','importFsrsDialogHint',
     'importFileBtn','importFolderBtn','importClipboardBtn','importBackupBtn',
     'clipboardImportText','clipboardImportConfirm','clipboardImportCancel',
     'shuffleOptionsToggle',
@@ -557,7 +558,7 @@ const flush = () => new Promise(r => setTimeout(r, 30));
     const clipMd = '## 一、单选题\n\n### 1. 剪贴板题\nA. 甲\nB. 乙\n**答案： A**\n';
     /* ① 读取被拒 → 同一个对话框切到「手动粘贴」面板（Android WebView 无 readText 权限） */
     readTextImpl = async () => { throw new Error('NotAllowedError'); };
-    els.clipboardImportBtn.trigger('click');
+    els.importClipboardBtn.trigger('click', { target: els.importClipboardBtn });
     await flush();
     assert(els.importFsrsDialog.open, '「从剪贴板导入」打开统一导入对话框');
     assert(importPanel('merge').hidden && !importPanel('paste').hidden, '读取被拒 → 切到手动粘贴面板');
@@ -569,7 +570,7 @@ const flush = () => new Promise(r => setTimeout(r, 30));
     assert(!els.importFsrsDialog.open, '导入后关闭粘贴对话框');
     assert(/成功加载 1 题/.test(els.fileStatus.innerText), `手动粘贴 Markdown 导入: "${els.fileStatus.innerText}"`);
     /* ③ 弹窗里空内容 → 明确提示，不误报“无有效题目”，且对话框保持打开 */
-    els.clipboardImportBtn.trigger('click');
+    els.importClipboardBtn.trigger('click', { target: els.importClipboardBtn });
     await flush();
     els.clipboardImportText.value = '   \n  ';
     els.clipboardImportConfirm.trigger('click');
@@ -579,27 +580,29 @@ const flush = () => new Promise(r => setTimeout(r, 30));
     assert(!els.importFsrsDialog.open, '取消关闭粘贴对话框');
     /* ④ 剪贴板可直接读取：Markdown 一键导入（不弹粘贴面板） */
     readTextImpl = async () => clipMd;
-    els.clipboardImportBtn.trigger('click');
+    els.importClipboardBtn.trigger('click', { target: els.importClipboardBtn });
     await flush();
     assert(!els.importFsrsDialog.open, '可读取剪贴板时不留对话框');
     assert(/成功加载 1 题/.test(els.fileStatus.innerText), `剪贴板 Markdown 一键导入: "${els.fileStatus.innerText}"`);
-    /* ⑤ 合并入口：开启随机选项排列时的入口也不影响路由；三个动作分别触发对应管线 */
-    els.importFsrsBtn.trigger('click');
-    await flush();
-    assert(els.importFsrsDialog.open && !importPanel('merge').hidden, '「导入备份」打开同一个合并入口面板');
+    /* ⑤ 导入入口唯一化：「导入备份」直接调起备份文件选择器；「更多导入方式…」打开统一对话框合并面板 */
     let fileInputClicks = 0, backupInputClicks = 0;
     /* 只计数不转发：模块调用 input.click() 后若再走一次桩自身的 click 会重复计数 */
     els.fileInput.click = () => { fileInputClicks++; };
     els.fsrsImportInput.click = () => { backupInputClicks++; };
+    els.importFsrsBtn.trigger('click');
+    assert(backupInputClicks === 1, '「导入备份」直接调起备份文件选择器');
+    els.openImportDialogBtn.trigger('click');
+    await flush();
+    assert(els.importFsrsDialog.open && !importPanel('merge').hidden, '「更多导入方式…」打开统一导入对话框');
     els.importFileBtn.trigger('click', { target: els.importFileBtn });
     assert(fileInputClicks === 1 && !els.importFsrsDialog.open, '「选择题库文件」关闭对话框并调起题库文件选择器');
-    els.importFsrsBtn.trigger('click');
+    els.openImportDialogBtn.trigger('click');
     await flush();
     els.importBackupBtn.trigger('click', { target: els.importBackupBtn });
-    assert(backupInputClicks === 1 && fileInputClicks === 1, `「导入 FSRS 备份」调起备份文件选择器（复用同一对话框）: file=${fileInputClicks} backup=${backupInputClicks}`);
+    assert(backupInputClicks === 2 && fileInputClicks === 1, `「导入 FSRS 备份」调起备份文件选择器: file=${fileInputClicks} backup=${backupInputClicks}`);
     /* ⑥ 合并入口里的「从剪贴板导入」：读取成功 → 关闭对话框并导入 */
     readTextImpl = async () => clipMd;
-    els.importFsrsBtn.trigger('click');
+    els.openImportDialogBtn.trigger('click');
     await flush();
     els.importClipboardBtn.trigger('click', { target: els.importClipboardBtn });
     await flush();
@@ -609,19 +612,19 @@ const flush = () => new Promise(r => setTimeout(r, 30));
     const card = { dueAt: Date.now() + 86400000, lastReviewAt: Date.now(), stability: 2.5, stabilityFast: 2, difficulty: 5, state: 2, reps: 1, lapses: 0, scheduledDays: 1, learningStep: 0, scheduleStatus: 'review' };
     const backup = JSON.stringify({ app: 'Offline-Quiz-Trainer', kind: 'fsrs-cards', version: 1, cards: { '剪贴板题': card, '坏卡': { dueAt: 'nope' } } });
     readTextImpl = async () => backup;
-    els.clipboardImportBtn.trigger('click');
+    els.importClipboardBtn.trigger('click', { target: els.importClipboardBtn });
     await flush();
     assert(/已导入 2 张卡/.test(els.snackbar.textContent), `剪贴板 FSRS 备份路由正确: "${els.snackbar.textContent}"`);
     assert(JSON.parse(store.get('fsrs_cards_v2'))['剪贴板题']?.stability === 2.5, 'FSRS 备份写入 v2 卡表（原样保留，含无法解析的坏卡）');
     assert(!store.has('fsrs_cards_v1'), '不再读写 FSRS-6 时代的 fsrs_cards_v1');
     /* ⑧ 以 { 开头但 JSON 无效 → 明确提示（不静默按 Markdown 处理） */
     readTextImpl = async () => '{"kind":"fsrs-cards", bad json';
-    els.clipboardImportBtn.trigger('click');
+    els.importClipboardBtn.trigger('click', { target: els.importClipboardBtn });
     await flush();
     assert(/JSON 格式无效/.test(els.snackbar.textContent), `无效 JSON 明确提示: "${els.snackbar.textContent}"`);
     /* ⑨ 合法 JSON 但不是备份（无 cards）→ 明确提示，不落进 Markdown 解析 */
     readTextImpl = async () => '{"foo":"bar","n":1}';
-    els.clipboardImportBtn.trigger('click');
+    els.importClipboardBtn.trigger('click', { target: els.importClipboardBtn });
     await flush();
     assert(/未找到有效的卡片表/.test(els.snackbar.textContent), `非备份 JSON 明确提示: "${els.snackbar.textContent}"`);
     readTextImpl = async () => { throw new Error('NotAllowedError'); }; /* 复位 */
@@ -1352,6 +1355,10 @@ const flush = () => new Promise(r => setTimeout(r, 30));
        裸题号「1.」、一行多个选项「A.润 B.漂 C.水飞」、组末合并答案「1.B 2.E」、
        合并且被版面切断的「答案分析：…；水火 / 共制法…」，以及填空/简答/论述三种主观题。 */
     const bankName = '第三章 中药的炮制.md';
+    /* 题库文件属用户本地数据、不入库：缺失时跳过整块回归（其余用例不依赖它） */
+    if (!fs.existsSync(`doc/${bankName}`)) {
+        console.log('--（跳过）真实题库回归：doc/第三章 中药的炮制.md 不在本机 --');
+    } else {
     const bankText = fs.readFileSync(`doc/${bankName}`, 'utf8');
     const bp = new QuestionParser();
     const bq = bp.parseMarkdown(bankText, bankName);
@@ -1383,6 +1390,7 @@ const flush = () => new Promise(r => setTimeout(r, 30));
     els.startQuizBtn.click();
     await flush();
     assert(String(els.totalQ.textContent) === '39', `原始题库开卷总题数 39: ${els.totalQ.textContent}`);
+    } /* 真实题库回归块结束 */
 
     console.log('== 21. 多文件 / 文件夹导入：多选合并、去重、错误聚合、Web 文件夹、原生文件夹 ==');
     const q1 = '## 一、单选题\n\n### 1. 甲题\nA. 选项一\nB. 选项二\n**答案： A**\n';
@@ -1434,7 +1442,8 @@ const flush = () => new Promise(r => setTimeout(r, 30));
         { name: 'a.md', path: '第一章/a.md', text: q1 },
     ], skipped: 1, truncated: false });
     installBridge({ FolderImport: { pickFolder: async opts => pickImpl(opts) } });
-    els.folderImportBtn.trigger('click');
+    els.importFsrsDialog.showModal();
+    els.importFolderBtn.trigger('click', { target: els.importFolderBtn });
     await flush();
     assert(/成功加载 2 题/.test(els.fileStatus.innerText), `原生文件夹导入: "${els.fileStatus.innerText}"`);
     assert(els.snackbar.textContent.includes('已跳过 1 个过大或无法读取的文件'), `原生跳过计数提示: "${els.snackbar.textContent}"`);
@@ -1449,15 +1458,45 @@ const flush = () => new Promise(r => setTimeout(r, 30));
     /* 用户取消 → 静默，不改动状态、不提示错误 */
     pickImpl = async () => ({ success: false, cancelled: true });
     const statusBefore = els.fileStatus.innerText;
-    els.folderImportBtn.trigger('click');
+    els.importFsrsDialog.showModal();
+    els.importFolderBtn.trigger('click', { target: els.importFolderBtn });
     await flush();
     assert(els.fileStatus.innerText === statusBefore, '取消文件夹选择时状态不变');
     /* 插件异常（如无系统选择器）→ 明确失败提示 */
     pickImpl = async () => { throw new Error('no picker'); };
-    els.folderImportBtn.trigger('click');
+    els.importFsrsDialog.showModal();
+    els.importFolderBtn.trigger('click', { target: els.importFolderBtn });
     await flush();
     assert(els.snackbar.textContent.includes('文件夹导入失败'), `插件异常提示: "${els.snackbar.textContent}"`);
     installBridge({}); /* 复位桥桩 */
+
+    console.log('== 21.5 缓存题库批量选择：勾选 → 全选 / 批量加载 / 批量删除 ==');
+    /* 此时节前面用例已累积多份缓存（各若干题，新的在前），份数以列表实况为准 */
+    const bankTotal = els.bankCacheList.children.length;
+    assert(bankTotal >= 2 && els.bankCacheBar.hidden, '未勾选时批量操作条隐藏');
+    const bankChecks = () => els.bankCacheList.children.map(item => item.querySelector('[data-bank-check]'));
+    /* 真实浏览器里点击复选框先更新 checked 再派发 change，桩需手动同步 */
+    bankChecks()[0].checked = true;
+    els.bankCacheList.trigger('change', { target: bankChecks()[0] });
+    assert(!els.bankCacheBar.hidden && els.bankCacheSelCount.textContent === '已选 1 份', `勾选后操作条出现: "${els.bankCacheSelCount.textContent}"`);
+    assert(els.bankCacheList.children[0].classList.contains('is-selected'), '勾选行有选中态');
+    bankChecks()[1].checked = true;
+    els.bankCacheList.trigger('change', { target: bankChecks()[1] });
+    assert(els.bankCacheSelCount.textContent === '已选 2 份', `继续勾选计数正确: "${els.bankCacheSelCount.textContent}"`);
+    els.bankCacheSelAll.trigger('click');
+    assert(els.bankCacheSelCount.textContent === `已选 ${bankTotal} 份` && els.bankCacheSelAll.textContent === '全不选', `全选: "${els.bankCacheSelCount.textContent}" / "${els.bankCacheSelAll.textContent}"`);
+    /* 批量加载：全部按导入时间升序合并为一次加载，走 #applyQuestions 管线 */
+    els.bankCacheSelLoad.trigger('click');
+    await flush();
+    assert(new RegExp(`已从缓存加载 \\d+ 题（合并 ${bankTotal} 份）`).test(els.fileStatus.innerText), `批量加载合并提示: "${els.fileStatus.innerText}"`);
+    assert(els.bankCacheBar.hidden, '批量加载后清空选择、操作条隐藏');
+    /* 批量删除：确认后移除所选项 */
+    bankChecks()[0].checked = true;
+    els.bankCacheList.trigger('change', { target: bankChecks()[0] });
+    els.bankCacheSelDel.trigger('click');
+    await flush();
+    assert(els.snackbar.textContent.includes('已删除 1 份缓存题库'), `批量删除提示: "${els.snackbar.textContent}"`);
+    assert(els.bankCacheList.children.length === bankTotal - 1 && els.bankCacheBar.hidden, '删除后列表与操作条状态正确');
 
     console.log('== 22. 题库缓存：份数不限、配额腾挪 ==');
     /* BankCache 是纯存储逻辑：抽出类源码注入不同的 localStorage 桩，
