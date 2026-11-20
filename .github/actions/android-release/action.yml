@@ -46,7 +46,10 @@ outputs:
 runs:
   using: composite
   steps:
-    # android/ 在 .gitignore 中，CI 每次都是从零生成，故所有原生改动必须能在补丁里复现
+    # android/ 除入库的 AndroidManifest.xml（零权限定制）外均为 CI 现场生成：
+    # cap add 检测到 ./android 已存在会直接报错，故先清掉 checkout 带来的残留目录；
+    # 生成模板后恢复入库 manifest —— patch-android 见 share-target 标记会自动跳过注入，
+    # INTERNET 的 tools:node="remove" 等手工定制因此得以保留。
     - name: 安装依赖
       shell: bash
       run: pnpm install --frozen-lockfile
@@ -61,7 +64,10 @@ runs:
 
     - name: 添加 Android 平台
       shell: bash
-      run: pnpm run cap add android
+      run: |
+        rm -rf android
+        pnpm run cap add android
+        git checkout -- android/app/src/main/AndroidManifest.xml
 
     - name: 解析版本号
       id: ver
