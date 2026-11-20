@@ -12,6 +12,18 @@
          本页是单文件内联架构，故 script/style 必须保留 'unsafe-inline'（内联 <style> 与内联 module script）；
          将来把 CSS/JS 外提为文件后，应改为 'self' + nonce。font-src 覆盖 KaTeX 的 60 个 woff2。 -->
     <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data: blob:; connect-src 'self'; base-uri 'none'; form-action 'none'; object-src 'none'">
+    <!-- 首帧防闪烁：主题原本由 ThemeManager 在 PersistKV.init 之后才设置，系统深色模式会先看到浅色再跳变。
+         此处在 <style> 渲染前同步应用已保存主题。ui_theme 为镜像键（不以 quiz_/fsrs_ 开头，迁移不会带走）：
+         APK 上 quiz_theme 迁入 SQLite 后 localStorage 首帧读不到，镜像键兜底。 -->
+    <script>
+        (function () {
+            var t = null;
+            try { t = localStorage.getItem("ui_theme") || localStorage.getItem("quiz_theme"); } catch (e) { /* ignore */ }
+            if (t !== "light" && t !== "dark" && t !== "oled")
+                t = matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+            document.documentElement.setAttribute("data-theme", t);
+        })();
+    </script>
     <!-- KaTeX __KATEX_VERSION__（本地 vendor/katex，完全离线渲染 $...$ / $$...$$ 数学公式；MIT License）
          版本号由 vendor/katex/VERSION 单一来源提供，构建时由 scripts/sync-web.cjs 注入 -->
     <link rel="stylesheet" href="vendor/katex/katex.min.css">
@@ -2270,7 +2282,10 @@ class StorageAdapter {
     static getSettings() { return { ...DEFAULTS, ...this.#g("quiz_settings", DEFAULTS) }; }
     static saveSettings(s) { this.#s("quiz_settings", s); }
     static getTheme() { return PersistKV.get("quiz_theme"); }
-    static saveTheme(t) { try { PersistKV.set("quiz_theme", t); } catch (e) { if (typeof this.onPersistError === "function") this.onPersistError("quiz_theme", e); } }
+    static saveTheme(t) {
+        try { localStorage.setItem("ui_theme", t); } catch { /* 镜像失败不影响主存储 */ }
+        try { PersistKV.set("quiz_theme", t); } catch (e) { if (typeof this.onPersistError === "function") this.onPersistError("quiz_theme", e); }
+    }
     /* 已掌握列表内存缓存：大题库下避免每次 isMastered() 都重新 JSON.parse 全表 */
     static #masteredCache = null;
     static getMastered() { if (this.#masteredCache) return this.#masteredCache; try { const raw = PersistKV.get("quiz_mastered"); this.#masteredCache = raw ? JSON.parse(raw) : []; } catch { this.#masteredCache = []; } return this.#masteredCache; }
